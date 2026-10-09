@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gaffer"
+version = "0.0.1"
+description = "AI football tactical analyst: OpenCV 5 perception, formation-change detection and a self-verifying Bedrock agent."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "opencv-contrib-python>=5.0,<6",   # Apache 2.0 (use -headless on the server)
+    "numpy>=2.0",                      # BSD
+    "pandas>=2.2",                     # BSD
+    "matplotlib>=3.9",                 # PSF-based (BSD-compatible)
+    "boto3>=1.40",                     # Apache 2.0
+    "pydantic>=2.8",                   # MIT
+    "pyyaml>=6.0",                     # MIT
+    "python-dotenv>=1.0",              # BSD
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",                     # MIT
+    "ruff>=0.6",                       # MIT
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "data", "outputs", "models"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]

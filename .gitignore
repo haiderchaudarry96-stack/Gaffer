@@ -1,1 +1,28 @@
-﻿data/teamtrack/
+data/teamtrack/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets — .env.example IS committed
+.env
+
+# Model weights (downloaded by scripts)
+models/
+
+# Generated outputs; EDA + failure images are small and referenced by docs
+outputs/*
+!outputs/eda/
+!outputs/failures/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

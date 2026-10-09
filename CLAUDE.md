@@ -19,7 +19,7 @@ One-line pitch: *Broadcast-level tactical analysis costs clubs thousands. Gaffer
 
 The project is built in six phases (0–5). **Do only the phase the user has just pasted in.** Never start, scaffold, stub out or "get a head start on" a later phase, even when it looks trivial and even when the current phase finishes early. `docs/PLAN.md` describes all phases so you understand where the current one fits — it is context, not a work queue.
 
-When a phase's acceptance criteria are met: stop, show the results, update **Current status** below, commit, and wait. The user starts the next session.
+When a phase's acceptance criteria are met: stop, show the results, update **Current status** below, show `git status` with a suggested commit message, and wait. The user starts the next session.
 
 ---
 
@@ -169,9 +169,9 @@ requirements.lock         # exact pinned versions
   - Region **ap-southeast-2 (Sydney)** for everything. The Free-plan account's project is locked to Sydney; other regions require upgrading to the Paid plan — never suggest that.
   - Laptop credentials: IAM user **`Gaffer-dev`** via `aws configure` (default profile, stored in `~\.aws`). `aws sts get-caller-identity` works. Never ask for, print, or write keys anywhere.
   - `Gaffer-dev` currently has **only `AmazonBedrockFullAccess`**. Anything else (S3, EC2, CloudWatch) needs the user to add permissions in the console — tell them exactly which, least privilege, in Phase 4.
-  - **Model: Amazon Nova 2 Lite**, base model id `amazon.nova-2-lite-v1:0`. In Sydney it runs only through a **cross-region inference profile** (on-demand is not supported) — the global profile, likely `global.amazon.nova-2-lite-v1:0`. Confirm the exact id with `aws bedrock list-inference-profiles` and put it in `config.yaml`. Backup model: **Nova Micro** (geo cross-region profile, e.g. `apac.amazon.nova-micro-v1:0` — confirm). Model id is config-only, never hard-coded.
+  - **Model: Amazon Nova 2 Lite**, base model id `amazon.nova-2-lite-v1:0`. In Sydney it runs only through a **cross-region inference profile** (on-demand is not supported): **`global.amazon.nova-2-lite-v1:0`** (confirmed with `aws bedrock list-inference-profiles`, 9 Oct, in `config.yaml`). Backup model: **Nova Micro**, **`apac.amazon.nova-micro-v1:0`** (confirmed). Model id is config-only, never hard-coded.
   - Third-party models (Anthropic etc.) are blocked on the Free plan by a service control policy. Use Amazon Nova only.
-  - **Known issue (Oct 2026):** the new account's Bedrock quotas show **0 TPM / 0 RPM** for all Nova models, so real calls return `ThrottlingException: Too many tokens per day`. Quota increases to the default values were requested on 9 Oct. Until approved: build and test against a mocked client, make the smoke test report the throttling clearly (not a traceback), and re-run it when the user says quotas are approved.
+  - **Known issue (Oct 2026):** the new account's Bedrock quotas show **0 TPM / 0 RPM** for all Nova models, so real calls return `ThrottlingException: Too many tokens per day`. Quota increases to the default values were requested on 9 Oct. Until approved: build and test against a mocked client, make the smoke test report the throttling clearly (not a traceback), and re-run it when the user says quotas are approved. **Update 9 Oct (evening): real calls now succeed** for both Nova 2 Lite and Nova Micro (plain + tool calling), so the quota appears to be live; the client still fails fast with a clear message if daily-token throttling comes back.
   - Claude Code on this laptop has the **AWS agent toolkit skills and the AWS MCP server** installed. They are allowed for reading/inspecting (listing models, profiles, quotas). Never use them to **create, modify or delete** AWS resources without stating the cost and getting the user's explicit OK first.
 - AWS is needed in **Phase 0** (Bedrock smoke test), **Phase 3** (Bedrock agent) and **Phase 4** (EC2, S3, CloudWatch, IAM role). Phases 1–2 need no AWS.
 - AWS account is on the **Free plan** with credits. Before suggesting any AWS resource, state its approximate hourly/monthly cost and check it is allowed on the Free plan. Never create anything expensive without asking.
@@ -187,7 +187,8 @@ requirements.lock         # exact pinned versions
 - Log every LLM call (model, tokens, latency) to `outputs/llm_calls.jsonl`; every agent tool call (args, result, duration) to `outputs/agent_trace.jsonl`; every alert and the coach's decision to `outputs/alerts.jsonl`. In the deployed app, also send these to CloudWatch.
 - Tests mock the LLM. Never spend Bedrock credits inside `pytest`.
 - Print a per-stage timing summary for anything that processes video.
-- Commit at the end of every phase with a meaningful message.
+- **Never run `git add`, `git commit` or `git push`.** The user commits and pushes manually after each phase. To show what changed, use `git status` / `git diff` only, and suggest a meaningful commit message.
+- Never read or print files in `~\.aws`.
 
 ---
 
@@ -241,7 +242,9 @@ ruff check . ; pytest -q
 
 These go into the technical report, README and video. Re-measure at the end of each relevant phase.
 
-- OpenCV version: `TBD`
+- OpenCV version: `5.0.0` (`opencv-contrib-python==5.0.0.93`)
+- YOLOX-S (COCO) via `cv2.dnn`, laptop CPU: ~115–145 ms per 640×640 inference; side view 11 persons on a native crop, 0 on the full frame; top view ~1/12 recall (Phase 0 smoke test)
+- Bedrock smoke test (Nova 2 Lite): plain call 2.1 s / 93 tokens; tool round trip 2 calls, ~2.1 s / 2,100 tokens
 - Formation accuracy on synthetic ground truth: `TBD`
 - Shape-change detection on synthetic — hits / misses / false positives / mean delay: `TBD`
 - TeamTrack detection precision / recall (top view, side view): `TBD`
@@ -256,10 +259,10 @@ These go into the technical report, README and video. Re-measure at the end of e
 
 ## Current status
 
-**Phase:** 0 — not started
-**Bedrock model + region:** Amazon Nova 2 Lite (`amazon.nova-2-lite-v1:0`, global cross-region inference profile — confirm exact id), ap-southeast-2. Quotas 0 until AWS approves the increase request (requested 9 Oct).
-**Done:** nothing yet
-**Next:** scaffold the repo, prove OpenCV 5 works, inspect the TeamTrack data, prove a Bedrock call with tool calling works.
+**Phase:** 0 — done (9 Oct), awaiting the user's commit and the Phase 1 prompt
+**Bedrock model + region:** `global.amazon.nova-2-lite-v1:0` (fallback `apac.amazon.nova-micro-v1:0`), ap-southeast-2. Real calls + tool calling work.
+**Done:** Python 3.12 venv; repo scaffold + config; OpenCV 5.0.0 smoke test (YOLOX in `cv2.dnn`); TeamTrack EDA → `docs/DATA_NOTES.md` + `outputs/eda/`; Bedrock Converse client (retries, JSONL usage log, clear errors) + 15 mocked tests; 2 failure cases logged.
+**Next:** Phase 1 (synthetic data + tactics engine). Phase 2 must solve top-view detection (COCO YOLOX ~1/12 recall from the drone) and the side view being a stitched panorama, not a raw fisheye — see `docs/DATA_NOTES.md` §9.
 **Blockers:** none
 
 <!-- Update the five lines above at the end of every session. Keep it short. -->

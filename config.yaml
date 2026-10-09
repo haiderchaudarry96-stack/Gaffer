@@ -1,0 +1,53 @@
+# Gaffer configuration. Every threshold, model id, path and region lives here.
+seed: 42
+
+paths:
+  outputs: outputs
+  models: models
+  teamtrack: data/teamtrack
+  llm_log: outputs/llm_calls.jsonl
+
+aws:
+  region: ap-southeast-2          # Free-plan account is locked to Sydney
+  profile: default                # overridden by AWS_PROFILE in .env
+
+bedrock:
+  # Nova 2 Lite runs in Sydney only via the global cross-region inference profile
+  # (confirmed with `aws bedrock list-inference-profiles`, 2026-10-09).
+  model_id: global.amazon.nova-2-lite-v1:0
+  fallback_model_id: apac.amazon.nova-micro-v1:0
+  max_tokens: 512
+  temperature: 0.2
+  retry:
+    max_attempts: 4               # total attempts, including the first
+    base_delay_s: 1.0             # exponential backoff: base * 2^n + jitter
+    max_delay_s: 20.0
+  timeout_s: 60
+
+detector:
+  name: yolox_s
+  # OpenCV Model Zoo, Apache 2.0
+  url: https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/object_detection_yolox/object_detection_yolox_2022nov.onnx
+  file: models/object_detection_yolox_2022nov.onnx
+  input_size: 640
+  strides: [8, 16, 32]
+  conf_threshold: 0.30
+  nms_threshold: 0.45
+  classes_of_interest:            # COCO ids
+    person: 0
+    sports_ball: 32
+
+eda:
+  sample_frames_per_view: 3
+  heatmap_bins: [96, 54]
+  max_image_width: 1920           # EDA images are downscaled to keep the repo small
+  team_colours_bgr:               # drawing colours by TeamID (not the real shirt colours)
+    "0": [255, 140, 30]
+    "1": [40, 40, 230]
+    BALL: [0, 230, 255]
+    other: [200, 200, 200]
+
+pitch:
+  # Default full-size pitch; TeamTrack's real dimensions to be set in Phase 2 calibration.
+  length_m: 105.0
+  width_m: 68.0
