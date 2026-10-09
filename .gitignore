@@ -26,3 +26,6 @@ outputs/*
 .idea/
 Thumbs.db
 .DS_Store
+
+# Synthetic matches are large and reproducible from seed 42; ground truth is committed
+data/synthetic/match_*.json

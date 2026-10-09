@@ -1,0 +1,203 @@
+{
+  "match_id": "synthetic_001",
+  "formations": [
+    {
+      "team": "home",
+      "from_s": 0.0,
+      "to_s": 3690.0,
+      "formation": "4-3-3"
+    },
+    {
+      "team": "home",
+      "from_s": 3690.0,
+      "to_s": 5100.0,
+      "formation": "4-4-2"
+    },
+    {
+      "team": "home",
+      "from_s": 5100.0,
+      "to_s": 5400.0,
+      "formation": "5-3-2"
+    },
+    {
+      "team": "away",
+      "from_s": 0.0,
+      "to_s": 1500.0,
+      "formation": "4-4-2"
+    },
+    {
+      "team": "away",
+      "from_s": 1500.0,
+      "to_s": 2700.0,
+      "formation": "4-2-3-1"
+    },
+    {
+      "team": "away",
+      "from_s": 2700.0,
+      "to_s": 4500.0,
+      "formation": "3-5-2"
+    },
+    {
+      "team": "away",
+      "from_s": 4500.0,
+      "to_s": 5400.0,
+      "formation": "3-4-3"
+    }
+  ],
+  "changes": [
+    {
+      "team": "away",
+      "t": 1500.0,
+      "from": "4-4-2",
+      "to": "4-2-3-1"
+    },
+    {
+      "team": "away",
+      "t": 2700.0,
+      "from": "4-2-3-1",
+      "to": "3-5-2"
+    },
+    {
+      "team": "home",
+      "t": 3690.0,
+      "from": "4-3-3",
+      "to": "4-4-2"
+    },
+    {
+      "team": "away",
+      "t": 4500.0,
+      "from": "3-5-2",
+      "to": "3-4-3"
+    },
+    {
+      "team": "home",
+      "t": 5100.0,
+      "from": "4-4-2",
+      "to": "5-3-2"
+    }
+  ],
+  "noise_events": [
+    {
+      "kind": "set_piece",
+      "team": "away",
+      "start_s": 98.7,
+      "end_s": 120.7
+    },
+    {
+      "kind": "counter_attack",
+      "team": "away",
+      "start_s": 768.9,
+      "end_s": 780.1
+    },
+    {
+      "kind": "set_piece",
+      "team": "away",
+      "start_s": 794.1,
+      "end_s": 821.0
+    },
+    {
+      "kind": "set_piece",
+      "team": "away",
+      "start_s": 1575.5,
+      "end_s": 1599.4
+    },
+    {
+      "kind": "set_piece",
+      "team": "away",
+      "start_s": 1700.9,
+      "end_s": 1727.9
+    },
+    {
+      "kind": "counter_attack",
+      "team": "home",
+      "start_s": 1997.2,
+      "end_s": 2006.1
+    },
+    {
+      "kind": "counter_attack",
+      "team": "away",
+      "start_s": 2257.0,
+      "end_s": 2267.0
+    },
+    {
+      "kind": "counter_attack",
+      "team": "away",
+      "start_s": 2498.3,
+      "end_s": 2509.7
+    },
+    {
+      "kind": "counter_attack",
+      "team": "home",
+      "start_s": 2769.9,
+      "end_s": 2780.0
+    },
+    {
+      "kind": "counter_attack",
+      "team": "away",
+      "start_s": 3430.8,
+      "end_s": 3440.3
+    },
+    {
+      "kind": "set_piece",
+      "team": "away",
+      "start_s": 3551.9,
+      "end_s": 3579.8
+    },
+    {
+      "kind": "set_piece",
+      "team": "away",
+      "start_s": 4286.4,
+      "end_s": 4314.7
+    },
+    {
+      "kind": "flicker",
+      "team": "home",
+      "start_s": 4548.3,
+      "end_s": 4551.3
+    },
+    {
+      "kind": "flicker",
+      "team": "away",
+      "start_s": 5079.5,
+      "end_s": 5082.5
+    },
+    {
+      "kind": "flicker",
+      "team": "home",
+      "start_s": 5266.5,
+      "end_s": 5269.5
+    }
+  ],
+  "visibility": [
+    {
+      "mode": "broadcast",
+      "start_s": 91.9,
+      "end_s": 404.0
+    },
+    {
+      "mode": "broadcast",
+      "start_s": 560.6,
+      "end_s": 914.9
+    },
+    {
+      "mode": "broadcast",
+      "start_s": 1568.7,
+      "end_s": 1812.5
+    },
+    {
+      "mode": "broadcast",
+      "start_s": 2385.7,
+      "end_s": 2588.4
+    },
+    {
+      "mode": "broadcast",
+      "start_s": 4233.6,
+      "end_s": 4480.8
+    },
+    {
+      "mode": "broadcast",
+      "start_s": 5203.6,
+      "end_s": 5354.6
+    }
+  ]
+}

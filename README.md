@@ -4,7 +4,7 @@
 
 Built for the **OpenCV AI Competition 2026, powered by AWS**.
 
-> Status: Phase 0 (scaffold + stack proven). See `docs/PLAN.md`.
+> Status: Phase 1 done (synthetic data + tactics engine; data contract frozen at v1.0). See `docs/PLAN.md`.
 
 ## Quickstart (Windows, CPU only)
 
@@ -18,6 +18,8 @@ copy .env.example .env               # profile + region only; never keys
 py scripts\smoke_test_opencv.py      # prints cv2.__version__ (5.x), runs YOLOX via cv2.dnn
 py scripts\inspect_data.py           # TeamTrack EDA -> docs\DATA_NOTES.md, outputs\eda\
 py scripts\smoke_test_bedrock.py     # Bedrock Converse: plain call + tool calling
+py scripts\make_synthetic_match.py  # synthetic 90-min match + ground truth (seed 42)
+py scripts\eval_synthetic.py        # formation accuracy + shape-change hits/misses/FPs
 pytest -q ; ruff check .
 ```
 
@@ -29,6 +31,7 @@ AWS credentials come from `aws configure` (laptop) or the IAM instance role (EC2
 |---|---|
 | OpenCV 5.0.0 (`opencv-contrib-python`) | `cv2.dnn` YOLOX inference, video I/O, EDA (phase correlation, line masks, heat-maps) |
 | Amazon Bedrock (Converse API, Nova 2 Lite) | `src/gaffer/llm/bedrock_client.py` |
+| Tactics engine (numpy, SciPy Hungarian assignment) | `src/gaffer/tactics/`: formation templates, change detector, metrics, timeline |
 | Config | `config.yaml` (every threshold, model id, region) |
 
 ## Data and credits

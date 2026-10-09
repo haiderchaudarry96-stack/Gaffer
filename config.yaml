@@ -51,3 +51,126 @@ pitch:
   # Default full-size pitch; TeamTrack's real dimensions to be set in Phase 2 calibration.
   length_m: 105.0
   width_m: 68.0
+
+# --------------------------------------------------------------------------- Phase 1: tactics
+formations:
+  # Outfield players per team (goalkeeper excluded). Futsal would be 4.
+  outfield_players: 10
+  # Templates are generated from the name: lines evenly spaced over `depth_m` (back line to
+  # front line), players in a line evenly spread over `line_width_m[count]`.
+  templates: ["4-4-2", "4-3-3", "4-2-3-1", "3-5-2", "3-4-3", "5-3-2"]
+  depth_m: 30.0
+  line_width_m: {1: 0.0, 2: 16.0, 3: 32.0, 4: 40.0, 5: 50.0}
+  # Per-template tweaks: `line_widths_m` per line (back to front), or `slots_m` as an explicit
+  # list of [depth_from_back_m, lateral_m] per slot (replaces generation completely).
+  # Formations that are one system seen in different phases (a 3-5-2's wing-backs drop into a
+  # back five without the ball). Switching inside a family is not a shape change. Eval showed
+  # 62 of 89 false positives were 3-5-2 <-> 5-3-2 flip-flops with possession (FAILURE_LOG).
+  equivalent: [["3-5-2", "5-3-2"]]
+  overrides:
+    "4-3-3": {line_widths_m: [40.0, 26.0, 44.0]}
+    "4-2-3-1": {line_widths_m: [40.0, 16.0, 40.0, 0.0]}
+    "3-4-3": {line_widths_m: [32.0, 42.0, 44.0]}
+
+tactics:
+  sample_fps: 1.0                 # frames per second used by the engine (<= MatchState fps)
+  window_s: 30.0                  # trailing window for formation classification (causal)
+  step_s: 5.0                     # window stride
+  min_players: 8                  # outfield players of one team needed to use a frame; with 3+
+                                  # missing a whole line can be out of view (dev seeds: FPs 13 -> 5)
+  min_usable_fraction: 0.3        # usable frames in a window, else the window is "uncertain"
+  coverage_full: 0.8              # visibility at/above which confidence is not penalised
+  fit_iterations: 4               # assignment <-> transform refinement rounds per template
+  scale_range: [0.6, 1.6]         # allowed anisotropic stretch of a template (depth, width)
+  softmax_temperature_m2: 1.5     # template-cost softmax temperature (mean squared residual)
+  confidence_threshold: 0.45      # below this the label is "uncertain", never guessed
+  goalkeeper:                     # used only when no player carries role "goalkeeper"
+    max_depth_m: 20.0             # deepest player within this of own goal line ...
+    min_gap_m: 8.0                # ... and this far behind the next deepest is the keeper
+  change:
+    min_persist_s: 20.0           # a new formation must hold this long to become a candidate
+    max_uncertain_gap_s: 30.0     # uncertain stretch longer than this resets the challenger
+  metrics:
+    back_line_default: 4          # back-line size when the formation is unknown
+    robust_percentiles: [5, 95]   # for compactness (depth) and width
+    press_players: 3              # nearest players to the ball for the pressing proxy
+    press_near_m: 5.0             # mean distance giving pressing index 1
+    press_far_m: 25.0             # mean distance giving pressing index 0
+  timeline:
+    max_segment_s: 1350.0         # split at least every 22.5 min (keeps the timeline < 8 KB)
+    snap_to_period_s: 30.0        # a change this close after a period start happened at the break
+    low_visibility_players: 14    # warn when fewer players are visible on average ...
+    low_visibility_min_s: 60.0    # ... for at least this long
+
+# --------------------------------------------------------------------------- Phase 1: synthetic
+synthetic:
+  fps: 2.0                        # pipeline samples real video at 2-5 fps (DATA_NOTES)
+  duration_s: 5400.0
+  half_time_s: 2700.0
+  teams:
+    home: {name: Blue, colour: "#1e5fbf", attacking_direction_first_half: right}
+    away: {name: Red, colour: "#c0392b", attacking_direction_first_half: left}
+  match_001:                      # scripted schedule for data/synthetic/match_001.json
+    start: {home: "4-3-3", away: "4-4-2"}
+    changes:
+      - {team: away, t: 1500.0, to: "4-2-3-1"}
+      - {team: away, t: 2700.0, to: "3-5-2"}
+      - {team: home, t: 3690.0, to: "4-4-2"}
+      - {team: away, t: 4500.0, to: "3-4-3"}
+      - {team: home, t: 5100.0, to: "5-3-2"}
+  random_schedule:                # used for extra eval matches (other seeds)
+    changes_per_team: [1, 3]
+    earliest_s: 600.0
+    latest_s: 5100.0
+    min_gap_s: 600.0
+  movement:
+    personal_offset_sd_m: 2.0     # fixed per-player habit, so shapes are not textbook copies
+    personal_offset_max_m: 4.0
+    wobble_sd_m: 2.0              # slow random wander around the slot (Ornstein-Uhlenbeck)
+    wobble_tau_s: 8.0
+    response_tau_s: 1.5           # how fast a player closes on his target
+    max_speed_mps: 8.0
+    back_line_base_m: 8.0         # back line depth from own goal = base + gain * ball depth
+    back_line_ball_gain: 0.45
+    back_line_possession_bonus_m: 4.0
+    back_line_range_m: [8.0, 50.0]
+    lateral_ball_gain: 0.35
+    in_possession_scale: {depth: 1.15, width: 1.10}
+    out_of_possession_scale: {depth: 0.85, width: 0.85}
+    fullback_push_m: 8.0          # wide players of a back four push up in possession
+    winger_drop_m: 5.0            # wide forwards drop out of possession
+    wingback_drop_m: 5.0          # wide midfielders of a five drop out of possession
+    pressers: 2                   # nearest defenders pulled towards the ball
+    press_pull: [0.6, 0.3]
+    goalkeeper_depth_m: 4.0
+  ball:
+    possession_mean_s: 14.0
+    waypoint_every_s: [2.0, 6.0]
+    max_speed_mps: 18.0
+  noise_events:
+    set_pieces: [6, 10]           # corners: players crowd the box for 20-30 s
+    set_piece_s: [20.0, 30.0]
+    counters: [4, 8]              # counter-attacks: front players sprint for 8-12 s
+    counter_s: [8.0, 12.0]
+    flickers: [2, 3]              # a team briefly adopts another shape for 3 s
+    flicker_s: 3.0
+  camera:
+    broadcast_fraction: 0.3       # share of the match seen through a ball-following window
+    broadcast_stretch_s: [120.0, 400.0]
+    half_span_m: [16.0, 24.0]     # half the visible pitch length -> roughly 8-16 players
+    pan_tau_s: 1.5
+  observation:
+    miss_prob: 0.05               # detector misses per player per frame
+    position_noise_m: 0.7         # homography-style error
+    unknown_prob: 0.02            # team classifier not settled yet
+    id_switch_per_min: 0.02       # tracker identity switches per player per minute
+    include_referee: true
+    label_goalkeepers: true
+
+eval:
+  synthetic:
+    extra_matches: 10             # random-schedule matches on top of match_001 ...
+    first_seed: 43                # ... with seeds 43, 44, ...
+    dev_seeds: [1000, 1001, 1002] # tuning only; never reported as results
+    tolerance_s: 90.0             # a detected change within this of a true one is a hit
+    workers: 4

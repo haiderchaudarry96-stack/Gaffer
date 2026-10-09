@@ -18,6 +18,7 @@ dependencies = [
     "pydantic>=2.8",                   # MIT
     "pyyaml>=6.0",                     # MIT
     "python-dotenv>=1.0",              # BSD
+    "scipy>=1.13",                     # BSD-3 (Hungarian assignment for formation templates)
 ]
 
 [project.optional-dependencies]
@@ -32,6 +33,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["slow: full 90-minute synthetic match (about 30 s)"]
 
 [tool.ruff]
 line-length = 100

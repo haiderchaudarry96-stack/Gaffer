@@ -217,7 +217,9 @@ py scripts\inspect_data.py              # writes docs\DATA_NOTES.md + sample fra
 
 # synthetic data + tactics eval
 py scripts\make_synthetic_match.py --out data\synthetic\match_001.json
-py scripts\eval_synthetic.py
+py scripts\eval_synthetic.py           # match_001 + 10 random matches; --dev = tuning seeds only
+py -m gaffer.tactics.timeline --match data\synthetic\match_001.json --out outputs\tactical_timeline.json
+py scripts\plot_formation_windows.py --team home --start 1450 --end 1900 --out outputs\failures\<name>.png
 
 # real video (TeamTrack)
 py scripts\teamtrack_to_matchstate.py --view top      # oracle MatchState from ground-truth boxes
@@ -245,8 +247,8 @@ These go into the technical report, README and video. Re-measure at the end of e
 - OpenCV version: `5.0.0` (`opencv-contrib-python==5.0.0.93`)
 - YOLOX-S (COCO) via `cv2.dnn`, laptop CPU: ~115–145 ms per 640×640 inference; side view 11 persons on a native crop, 0 on the full frame; top view ~1/12 recall (Phase 0 smoke test)
 - Bedrock smoke test (Nova 2 Lite): plain call 2.1 s / 93 tokens; tool round trip 2 calls, ~2.1 s / 2,100 tokens
-- Formation accuracy on synthetic ground truth: `TBD`
-- Shape-change detection on synthetic — hits / misses / false positives / mean delay: `TBD`
+- Formation accuracy on synthetic ground truth (11 matches, per 30 s window): **96.4 % when confident** (98.7 % at family level), coverage 77 %; full view 96.4 % / coverage 99.9 %, broadcast window 96.9 % / coverage 23 %; strict (uncertain = wrong) 74.5 %. match_001: 99.8 % when confident. Upper bound: generator and engine share one model of a formation.
+- Shape-change detection on synthetic (11 matches, 43 true changes, ±90 s): **39 hits / 4 misses (3 found late after low visibility) / 27 false positives (16 set pieces) / mean delay 41 s** (max 103 s), new formation right 39/39. match_001: 5/0/0, 39 s. Timeline max 7.9 KB, mean 5.7 KB. Tactics engine ~20–30 s per 90-min match on laptop CPU.
 - TeamTrack detection precision / recall (top view, side view): `TBD`
 - TeamTrack team-classification accuracy: `TBD`
 - Formation agreement, OpenCV pipeline vs oracle (ground-truth boxes): `TBD`
@@ -259,10 +261,10 @@ These go into the technical report, README and video. Re-measure at the end of e
 
 ## Current status
 
-**Phase:** 0 — done (9 Oct), awaiting the user's commit and the Phase 1 prompt
+**Phase:** 1 — done (10 Oct), committed; awaiting the Phase 2 prompt
 **Bedrock model + region:** `global.amazon.nova-2-lite-v1:0` (fallback `apac.amazon.nova-micro-v1:0`), ap-southeast-2. Real calls + tool calling work.
-**Done:** Python 3.12 venv; repo scaffold + config; OpenCV 5.0.0 smoke test (YOLOX in `cv2.dnn`); TeamTrack EDA → `docs/DATA_NOTES.md` + `outputs/eda/`; Bedrock Converse client (retries, JSONL usage log, clear errors) + 15 mocked tests; 2 failure cases logged.
-**Next:** Phase 1 (synthetic data + tactics engine). Phase 2 must solve top-view detection (COCO YOLOX ~1/12 recall from the drone) and the side view being a stitched panorama, not a raw fisheye — see `docs/DATA_NOTES.md` §9.
+**Done:** Phase 0 + Phase 1: contract frozen at v1.0 (`schema.py`; nullable segment metrics, GT `noise_events`/`visibility`); synthetic 90-min generator (`gaffer/synthetic.py`, decoys, broadcast-window visibility, 2 fps, match file gitignored); tactics engine (template fit with Hungarian assignment, families `3-5-2`≈`5-3-2`, hysteresis detector, metrics, <8 KB timeline); 65 tests (47 new); eval numbers above; 5 failure cases logged with images.
+**Next:** Phase 2 (real video perception). Top-view detection (COCO YOLOX ~1/12 recall) and the stitched side panorama are the open problems — see `docs/DATA_NOTES.md` §9. Tactics engine must run on the pipeline/oracle output unchanged.
 **Blockers:** none
 
 <!-- Update the five lines above at the end of every session. Keep it short. -->

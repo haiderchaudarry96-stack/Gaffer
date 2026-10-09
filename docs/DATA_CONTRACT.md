@@ -2,6 +2,11 @@
 
 This is the backbone of Gaffer. **Freeze it in Phase 1 and do not change it afterwards** without explicitly flagging the migration cost.
 
+> **Frozen at `contract_version: "1.0"` on 2026-10-10 (end of Phase 1).** Implemented in `src/gaffer/schema.py`. Three decisions taken when freezing:
+> 1. Segment metrics (`defensive_line_m`, `compactness_m`, `width_m`, `centroid`, `pressing_index`) and `possession_pct` may be **`null`** when too few players were visible to compute them honestly.
+> 2. The detector's "detected at" time stays **engine-internal** (used for detection delay in eval); it is not part of `events`.
+> 3. Synthetic ground truth carries two extra keys, `noise_events` (set pieces, counter-attacks, flickers) and `visibility` (broadcast-window stretches). Only eval scripts read them.
+
 Three producers emit `MatchState`, identically:
 - `scripts/make_synthetic_match.py` (no video, has ground truth) → `source: "synthetic"`
 - `src/gaffer/perception/pipeline.py` (real video, OpenCV 5) → `source: "video"`
@@ -105,7 +110,9 @@ Consumers never know which producer made it:
     { "team": "home", "from_s": 0.0,    "to_s": 3690.0, "formation": "4-3-3" },
     { "team": "home", "from_s": 3690.0, "to_s": 5400.0, "formation": "4-4-2" }
   ],
-  "changes": [ { "team": "home", "t": 3690.0, "from": "4-3-3", "to": "4-4-2" } ]
+  "changes": [ { "team": "home", "t": 3690.0, "from": "4-3-3", "to": "4-4-2" } ],
+  "noise_events": [ { "kind": "set_piece", "team": "away", "start_s": 1575.5, "end_s": 1599.4 } ],  // synthetic only
+  "visibility": [ { "mode": "broadcast", "start_s": 1568.7, "end_s": 1812.5 } ]                     // synthetic only
 }
 ```
 
