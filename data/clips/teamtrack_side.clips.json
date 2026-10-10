@@ -1,0 +1,20 @@
+{
+  "clips": [
+    {
+      "path": "../teamtrack/soccer_side/videos/F_20220220_1_1680_1710.mp4",
+      "start_s": 1680.0
+    },
+    {
+      "path": "../teamtrack/soccer_side/videos/F_20220220_1_1710_1740.mp4",
+      "start_s": 1710.0
+    },
+    {
+      "path": "../teamtrack/soccer_side/videos/F_20220220_1_1740_1770.mp4",
+      "start_s": 1740.0
+    },
+    {
+      "path": "../teamtrack/soccer_side/videos/F_20220220_1_1770_1800.mp4",
+      "start_s": 1770.0
+    }
+  ]
+}

@@ -223,7 +223,10 @@ py -m gaffer.tactics.timeline --match data\synthetic\match_001.json --out output
 py scripts\plot_formation_windows.py --team home --start 1450 --end 1900 --out outputs\failures\<name>.png
 
 # real video (TeamTrack)
-py scripts\teamtrack_to_matchstate.py --view top      # oracle MatchState from ground-truth boxes
+py scripts\teamtrack_to_matchstate.py --view top      # oracle MatchState from GT boxes (+ coverage)
+py scripts\eval_drift.py                               # drone re-anchoring: none / per clip / per frame
+py scripts\compare_detectors.py --view top             # classical vs tiled YOLOX; --dev = tuning clip only
+py scripts\coverage_check.py --view top                # detection-limited >= 8 outfield coverage
 py scripts\calibrate.py --view top      # landmarks: data\calibration\top_points.json (--click to re-pick)
 py scripts\calibrate.py --view side     # compares homography / sectioned / cv2.fisheye / cylindrical
 py -m gaffer.perception.pipeline --source data\teamtrack\soccer_top\videos\<clip>.mp4 --out outputs\match_state.json
@@ -256,12 +259,14 @@ These go into the technical report, README and video. Re-measure at the end of e
   - Tuning-time eval set (seeds 42–52, superseded, kept for history): 96.4 % when confident, 39/43 hits, 27 FPs, 41 s delay, timeline max 7.9 KB. Tactics engine ~20–30 s per 90-min match on laptop CPU.
   - **One-shot detector baseline for Phase 3 = the held-out 52 false positives** (31/36 hits): the self-verifying agent must beat this.
   - Timeline size: worst case **16.4 KB** (held-out, no equivalence; 15.3 KB with it). Limit relaxed on 10 Oct from 8 KB to **"compact, under 20 KB"**: in Phase 3 the agent reads the timeline through tools, never as one blob. Do not tune the engine for size.
-- TeamTrack detection precision / recall (top view, side view): `TBD`
+- TeamTrack detection, **top view (classical OpenCV detector)**, 8 eval clips / 48 frames (dev clip D_…_1530 excluded): **P 0.843 / R 0.978 / F1 0.906 at ≤ 1 m** (IoU ≥ 0.5: P 0.718 / R 0.832); recall on isolated players 0.991; position error 0.17 m; ~4.0 unmatched per frame = referee + assistant referee + staff, 3.0 of them outside the lines (GT has no referee labels). Tiled YOLOX (COCO, cv2.dnn) on the same view: R 0.06 (5.0 s/frame), conf 0.1 R 0.14, 2× upscaled tiles R 0.54 (18 s/frame) → rejected, no fine-tuning needed. Side view: `TBD` (Day 2).
+- Formation-engine coverage (≥ 8 of 10 outfield players): oracle 100 % both views (GT annotates everyone); **detection-limited, top: home 98.9 %, away 100 %** (before team-classification losses).
 - TeamTrack team-classification accuracy: `TBD`
 - Formation agreement, OpenCV pipeline vs oracle (ground-truth boxes): `TBD`
-- Perception throughput — laptop CPU FPS, EC2 FPS: `TBD`
+- Perception throughput, top view, laptop CPU: per 2 fps sample ≈ 0.09 s 4K decode + 0.14 s drift re-anchoring + 0.08 s detection ≈ 0.33 s → ~1.5× real time so far (tracking/teams not yet included). Side view / EC2: `TBD`.
 - Pitch size fitted from IFAB markings (31 top-view landmarks): **105.9 × 68.2 m** → within 2 %, so config keeps 105 × 68.
-- Calibration, held-out (leave-one-out) landmark error / line-alignment error: **top 0.11 m mean, 0.38 m max / 0.036 m median** (single homography, 31 landmarks); **side 0.53 m mean, 1.77 m max / 0.08 m median** (2 sectioned homographies, 29 landmarks; single homography 0.60 m, `cv2.fisheye` 0.86 m, cylindrical does not fit). Per-clip drift re-anchoring error: `TBD`.
+- Calibration, held-out (leave-one-out) landmark error / line-alignment error: **top 0.11 m mean, 0.38 m max / 0.036 m median** (single homography, 31 landmarks); **side 0.53 m mean, 1.77 m max / 0.08 m median** (2 sectioned homographies, 29 landmarks; single homography 0.60 m, `cv2.fisheye` 0.86 m, cylindrical does not fit). Line-alignment error is measured to the painted line centres (bilinear, `cv2.ximgproc.thinning`): top 0.041 m.
+- Drone drift (top view, 36 frames): median line error **0.198 m uncorrected → 0.089 m anchored per clip → 0.040 m anchored every frame** (ECC on the line image, 142 ms/frame); max shift 13.8 px; the drone wobbles within clips, so the pipeline re-anchors every sampled frame.
 - Alerts: one-shot detector vs self-verifying agent — false alerts / missed changes: `TBD vs TBD`
 - Mean agent latency per alert, mean Bedrock tokens per alert, cost per match: `TBD`
 
@@ -269,11 +274,12 @@ These go into the technical report, README and video. Re-measure at the end of e
 
 ## Current status
 
-**Phase:** 2 — in progress (Day 1). Calibration done for both views; **stopped for the user to check the calibration overlays** before building on them.
+**Phase:** 2 — in progress, end of Day 1. Calibration approved by the user (both views). Oracle, coverage check, top-view detector comparison and drift correction done; nothing committed yet (user commits).
 **Bedrock model + region:** `global.amazon.nova-2-lite-v1:0` (fallback `apac.amazon.nova-micro-v1:0`), ap-southeast-2. Real calls + tool calling work.
 **Done:** Phase 0 + Phase 1: contract frozen at v1.0 (`schema.py`; nullable segment metrics, GT `noise_events`/`visibility`); synthetic 90-min generator (`gaffer/synthetic.py`, decoys, broadcast-window visibility, 2 fps, match file gitignored); tactics engine (template fit with Hungarian assignment, families `3-5-2`≈`5-3-2`, hysteresis detector, metrics, <8 KB timeline); 65 tests (47 new); eval numbers above; 5 failure cases logged with images.
 **Phase 2 so far (10 Oct):** Step 0 held-out check recorded (official synthetic numbers above; `eval_synthetic.py --heldout`). `perception/pitch.py` (pitch model, top-hat line mask, landmark snapping, pitch-size fit, homography, leave-one-out + line-alignment error), `perception/undistort.py` (side-model comparison, bird's-eye rectification), `scripts/calibrate.py`, `data/calibration/*`, 8 new tests (73 total). Findings: the side panorama is near-rectilinear, not a fisheye; top and side clips are NOT simultaneous (no cross-view check possible); DATA_NOTES corrected. `supervision` 0.30.9 installed and locked. `*.clips.json` convention documented (DATA_CONTRACT, data/README.md).
-**Next:** once the user approves the overlays: oracle (`teamtrack_to_matchstate.py`) + min-players coverage report (stop if low), top-view detector comparison (classical vs tiled YOLOX), per-clip drift re-anchoring; then Day 2 (side detection, tracking with ID switches at 2 vs 5 fps, team colours, pipeline, eval_real). Tactics engine must run on pipeline/oracle output unchanged.
+**Day 1 (later, 10 Oct):** `gaffer/teamtrack.py` (clip discovery, NaN-safe GT loader), `perception/video.py` (video or `*.clips.json`, sequential decode), `perception/drift.py` (per-frame re-anchoring + per-frame quality), `perception/matchstate.py` (shared MatchState assembly: off-pitch drop, possession, attacking direction from keepers), `perception/tiling.py`, `perception/detector.py` (classical top-view detector + tiled YOLOX), `gaffer/evaluation.py`; scripts `teamtrack_to_matchstate.py` (oracle; tactics engine runs on it unchanged: top 3 candidates, side 1), `eval_drift.py`, `compare_detectors.py`, `coverage_check.py`; `data/clips/*.clips.json`; 12 more tests (85 total). Both views infer the same attacking directions independently (TeamID 0 = home attacks left).
+**Next (Day 2):** side-view tiled YOLOX + speed, tracker (supervision ByteTrack; ID switches at 2 vs 5 fps), team classifier (kmeans, referee cluster), `perception/pipeline.py` (+ window API for Phase 3, debug video, timing), `scripts/eval_real.py` (team accuracy, metric error, formation agreement pipeline vs oracle), `scripts/download_teamtrack.py`; camera_motion.py last. Tactics engine must run on pipeline output unchanged.
 **Blockers:** none
 
 <!-- Update the five lines above at the end of every session. Keep it short. -->

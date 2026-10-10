@@ -36,6 +36,48 @@ detector:
   classes_of_interest:            # COCO ids
     person: 0
     sports_ball: 32
+  views:                          # method per view, chosen by scripts/compare_detectors.py
+    top:
+      method: classical
+      roi_margin_goal_m: 1.0      # keepers stand on the line; goals sit behind it
+      roi_margin_touch_m: 1.0     # throw-ins; painted text starts ~2.5 m outside (dev clip)
+      corner_exclusion_m: 1.5     # corner flags
+      goal_exclusion_m: 0.3       # goal frames (posts on the line, nets behind)
+    side:
+      method: tiled_yolox
+      roi_margin_goal_m: 1.0
+      roi_margin_touch_m: 1.0
+      corner_exclusion_m: 1.5
+      goal_exclusion_m: 0.3
+  tiled_yolox:
+    tile_px: 640                  # network input; native tile = tile_px / upscale
+    overlap_px: 96                # > the largest player box, so nobody is cut at every tile
+    upscale: 1.0
+    conf_threshold: 0.30
+    nms_threshold: 0.45
+  classical:                      # top view; tuned on the dev clip only (compare_detectors.py)
+    scale: 0.5                    # work on a half-resolution frame (players ~15 px)
+    bg_downscale: 8               # spatial grass background: downscale 8x ...
+    bg_median_k: 5                # ... and median 5x5 (~40 m^2 neighbourhood >> one player)
+    lab_weights: [0.5, 1.0, 1.0]  # lightness counts half: grass stripes differ mostly in L
+    diff_threshold: 20.0          # weighted Lab distance to the background
+    line_width_m: 0.35            # band around the projected lines (0.12 m paint + homography error)
+    line_open_m: 0.4              # inside the band keep only blobs wider than this (paint ~0.12 m;
+                                  # 0.55 m also erased players on lines: dev recall 0.989 -> 0.960)
+    max_inside_lines: 0.97        # drop blobs lying >= 97 % inside the band (line-crossing remnants;
+                                  # 0.9 also dropped real players: dev recall 0.989 -> 0.977)
+                                  # a player on a line always sticks out of a 0.35 m band
+    open_px: 3
+    close_px: 5
+    min_area_m2: 0.12             # blob area limits (pitch metres, scale-independent)
+    max_area_m2: 6.0
+    single_area_m2: 0.55          # typical one-player blob; blobs >= split_factor x this are split
+    split_factor: 1.7
+    box_size_m: 1.2               # output box side (GT top-view boxes: median ~34 px = 1.2 m)
+  eval:
+    iou_threshold: 0.5
+    distance_threshold_m: 1.0     # centre-distance match on the pitch (drone boxes are tiny)
+    dev_clips: [D_20220220_1_1530_1560]   # tuning only; never reported as results
 
 eda:
   sample_frames_per_view: 3
@@ -61,6 +103,31 @@ pitch:
     centre_circle_radius_m: 9.15
 
 # --------------------------------------------------------------------------- Phase 2: perception
+perception:
+  sample_fps: 2.0                 # same rate as the synthetic data
+  possession_radius_m: 2.0        # nearest player within this of the ball has it (shared rule)
+
+teamtrack:
+  views:
+    top: {folder: soccer_top, foot_point: centre, calibration: top}   # drone: blob centre
+    side: {folder: soccer_side, foot_point: bottom, calibration: side}  # feet = box bottom
+  teams:                          # TeamID -> contract side (shirt colours from DATA_NOTES)
+    "0": {side: home, name: White, colour: "#f0f0f0"}
+    "1": {side: away, name: Blue, colour: "#1f3a8a"}
+  clip_lists: data/clips          # <match_id>.clips.json written by the oracle / pipeline
+
+drift:                            # per-frame re-anchoring of the top view (perception/drift.py)
+  scale: 0.25                     # alignment on a quarter-resolution line image
+  blur_sigma_px: 2.0
+  motion: affine
+  iterations: 100
+  eps: 1.0e-5
+  min_correlation: 0.6            # ECC correlation below this -> ORB fallback
+  views: [top]                   # cameras that drift (side: 0.3 px per clip, static)
+  homography_ok_max_error_m: 0.5  # per-frame line error above this -> quality.homography_ok false
+  # Re-anchored on EVERY sampled frame: eval_drift.py showed per-clip anchors leave 0.105 m median
+  # (max 0.36 m: the drone wobbles within a clip) vs 0.036 m per frame, for ~125 ms per frame.
+
 calibration:
   dir: data/calibration           # <view>_points.json (picked landmarks) -> <view>.json (fit)
   overlay_dir: outputs/calibration

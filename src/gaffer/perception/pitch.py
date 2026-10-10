@@ -522,16 +522,19 @@ def line_alignment_error(mapper: PitchMapper, mask: np.ndarray, model: PitchMode
         uv = mapper.to_image(poly)
         uv_n = mapper.to_image(poly + 0.25 * normal)
         scale = np.linalg.norm(uv_n - uv, axis=1) / 0.25  # px per metre across the line
-        line_errs = []
-        for (u, v), sc in zip(uv, scale, strict=True):
-            if not (0 <= u < w and 0 <= v < h) or sc <= 1e-6:
-                continue
-            total += 1
-            e = float(dist[int(v), int(u)]) / sc
-            if e > max_search_m:
-                not_found += 1
-                continue
-            line_errs.append(e)
+        inside = ((uv[:, 0] >= 0) & (uv[:, 0] <= w - 1) & (uv[:, 1] >= 0) & (uv[:, 1] <= h - 1)
+                  & (scale > 1e-6) & np.isfinite(uv).all(axis=1))
+        if not inside.any():
+            continue
+        # bilinear read of the distance map at the sub-pixel projected point (cv2.remap), so
+        # errors below one pixel are not rounded away on downscaled images
+        pts = uv[inside].astype(np.float32)
+        d = cv2.remap(dist, pts[:, 0].reshape(-1, 1), pts[:, 1].reshape(-1, 1),
+                      cv2.INTER_LINEAR).ravel()
+        e_all = d / scale[inside]
+        total += int(inside.sum())
+        not_found += int((e_all > max_search_m).sum())
+        line_errs = [float(e) for e in e_all if e <= max_search_m]
         errs.extend(line_errs)
         if line_errs:
             per_line[name] = round(float(np.median(line_errs)), 3)
@@ -575,6 +578,12 @@ class Calibration:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(self.__dict__, indent=2, default=_json_default), encoding="utf-8")
         return p
+
+    @classmethod
+    def for_view(cls, cfg: dict[str, Any], view: str) -> Calibration:
+        """The saved calibration of a TeamTrack view (`teamtrack.views.<view>.calibration`)."""
+        name = cfg["teamtrack"]["views"][view]["calibration"]
+        return cls.load(repo_path(cfg["calibration"]["dir"]) / f"{name}.json")
 
     @classmethod
     def load(cls, path: str | Path) -> Calibration:

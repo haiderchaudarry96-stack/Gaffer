@@ -1,0 +1,40 @@
+{
+  "clips": [
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1530_1560.mp4",
+      "start_s": 1530.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1560_1590.mp4",
+      "start_s": 1560.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1590_1620.mp4",
+      "start_s": 1590.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1620_1650.mp4",
+      "start_s": 1620.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1650_1680.mp4",
+      "start_s": 1650.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1680_1710.mp4",
+      "start_s": 1680.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1710_1740.mp4",
+      "start_s": 1710.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1740_1770.mp4",
+      "start_s": 1740.0
+    },
+    {
+      "path": "../teamtrack/soccer_top/videos/D_20220220_1_1770_1800.mp4",
+      "start_s": 1770.0
+    }
+  ]
+}

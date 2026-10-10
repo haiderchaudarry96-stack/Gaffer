@@ -25,6 +25,39 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-10] Top-view classical detector: players on painted lines and touching pairs are missed; referees count as false positives
+**Stage:** detection
+**Severity:** degraded
+
+**Input:** TeamTrack top view, `py scripts\compare_detectors.py --view top` (8 eval clips, 48 frames; dev clip D_…_1530_1560 used for tuning only).
+**What happened:** (1) The first version masked out the projected painted lines; players standing on a line (white shirts are paint-coloured) lost their pixels and disappeared: 6 of the 8 misses in a sample were players on lines. (2) Two players touching (e.g. a tackle) give one blob below the split threshold → one detection between them, matched to neither. (3) The first ROI (3 m beyond the touchlines) picked up the painted "University of Tsukuba / IMAGINE THE FUTURE" text, corner flags and goal frames: 43 extra blobs per frame on the dev clip. (4) The remaining ~4 unmatched detections per frame are real people GT does not label: on the pitch it is the referee in every inspected case, outside the lines the assistant referee and staff (3.0 of the 4.0 per frame are outside the lines).
+**Why (best guess):** colour cannot separate a white shirt from white paint; area alone cannot separate two touching players from one large one; GT contains only the 22 players.
+**Screenshot / output:** outputs/failures/2026-10-10_top_classical_misses.jpg (misses before the line fix), outputs/failures/2026-10-10_top_classical_extras_on_pitch.jpg (all the referee)
+**Fix or mitigation:** (1) "lines are thin, players are wide": inside the projected line band only foreground that survives a 0.4 m morphological opening is kept, and blobs lying ≥ 97 % inside the band (crossing remnants) are dropped; (3) geometric exclusions from the homography: 1 m margin beyond the lines, corner-flag squares, goal-frame strips. (2) open; (4) the team classifier (Day 2) puts referees in their own cluster, and eval reports them separately.
+**Measured impact:** dev clip precision 0.33 → 0.84 (ROI exclusions); eval recall 0.966 → 0.978 (line opening), precision 0.843, F1 0.906, isolated-player recall 0.991.
+
+### [2026-10-10] Off-the-shelf YOLOX stays useless on the drone view even tiled at native resolution
+**Stage:** detection
+**Severity:** wrong output (rejected method)
+
+**Input:** same 8 eval clips; YOLOX-S (COCO) in `cv2.dnn` on overlapping 640 px tiles over the pitch, cross-tile NMS; 12 frames.
+**What happened:** recall at 1 m: **0.06** (confidence 0.3), 0.14 (confidence 0.1), **0.54** with tiles upscaled 2× — at 5.0 s, 5.1 s and 18.1 s per 4K frame on the laptop CPU. The classical OpenCV detector reaches 0.978 recall at 0.08 s per frame.
+**Why (best guess):** seen from directly above a player is a ~30 px blob without a human silhouette (Phase 0 entry); upscaling helps a little but the shape is still not a COCO "person".
+**Screenshot / output:** outputs/failures/2026-10-10_top_yolox_vs_classical.jpg; numbers in outputs/compare_detectors_top.json
+**Fix or mitigation:** classical detector chosen for the top view (config `detector.views.top.method`). Fine-tuning YOLOX was not needed. YOLOX stays the side-view detector, where players look like people.
+**Measured impact:** F1@1 m 0.11 / 0.24 / 0.65 (YOLOX variants) vs 0.906 (classical), 60–220× slower.
+
+### [2026-10-10] The drone wobbles within a clip: one homography per clip is not enough
+**Stage:** homography
+**Severity:** degraded
+
+**Input:** all 9 top clips, frames at 0 / 10 / 20 / 29.5 s, `py scripts\eval_drift.py`.
+**What happened:** the image moves up to ~14 px relative to the calibration frame, and not only between clips: within one clip it shifts by up to ~10 px back and forth. Anchoring once per clip (at its first frame) is sometimes *worse* than no correction at all (e.g. 1690 s: 0.37 m anchored per clip vs 0.22 m uncorrected), because the drone swings back past the reference.
+**Why (best guess):** a hovering drone, not a locked camera; wind.
+**Screenshot / output:** outputs/failures/2026-10-10_drone_drift.png; outputs/eval_drift_top.json
+**Fix or mitigation:** re-anchor **every sampled frame** (`perception/drift.py`: line image → `cv2.phaseCorrelate` → `cv2.findTransformECC` affine, ORB + `estimateAffinePartial2D` fallback), ~125 ms per frame. Caveat: the line-alignment error is measured on the same painted lines the alignment uses, so it shows consistency with the lines, not independent ground truth.
+**Measured impact:** median pitch-line alignment error over 36 sampled frames: **0.198 m** uncorrected → 0.089 m anchored per clip (p90 0.268 m) → **0.040 m** anchored every frame (p90 0.047 m, = the calibration frame's own 0.041 m); max shift 13.8 px; 142 ms per frame.
+
 ### [2026-10-10] Top and side TeamTrack clips with the same time in their names are not simultaneous
 **Stage:** homography (cross-view check) / data
 **Severity:** wrong assumption (no output affected yet)
