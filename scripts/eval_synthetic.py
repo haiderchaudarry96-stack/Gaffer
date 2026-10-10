@@ -1,8 +1,13 @@
 """Evaluate the tactics engine against synthetic ground truth.
 
 Usage:
-    py scripts\\eval_synthetic.py            # match_001 + 10 random-schedule matches
+    py scripts\\eval_synthetic.py --heldout  # OFFICIAL: held-out seeds 100-109 (never tuned on)
+    py scripts\\eval_synthetic.py --heldout --no-equivalence   # ablation: no formation families
+    py scripts\\eval_synthetic.py            # match_001 + seeds 43-52 (tuning-time eval set)
     py scripts\\eval_synthetic.py --dev      # tuning seeds only (never report these)
+
+The held-out numbers are the official synthetic results (Phase 2 honesty check, 10 Oct): the
+eval seeds 43-52 were seen while deciding the 3-5-2 = 5-3-2 equivalence.
 
 Reports:
 - formation accuracy per rolling window (strict: "uncertain" counts as wrong; confident-only;
@@ -44,7 +49,7 @@ NOISE_PRIORITY = ("set_piece", "counter_attack", "flicker")
 
 def _run_one(job: dict[str, Any]) -> dict[str, Any]:
     """Generate (or load) one match, run the engine, return a small summary."""
-    cfg = load_config()
+    cfg = _job_config(job)
     t0 = time.perf_counter()
     if job.get("path") and Path(job["path"]).exists() and job.get("gt_path"):
         match = load_match_state(job["path"])
@@ -71,6 +76,14 @@ def _run_one(job: dict[str, Any]) -> dict[str, Any]:
         "timeline_bytes": len(result.timeline.to_json().encode()),
         "timings_s": {"load_or_generate": t_gen, **result.timings_s},
     }
+
+
+def _job_config(job: dict[str, Any]) -> dict[str, Any]:
+    """The config for a job, with formation families switched off for the ablation."""
+    cfg = load_config()
+    if job.get("no_equivalence"):
+        cfg = {**cfg, "formations": {**cfg["formations"], "equivalent": []}}
+    return cfg
 
 
 def _in_any(t: float, spans: list[tuple[float, float]]) -> bool:
@@ -209,13 +222,20 @@ def main(argv: list[str] | None = None) -> int:
     ev = cfg["eval"]["synthetic"]
     parser = argparse.ArgumentParser(description="Evaluate the tactics engine on synthetic data")
     parser.add_argument("--dev", action="store_true", help="run on tuning seeds only")
+    parser.add_argument("--heldout", action="store_true",
+                        help="run on the held-out seeds (eval.synthetic.heldout_seeds): the "
+                             "official synthetic numbers")
+    parser.add_argument("--no-equivalence", action="store_true",
+                        help="ablation: treat 3-5-2 and 5-3-2 (etc.) as different formations")
     parser.add_argument("--extra", type=int, default=int(ev["extra_matches"]))
-    parser.add_argument("--out", default="outputs/eval_synthetic.json")
+    parser.add_argument("--out", default=None,
+                        help="default: outputs/eval_synthetic[_<mode>][_noeq].json")
     args = parser.parse_args(argv)
 
-    if args.dev:
-        jobs = [{"match_id": f"synthetic_dev_{s}", "seed": s, "scripted": False}
-                for s in ev["dev_seeds"]]
+    if args.dev or args.heldout:
+        key, prefix = ("heldout_seeds", "heldout") if args.heldout else ("dev_seeds", "dev")
+        jobs = [{"match_id": f"synthetic_{prefix}_{s}", "seed": s, "scripted": False}
+                for s in ev[key]]
     else:
         jobs = [{"match_id": "synthetic_001", "seed": int(cfg["seed"]), "scripted": True,
                  "path": str(repo_path("data/synthetic/match_001.json")),
@@ -223,18 +243,21 @@ def main(argv: list[str] | None = None) -> int:
         jobs += [{"match_id": f"synthetic_r{s}", "seed": s, "scripted": False}
                  for s in range(int(ev["first_seed"]), int(ev["first_seed"]) + args.extra)]
 
+    for job in jobs:
+        job["no_equivalence"] = args.no_equivalence
     t0 = time.perf_counter()
     with ProcessPoolExecutor(max_workers=int(ev["workers"])) as pool:
         runs = list(pool.map(_run_one, jobs))
     wall = time.perf_counter() - t0
 
-    tcfg = TacticsConfig.from_config(cfg)
+    tcfg = TacticsConfig.from_config(_job_config(jobs[0]))
     tol = float(ev["tolerance_s"])
-    report: dict[str, Any] = {"mode": "dev" if args.dev else "eval",
+    mode = "heldout" if args.heldout else "dev" if args.dev else "eval"
+    report: dict[str, Any] = {"mode": mode, "no_equivalence": args.no_equivalence,
                               "matches": [r["match_id"] for r in runs],
                               "tolerance_s": tol, "window_s": tcfg.window_s,
                               "min_persist_s": tcfg.min_persist_s}
-    if not args.dev:
+    if mode == "eval":
         first = [r for r in runs if r["match_id"] == "synthetic_001"]
         report["match_001"] = {"formation": score_formations(first, tcfg),
                                "changes": score_changes(first, tol, tcfg.window_s),
@@ -263,7 +286,9 @@ def main(argv: list[str] | None = None) -> int:
     print("Note: synthetic accuracy is an upper bound (generator and engine share one model of "
           "a formation); real accuracy comes from Phase 2 pipeline vs oracle.")
 
-    out = repo_path(args.out)
+    default_out = ("outputs/eval_synthetic" + ("" if mode == "eval" else f"_{mode}")
+                   + ("_noeq" if args.no_equivalence else "") + ".json")
+    out = repo_path(args.out or default_out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"-> {out}")

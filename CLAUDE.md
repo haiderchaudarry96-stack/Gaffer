@@ -217,13 +217,15 @@ py scripts\inspect_data.py              # writes docs\DATA_NOTES.md + sample fra
 
 # synthetic data + tactics eval
 py scripts\make_synthetic_match.py --out data\synthetic\match_001.json
-py scripts\eval_synthetic.py           # match_001 + 10 random matches; --dev = tuning seeds only
+py scripts\eval_synthetic.py --heldout # OFFICIAL: held-out seeds 100-109 (--no-equivalence = ablation)
+py scripts\eval_synthetic.py           # match_001 + seeds 43-52 (tuning-time set); --dev = tuning seeds
 py -m gaffer.tactics.timeline --match data\synthetic\match_001.json --out outputs\tactical_timeline.json
 py scripts\plot_formation_windows.py --team home --start 1450 --end 1900 --out outputs\failures\<name>.png
 
 # real video (TeamTrack)
 py scripts\teamtrack_to_matchstate.py --view top      # oracle MatchState from ground-truth boxes
-py scripts\calibrate.py --source data\teamtrack\soccer_top\videos\<clip>.mp4
+py scripts\calibrate.py --view top      # landmarks: data\calibration\top_points.json (--click to re-pick)
+py scripts\calibrate.py --view side     # compares homography / sectioned / cv2.fisheye / cylindrical
 py -m gaffer.perception.pipeline --source data\teamtrack\soccer_top\videos\<clip>.mp4 --out outputs\match_state.json
 py scripts\eval_real.py                  # detection P/R, team accuracy, formation: pipeline vs oracle
 
@@ -247,13 +249,19 @@ These go into the technical report, README and video. Re-measure at the end of e
 - OpenCV version: `5.0.0` (`opencv-contrib-python==5.0.0.93`)
 - YOLOX-S (COCO) via `cv2.dnn`, laptop CPU: ~115–145 ms per 640×640 inference; side view 11 persons on a native crop, 0 on the full frame; top view ~1/12 recall (Phase 0 smoke test)
 - Bedrock smoke test (Nova 2 Lite): plain call 2.1 s / 93 tokens; tool round trip 2 calls, ~2.1 s / 2,100 tokens
-- Formation accuracy on synthetic ground truth (11 matches, per 30 s window): **96.4 % when confident** (98.7 % at family level), coverage 77 %; full view 96.4 % / coverage 99.9 %, broadcast window 96.9 % / coverage 23 %; strict (uncertain = wrong) 74.5 %. match_001: 99.8 % when confident. Upper bound: generator and engine share one model of a formation.
-- Shape-change detection on synthetic (11 matches, 43 true changes, ±90 s): **39 hits / 4 misses (3 found late after low visibility) / 27 false positives (16 set pieces) / mean delay 41 s** (max 103 s), new formation right 39/39. match_001: 5/0/0, 39 s. Timeline max 7.9 KB, mean 5.7 KB. Tactics engine ~20–30 s per 90-min match on laptop CPU.
+- **Official synthetic numbers = held-out seeds 100–109** (10 matches never used before, engine unchanged since Phase 1; see FAILURE_LOG 2026-10-10 held-out entry):
+  - Formation accuracy per 30 s window: **97.0 % when confident** (97.5 % family), coverage 79.3 %; full view 96.8 % / coverage 99.9 %; broadcast window 98.6 % / coverage 29.3 %; strict (uncertain = wrong) 76.9 %. Upper bound: generator and engine share one model of a formation.
+  - Shape changes (36 true, ±90 s): **31 hits / 5 misses (4 found late after low visibility) / 52 false positives (36 are 4-3-3 ↔ 4-2-3-1 flips, 33 of them in 2 matches) / mean delay 51 s** (max 105 s), new formation right 30/31. Timeline max **15.3 KB** (breaks the 8 KB target on 2 matches), mean 7.2 KB.
+  - Without the 3-5-2 = 5-3-2 equivalence: same accuracy (97.0 %), same hits, **67** false positives, timeline max 16.4 KB → the equivalence (decided after seeing eval seeds) generalises.
+  - Tuning-time eval set (seeds 42–52, superseded, kept for history): 96.4 % when confident, 39/43 hits, 27 FPs, 41 s delay, timeline max 7.9 KB. Tactics engine ~20–30 s per 90-min match on laptop CPU.
+  - **One-shot detector baseline for Phase 3 = the held-out 52 false positives** (31/36 hits): the self-verifying agent must beat this.
+  - Timeline size: worst case **16.4 KB** (held-out, no equivalence; 15.3 KB with it). Limit relaxed on 10 Oct from 8 KB to **"compact, under 20 KB"**: in Phase 3 the agent reads the timeline through tools, never as one blob. Do not tune the engine for size.
 - TeamTrack detection precision / recall (top view, side view): `TBD`
 - TeamTrack team-classification accuracy: `TBD`
 - Formation agreement, OpenCV pipeline vs oracle (ground-truth boxes): `TBD`
 - Perception throughput — laptop CPU FPS, EC2 FPS: `TBD`
-- Homography mean reprojection error (m): `TBD`
+- Pitch size fitted from IFAB markings (31 top-view landmarks): **105.9 × 68.2 m** → within 2 %, so config keeps 105 × 68.
+- Calibration, held-out (leave-one-out) landmark error / line-alignment error: **top 0.11 m mean, 0.38 m max / 0.036 m median** (single homography, 31 landmarks); **side 0.53 m mean, 1.77 m max / 0.08 m median** (2 sectioned homographies, 29 landmarks; single homography 0.60 m, `cv2.fisheye` 0.86 m, cylindrical does not fit). Per-clip drift re-anchoring error: `TBD`.
 - Alerts: one-shot detector vs self-verifying agent — false alerts / missed changes: `TBD vs TBD`
 - Mean agent latency per alert, mean Bedrock tokens per alert, cost per match: `TBD`
 
@@ -261,10 +269,11 @@ These go into the technical report, README and video. Re-measure at the end of e
 
 ## Current status
 
-**Phase:** 1 — done (10 Oct), committed; awaiting the Phase 2 prompt
+**Phase:** 2 — in progress (Day 1). Calibration done for both views; **stopped for the user to check the calibration overlays** before building on them.
 **Bedrock model + region:** `global.amazon.nova-2-lite-v1:0` (fallback `apac.amazon.nova-micro-v1:0`), ap-southeast-2. Real calls + tool calling work.
 **Done:** Phase 0 + Phase 1: contract frozen at v1.0 (`schema.py`; nullable segment metrics, GT `noise_events`/`visibility`); synthetic 90-min generator (`gaffer/synthetic.py`, decoys, broadcast-window visibility, 2 fps, match file gitignored); tactics engine (template fit with Hungarian assignment, families `3-5-2`≈`5-3-2`, hysteresis detector, metrics, <8 KB timeline); 65 tests (47 new); eval numbers above; 5 failure cases logged with images.
-**Next:** Phase 2 (real video perception). Top-view detection (COCO YOLOX ~1/12 recall) and the stitched side panorama are the open problems — see `docs/DATA_NOTES.md` §9. Tactics engine must run on the pipeline/oracle output unchanged.
+**Phase 2 so far (10 Oct):** Step 0 held-out check recorded (official synthetic numbers above; `eval_synthetic.py --heldout`). `perception/pitch.py` (pitch model, top-hat line mask, landmark snapping, pitch-size fit, homography, leave-one-out + line-alignment error), `perception/undistort.py` (side-model comparison, bird's-eye rectification), `scripts/calibrate.py`, `data/calibration/*`, 8 new tests (73 total). Findings: the side panorama is near-rectilinear, not a fisheye; top and side clips are NOT simultaneous (no cross-view check possible); DATA_NOTES corrected. `supervision` 0.30.9 installed and locked. `*.clips.json` convention documented (DATA_CONTRACT, data/README.md).
+**Next:** once the user approves the overlays: oracle (`teamtrack_to_matchstate.py`) + min-players coverage report (stop if low), top-view detector comparison (classical vs tiled YOLOX), per-clip drift re-anchoring; then Day 2 (side detection, tracking with ID switches at 2 vs 5 fps, team colours, pipeline, eval_real). Tactics engine must run on pipeline/oracle output unchanged.
 **Blockers:** none
 
 <!-- Update the five lines above at the end of every session. Keep it short. -->

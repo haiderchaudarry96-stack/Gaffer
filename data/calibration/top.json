@@ -1,0 +1,646 @@
+{
+  "view": "top",
+  "method": "homography",
+  "source": "data/teamtrack/soccer_top/videos/D_20220220_1_1530_1560.mp4",
+  "frame_index": 0,
+  "image_size": [
+    3840,
+    2160
+  ],
+  "length_m": 105.0,
+  "width_m": 68.0,
+  "params": {
+    "H_image_to_pitch": [
+      [
+        -0.03575857908735305,
+        -0.00042382190501306005,
+        122.32941575950791
+      ],
+      [
+        1.6029442433073808e-05,
+        0.03616607250814709,
+        -4.362327663949432
+      ],
+      [
+        8.569080881683931e-06,
+        -3.93970667154946e-06,
+        1.0
+      ]
+    ]
+  },
+  "landmarks": {
+    "corner_R_near": {
+      "approx": [
+        474.0,
+        118.0
+      ],
+      "image": [
+        473.9339519894494,
+        118.03157215622515
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        105.0,
+        0.0
+      ],
+      "fit_residual_m": 0.097
+    },
+    "corner_R_far": {
+      "approx": [
+        475.0,
+        1995.0
+      ],
+      "image": [
+        474.09281872390375,
+        1993.933442199282
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        105.0,
+        68.0
+      ],
+      "fit_residual_m": 0.072
+    },
+    "corner_L_near": {
+      "approx": [
+        3412.0,
+        116.0
+      ],
+      "image": [
+        3412.084737714975,
+        116.93849206088808
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        0.0,
+        0.0
+      ],
+      "fit_residual_m": 0.272
+    },
+    "corner_L_far": {
+      "approx": [
+        3408.0,
+        2039.0
+      ],
+      "image": [
+        3396.522758513862,
+        2039.0195622152578
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        0.0,
+        68.0
+      ],
+      "fit_residual_m": 0.01
+    },
+    "half_near": {
+      "approx": [
+        1924.0,
+        119.0
+      ],
+      "image": [
+        1929.008654903499,
+        119.00971664057812
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        0.0
+      ],
+      "fit_residual_m": 0.05
+    },
+    "half_far": {
+      "approx": [
+        1916.0,
+        2015.0
+      ],
+      "image": [
+        1914.9894752814532,
+        2015.4106656378297
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        68.0
+      ],
+      "fit_residual_m": 0.056
+    },
+    "circle_near": {
+      "approx": [
+        1922.0,
+        820.0
+      ],
+      "image": [
+        1924.1026789882944,
+        820.0861784170477
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        24.85
+      ],
+      "fit_residual_m": 0.147
+    },
+    "circle_far": {
+      "approx": [
+        1920.0,
+        1321.0
+      ],
+      "image": [
+        1919.990103900697,
+        1324.0796241838714
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        43.15
+      ],
+      "fit_residual_m": 0.082
+    },
+    "centre_spot": {
+      "approx": [
+        1921.0,
+        1067.0
+      ],
+      "image": [
+        1922.0,
+        1067.6112964793188
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        34.0
+      ],
+      "fit_residual_m": 0.136
+    },
+    "pa_R_goal_near": {
+      "approx": [
+        474.0,
+        504.0
+      ],
+      "image": [
+        474.9200737944067,
+        503.95226898047497
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        105.0,
+        13.84
+      ],
+      "fit_residual_m": 0.085
+    },
+    "pa_R_goal_far": {
+      "approx": [
+        475.0,
+        1615.0
+      ],
+      "image": [
+        474.1847322355252,
+        1613.9106041903678
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        105.0,
+        54.16
+      ],
+      "fit_residual_m": 0.073
+    },
+    "pa_R_front_near": {
+      "approx": [
+        923.0,
+        504.0
+      ],
+      "image": [
+        924.0000009620343,
+        505.09119740469316
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        88.5,
+        13.84
+      ],
+      "fit_residual_m": 0.05
+    },
+    "pa_R_front_far": {
+      "approx": [
+        923.0,
+        1615.0
+      ],
+      "image": [
+        920.90793967566,
+        1618.2956903166846
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        88.5,
+        54.16
+      ],
+      "fit_residual_m": 0.1
+    },
+    "ga_R_goal_near": {
+      "approx": [
+        474.0,
+        809.0
+      ],
+      "image": [
+        474.9625255760682,
+        808.8266148108609
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        105.0,
+        24.84
+      ],
+      "fit_residual_m": 0.097
+    },
+    "ga_R_goal_far": {
+      "approx": [
+        475.0,
+        1312.0
+      ],
+      "image": [
+        474.8790768757997,
+        1311.816957184694
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        105.0,
+        43.16
+      ],
+      "fit_residual_m": 0.095
+    },
+    "ga_R_front_near": {
+      "approx": [
+        621.0,
+        809.0
+      ],
+      "image": [
+        621.9984981432572,
+        810.009828414235
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        99.5,
+        24.84
+      ],
+      "fit_residual_m": 0.058
+    },
+    "ga_R_front_far": {
+      "approx": [
+        621.0,
+        1312.0
+      ],
+      "image": [
+        620.9044516039603,
+        1311.896164096532
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        99.5,
+        43.16
+      ],
+      "fit_residual_m": 0.092
+    },
+    "pen_R": {
+      "approx": [
+        773.0,
+        1060.0
+      ],
+      "image": [
+        765.4586808299803,
+        1067.18784629078
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        94.0,
+        34.0
+      ],
+      "fit_residual_m": 0.328
+    },
+    "arc_R_near": {
+      "approx": [
+        923.0,
+        859.0
+      ],
+      "image": [
+        923.3831825781609,
+        860.3542416257234
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        88.5,
+        26.688
+      ],
+      "fit_residual_m": 0.06
+    },
+    "arc_R_far": {
+      "approx": [
+        923.0,
+        1261.0
+      ],
+      "image": [
+        922.8647554835214,
+        1268.3037589012436
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        88.5,
+        41.312
+      ],
+      "fit_residual_m": 0.095
+    },
+    "pa_L_goal_near": {
+      "approx": [
+        3410.0,
+        512.0
+      ],
+      "image": [
+        3415.612883781996,
+        511.96946601908587
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        0.0,
+        13.84
+      ],
+      "fit_residual_m": 0.026
+    },
+    "pa_L_goal_far": {
+      "approx": [
+        3408.0,
+        1649.0
+      ],
+      "image": [
+        3398.9595181385,
+        1649.9887452965402
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        0.0,
+        54.16
+      ],
+      "fit_residual_m": 0.088
+    },
+    "pa_L_front_near": {
+      "approx": [
+        2940.0,
+        512.0
+      ],
+      "image": [
+        2947.053783013044,
+        512.1477762962874
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        16.5,
+        13.84
+      ],
+      "fit_residual_m": 0.157
+    },
+    "pa_L_front_far": {
+      "approx": [
+        2938.0,
+        1649.0
+      ],
+      "image": [
+        2933.4559451730947,
+        1644.9200911759885
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        16.5,
+        54.16
+      ],
+      "fit_residual_m": 0.071
+    },
+    "ga_L_goal_near": {
+      "approx": [
+        3409.0,
+        824.0
+      ],
+      "image": [
+        3410.4166395960224,
+        825.1640382848124
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        0.0,
+        24.84
+      ],
+      "fit_residual_m": 0.056
+    },
+    "ga_L_goal_far": {
+      "approx": [
+        3408.0,
+        1339.0
+      ],
+      "image": [
+        3403.268243358905,
+        1339.887284171752
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        0.0,
+        43.16
+      ],
+      "fit_residual_m": 0.075
+    },
+    "ga_L_front_near": {
+      "approx": [
+        3254.0,
+        824.0
+      ],
+      "image": [
+        3256.4531615159494,
+        825.2409313690807
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        5.5,
+        24.84
+      ],
+      "fit_residual_m": 0.129
+    },
+    "ga_L_front_far": {
+      "approx": [
+        3252.0,
+        1339.0
+      ],
+      "image": [
+        3249.698901510363,
+        1337.9911923512734
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        5.5,
+        43.16
+      ],
+      "fit_residual_m": 0.084
+    },
+    "pen_L": {
+      "approx": [
+        3097.0,
+        1080.0
+      ],
+      "image": [
+        3094.5452409455584,
+        1080.5452409455586
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        11.0,
+        34.0
+      ],
+      "fit_residual_m": 0.031
+    },
+    "arc_L_near": {
+      "approx": [
+        2940.0,
+        873.0
+      ],
+      "image": [
+        2941.964612700256,
+        872.4258013394644
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        16.5,
+        26.688
+      ],
+      "fit_residual_m": 0.103
+    },
+    "arc_L_far": {
+      "approx": [
+        2939.0,
+        1287.0
+      ],
+      "image": [
+        2936.6611800568508,
+        1287.3989578118494
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        16.5,
+        41.312
+      ],
+      "fit_residual_m": 0.116
+    }
+  },
+  "errors": {
+    "landmarks_used": 31,
+    "landmarks_not_snapped": [],
+    "fit_rms_m": 0.115,
+    "held_out_mean_m": 0.111,
+    "held_out_median_m": 0.101,
+    "held_out_max_m": 0.381,
+    "held_out_worst": "corner_L_near",
+    "held_out_per_landmark_m": {
+      "corner_R_near": 0.123,
+      "corner_R_far": 0.103,
+      "corner_L_near": 0.381,
+      "corner_L_far": 0.015,
+      "half_near": 0.062,
+      "half_far": 0.069,
+      "circle_near": 0.154,
+      "circle_far": 0.086,
+      "centre_spot": 0.141,
+      "pa_R_goal_near": 0.104,
+      "pa_R_goal_far": 0.09,
+      "pa_R_front_near": 0.056,
+      "pa_R_front_far": 0.114,
+      "ga_R_goal_near": 0.109,
+      "ga_R_goal_far": 0.108,
+      "ga_R_front_near": 0.064,
+      "ga_R_front_far": 0.1,
+      "pen_R": 0.351,
+      "arc_R_near": 0.064,
+      "arc_R_far": 0.101,
+      "pa_L_goal_near": 0.032,
+      "pa_L_goal_far": 0.108,
+      "pa_L_front_near": 0.178,
+      "pa_L_front_far": 0.08,
+      "ga_L_goal_near": 0.063,
+      "ga_L_goal_far": 0.085,
+      "ga_L_front_near": 0.141,
+      "ga_L_front_far": 0.092,
+      "pen_L": 0.033,
+      "arc_L_near": 0.11,
+      "arc_L_far": 0.123
+    },
+    "line_alignment": {
+      "median_m": 0.036,
+      "mean_m": 0.042,
+      "p90_m": 0.104,
+      "samples": 1443,
+      "not_found_fraction": 0.0,
+      "per_line_median_m": {
+        "touch_near": 0.035,
+        "touch_far": 0.0,
+        "goal_L": 0.07,
+        "goal_R": 0.073,
+        "halfway": 0.036,
+        "centre_circle": 0.071,
+        "pa_L_near": 0.035,
+        "pa_L_far": 0.036,
+        "pa_L_front": 0.074,
+        "ga_L_near": 0.042,
+        "ga_L_far": 0.036,
+        "ga_L_front": 0.07,
+        "arc_L": 0.099,
+        "pa_R_near": 0.036,
+        "pa_R_far": 0.0,
+        "pa_R_front": 0.036,
+        "ga_R_near": 0.072,
+        "ga_R_far": 0.036,
+        "ga_R_front": 0.0,
+        "arc_R": 0.036
+      }
+    }
+  },
+  "meta": {
+    "created_utc": "2026-10-10T01:55:38Z",
+    "opencv_version": "5.0.0",
+    "pitch_size_fit": {
+      "fitted_length_m": 105.88,
+      "fitted_width_m": 68.17,
+      "fit_rms_px": 2.63,
+      "default_length_m": 105.0,
+      "default_width_m": 68.0,
+      "agrees_within_tolerance": true,
+      "tolerance": 0.02
+    },
+    "picked_by": "Claude, 2026-10-10: white-line projections on frame 0 + zoomed inspection; refined by scripts/calibrate.py (snap to local line fits). To be checked by the user on outputs/calibration/top_overlay.jpg.",
+    "orientation": "Drone image is rotated ~180 deg relative to the side camera: the drone's TOP touchline is the side camera's NEAR touchline (y = 0) and the drone's LEFT goal is the side camera's RIGHT goal (x = L). Evidence: GT keepers (TeamID 0 keeper is on the drone's left and the panorama's right), the assistant referee on the drone's top touchline near halfway (on the near touchline in the panorama), upside-down pitch text."
+  }
+}

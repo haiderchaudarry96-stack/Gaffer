@@ -25,6 +25,73 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-10] Top and side TeamTrack clips with the same time in their names are not simultaneous
+**Stage:** homography (cross-view check) / data
+**Severity:** wrong assumption (no output affected yet)
+
+**Input:** `D_20220220_1_1680_1710` (drone) vs `F_20220220_1_1680_1710` (side), GT boxes mapped to pitch metres with both Phase 2 calibrations.
+**What happened:** at nominal t = 1680 s the drone's 22 players are all in the right half while the side camera's are attacking the left goal; team centroids differ by ~35 m. A search over every time offset from −270 to +120 s, four orientation hypotheses (drone rotated 180°, not rotated, mirrored in x, mirrored in y) and three team mappings (same, swapped, ignored) never brings the two views closer than **14 m** mean matched-player distance; a genuine match should be ~2 m (the drone against itself 0.5 s later: 1.8 m).
+**Why (best guess):** the file names carry each camera's own clip time, not a shared match clock (or the files come from different parts of the recording). DATA_NOTES inferred the overlap from file names only.
+**Screenshot / output:** outputs/failures/2026-10-10_views_not_simultaneous.png
+**Fix or mitigation:** DATA_NOTES corrected; the cross-view consistency check is dropped (there is no simultaneous pair in our files). Both views are evaluated independently against their own GT. The drone's 180° orientation therefore rests on within-view evidence only (keeper sides, assistant referee on the near touchline, upside-down text); it is a convention inside the top view's MatchState and does not affect any metric.
+**Measured impact:** cross-view comparison not possible with the downloaded files.
+
+### [2026-10-10] Side panorama: stitching ghost at the edges, far-side geometry only good to ~1–2 m
+**Stage:** homography
+**Severity:** degraded
+
+**Input:** `F_20220220_1_1680_1710.mp4` frame 0, side calibration.
+**What happened:** (1) at the near-right corner the goal line appears **twice**, ~12 px apart, with green/magenta fringes: a stitching seam (the left edge is similarly smeared). (2) On the far side, lines are 1–2 px thin and meet at grazing angles, and one image row spans 0.5–1 m of depth: automatic snapping slid landmarks 8–115 px along the lines, so on the side view 18 of 29 landmarks keep their hand-picked positions (snaps capped at 6 px). Held-out error is worst on far landmarks (`half_far` 1.77 m, `pa_L_goal_far` ~1.0 m) vs 0.2–0.5 m near the camera. The near ends of both penalty arcs cannot be located at all (arc and box line merge) and are excluded.
+**Why (best guess):** a ~6500 px panorama of a 105 m pitch from a low camera: far-side depth resolution is inherently coarse, and stitching seams break line continuity.
+**Screenshot / output:** outputs/failures/2026-10-10_side_stitching_ghost.jpg; per-landmark errors in `data/calibration/side_model_comparison.json`
+**Fix or mitigation:** known limitation; per-frame `reprojection_error_m` and the far-side uncertainty will be reported with the side-view results. The top view (0.11 m) stays the primary geometry.
+**Measured impact:** side held-out landmark error mean 0.53 m, max 1.77 m (top view: mean 0.11 m, max 0.38 m).
+
+### [2026-10-10] The "fisheye" side view is not a fisheye: `cv2.fisheye` loses to plain homographies
+**Stage:** homography / undistortion
+**Severity:** wrong model (caught before use)
+
+**Input:** side reference frame, 29 landmarks, five candidate models compared by leave-one-out landmark error (`py scripts\calibrate.py --view side`).
+**What happened:**
+
+| model | held-out mean | median | max | line error median / p90 |
+|---|---|---|---|---|
+| **sectioned homographies, 2 sections (split at halfway)** | **0.53 m** | 0.43 m | 1.77 m | 0.08 / 1.23 m |
+| sectioned, 4 sections | 0.58 m | 0.49 m | 1.77 m | 0.10 / 1.23 m |
+| single homography | 0.60 m | 0.51 m | 2.31 m | 0.09 / 1.19 m |
+| `cv2.fisheye` (K, k1..k4, pose) | 0.86 m | 0.79 m | 2.26 m | 0.08 / 1.18 m |
+| cylindrical camera | does not fit (fit rms 21 m) | | | |
+
+`cv2.fisheye.calibrate` refused the single planar view; the least-squares fit on `cv2.fisheye.projectPoints` only works by becoming physically implausible (fy/fx = 0.32, camera 22.6 m high, 2.3 m from the touchline), i.e. by imitating a homography, and its "undistorted" image is nearly identical to the input. The cylindrical model predicts a near touchline curving up ~350 px at the edges; the real one is straight.
+**Why (best guess):** the panorama behaves like one very wide **rectilinear** image looking straight across the pitch: every line parallel to the touchlines is a horizontal image row (near touchline at 882–895 px over the full 6500 px), goal lines converge to the centre, the halfway line is vertical. That is pinhole geometry, which a homography represents exactly; the remaining errors come from stitching seams, which sections absorb.
+**Screenshot / output:** outputs/failures/2026-10-10_side_panorama_model_comparison.jpg (bird's-eye rectifications); all images in outputs/calibration/ (`side_original.jpg`, `side_overlay_<model>.jpg`, `side_birdseye_<model>.jpg`, `side_fisheye_undistorted.jpg`)
+**Fix or mitigation:** use sectioned homographies (chosen automatically by held-out error); `cv2.fisheye` stays in `undistort.py` as a measured baseline.
+**Measured impact:** held-out landmark error 0.86 m (fisheye) → 0.53 m (sectioned).
+
+### [2026-10-10] Held-out check: 4-3-3 ↔ 4-2-3-1 flip-flops double the false positives; timeline exceeds 8 KB
+**Stage:** formation / change detection (honesty check on Phase 1)
+**Severity:** wrong output (candidates only)
+
+**Input:** 10 fresh synthetic matches, seeds 100–109 (never used for tuning or eval before), run with the Phase 1 engine **unchanged**, once with and once without `formations.equivalent: [["3-5-2", "5-3-2"]]`. Run via a temporary config copy (`eval.synthetic.dev_seeds = 100..109`, `--dev`), outputs `outputs/eval_synthetic_heldout.json` and `outputs/eval_synthetic_heldout_noeq.json`.
+**What happened:**
+
+| held-out seeds 100–109 | with equivalence | without |
+|---|---|---|
+| formation accuracy when confident (exact) | 97.0 % | 97.0 % |
+| coverage (confident windows) | 79.3 % | 79.1 % |
+| strict accuracy (uncertain = wrong) | 76.9 % | 76.8 % |
+| shape changes: hits / true | 31 / 36 | 31 / 36 |
+| misses (found late after low visibility) | 5 (4) | 5 (4) |
+| **false positives** | **52** | 67 |
+| mean / max detection delay | 51.4 s / 105 s | 50.9 s / 114 s |
+| timeline max / mean | **15.3 KB** / 7.2 KB | 16.4 KB / 8.2 KB |
+
+The equivalence decision generalises (false positives 67 → 52, nothing lost), but the held-out set is clearly worse than the tuning-time eval set (27 false positives on 11 matches): **36 of the 52 are 4-3-3 ↔ 4-2-3-1 flip-flops**, 33 of them in two matches (seed 104: 18, seed 105: 15). In seed 104 the away team is a true 4-3-3 throughout and the detector emits 17 candidates in 35 minutes. The two long timelines break the Phase 1 "under ~8 KB" criterion on held-out data.
+**Why (best guess):** the same mechanism as 3-5-2 ↔ 5-3-2: a 4-3-3's wide forwards drop out of possession (generator `winger_drop_m: 5`), so out-of-possession spells read as 4-2-3-1, and spells longer than 20 s become candidates. Some seeds (personal offsets, possession lengths) sit right on the boundary. The eval seeds 43–52 happened to sit mostly on one side of it.
+**Screenshot / output:** outputs/failures/2026-10-10_heldout_433_4231_flip.png
+**Fix or mitigation:** deliberately **not** fixed now: tuning on the held-out set would contaminate it as well. Options for later (needs a new untouched seed range to measure): classify in- and out-of-possession shapes separately; or require the challenger to hold across both possession phases. Phase 3's agent verification is the intended filter for such candidates. These held-out numbers are the official synthetic numbers.
+**Measured impact:** false positives 52 on 10 held-out matches (vs 27 on the tuning-time eval set); 36 / 52 are this pair.
+
 ### [2026-10-10] Shape change made while the camera shows only part of the pitch is found minutes late
 **Stage:** change detection
 **Severity:** degraded

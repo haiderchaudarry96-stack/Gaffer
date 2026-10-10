@@ -1,0 +1,643 @@
+{
+  "view": "side",
+  "method": "sectioned",
+  "source": "data/teamtrack/soccer_side/videos/F_20220220_1_1680_1710.mp4",
+  "frame_index": 0,
+  "image_size": [
+    6500,
+    1000
+  ],
+  "length_m": 105.0,
+  "width_m": 68.0,
+  "params": {
+    "bounds_u": [
+      3540.0
+    ],
+    "H_image_to_pitch": [
+      [
+        [
+          -0.020929204994512646,
+          -0.14767397629975515,
+          133.14616845708096
+        ],
+        [
+          -0.000312896259921389,
+          0.04314521877330113,
+          -37.78245077708899
+        ],
+        [
+          3.1856660515271284e-05,
+          -0.0027905920878851308,
+          1.0
+        ]
+      ],
+      [
+        [
+          -0.0216572521330395,
+          -0.16859425259162944,
+          144.12948013817874
+        ],
+        [
+          0.0005049954346313008,
+          0.049318408870844314,
+          -46.20704041704003
+        ],
+        [
+          7.93522194343038e-05,
+          -0.0032033142209272566,
+          1.0
+        ]
+      ]
+    ]
+  },
+  "landmarks": {
+    "corner_L_near": {
+      "approx": [
+        146.0,
+        887.0
+      ],
+      "image": [
+        144.1177501808442,
+        883.9054827019421
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        0.0,
+        0.0
+      ]
+    },
+    "corner_R_near": {
+      "approx": [
+        6216.0,
+        882.0
+      ],
+      "image": [
+        6216.0,
+        882.0
+      ],
+      "snapped": false,
+      "note": "snap moved 62 px (> 6); kept the picked position",
+      "pitch": [
+        105.0,
+        0.0
+      ]
+    },
+    "corner_L_far": {
+      "approx": [
+        2943.0,
+        485.0
+      ],
+      "image": [
+        2943.0,
+        485.0
+      ],
+      "snapped": false,
+      "note": "snap moved 11 px (> 6); kept the picked position",
+      "pitch": [
+        0.0,
+        68.0
+      ]
+    },
+    "corner_R_far": {
+      "approx": [
+        4117.0,
+        503.0
+      ],
+      "image": [
+        4117.0,
+        503.0
+      ],
+      "snapped": false,
+      "note": "snap moved 9 px (> 6); kept the picked position",
+      "pitch": [
+        105.0,
+        68.0
+      ]
+    },
+    "half_near": {
+      "approx": [
+        3531.0,
+        895.0
+      ],
+      "image": [
+        3530.9578625935765,
+        895.0009817931054
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        0.0
+      ]
+    },
+    "half_far": {
+      "approx": [
+        3544.0,
+        495.0
+      ],
+      "image": [
+        3542.1111985995462,
+        491.73956408155965
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        68.0
+      ]
+    },
+    "circle_near": {
+      "approx": [
+        3539.0,
+        591.0
+      ],
+      "image": [
+        3539.148037978659,
+        590.6592606505037
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        24.85
+      ]
+    },
+    "circle_far": {
+      "approx": [
+        3541.0,
+        532.0
+      ],
+      "image": [
+        3540.193051419388,
+        531.9371787775443
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        43.15
+      ]
+    },
+    "centre_spot": {
+      "approx": [
+        3542.0,
+        557.0
+      ],
+      "image": [
+        3540.0,
+        557.4847112694415
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        52.5,
+        34.0
+      ]
+    },
+    "pa_L_goal_near": {
+      "approx": [
+        1778.0,
+        649.0
+      ],
+      "image": [
+        1778.0,
+        649.0
+      ],
+      "snapped": false,
+      "note": "snap moved 12 px (> 6); kept the picked position",
+      "pitch": [
+        0.0,
+        13.84
+      ]
+    },
+    "pa_L_front_near": {
+      "approx": [
+        2352.0,
+        651.0
+      ],
+      "image": [
+        2351.1672766871534,
+        650.7770530431857
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        16.5,
+        13.84
+      ]
+    },
+    "pa_L_goal_far": {
+      "approx": [
+        2810.0,
+        504.0
+      ],
+      "image": [
+        2810.0,
+        504.0
+      ],
+      "snapped": false,
+      "note": "line fit failed; kept the picked position",
+      "pitch": [
+        0.0,
+        54.16
+      ]
+    },
+    "pa_L_front_far": {
+      "approx": [
+        3041.0,
+        505.0
+      ],
+      "image": [
+        3037.1627224481585,
+        504.93928088992465
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        16.5,
+        54.16
+      ]
+    },
+    "ga_L_goal_near": {
+      "approx": [
+        2273.0,
+        579.0
+      ],
+      "image": [
+        2273.0,
+        579.0
+      ],
+      "snapped": false,
+      "note": "snap moved 23 px (> 6); kept the picked position",
+      "pitch": [
+        0.0,
+        24.84
+      ]
+    },
+    "ga_L_front_near": {
+      "approx": [
+        2403.0,
+        579.0
+      ],
+      "image": [
+        2406.6268565482883,
+        579.1909285536586
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        5.5,
+        24.84
+      ]
+    },
+    "ga_L_goal_far": {
+      "approx": [
+        2671.0,
+        523.0
+      ],
+      "image": [
+        2671.0,
+        523.0
+      ],
+      "snapped": false,
+      "note": "line fit failed; kept the picked position",
+      "pitch": [
+        0.0,
+        43.16
+      ]
+    },
+    "ga_L_front_far": {
+      "approx": [
+        2774.0,
+        523.0
+      ],
+      "image": [
+        2774.0,
+        523.0
+      ],
+      "snapped": false,
+      "note": "line fit failed; kept the picked position",
+      "pitch": [
+        5.5,
+        43.16
+      ]
+    },
+    "pen_L": {
+      "approx": [
+        2731.0,
+        547.0
+      ],
+      "image": [
+        2729.0,
+        547.0
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        11.0,
+        34.0
+      ]
+    },
+    "arc_L_near": {
+      "approx": [
+        2723.0,
+        575.0
+      ],
+      "image": [
+        2723.0,
+        575.0
+      ],
+      "snapped": false,
+      "note": "snap moved 28 px (> 6); kept the picked position"
+    },
+    "arc_L_far": {
+      "approx": [
+        2935.0,
+        529.0
+      ],
+      "image": [
+        2935.0,
+        529.0
+      ],
+      "snapped": false,
+      "note": "snap moved 16 px (> 6); kept the picked position",
+      "pitch": [
+        16.5,
+        41.312
+      ]
+    },
+    "pa_R_goal_near": {
+      "approx": [
+        5070.0,
+        670.0
+      ],
+      "image": [
+        5070.0,
+        670.0
+      ],
+      "snapped": false,
+      "note": "snap moved 6 px (> 6); kept the picked position",
+      "pitch": [
+        105.0,
+        13.84
+      ]
+    },
+    "pa_R_front_near": {
+      "approx": [
+        4618.0,
+        670.0
+      ],
+      "image": [
+        4620.91062318364,
+        671.0
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        88.5,
+        13.84
+      ]
+    },
+    "pa_R_goal_far": {
+      "approx": [
+        4226.0,
+        522.0
+      ],
+      "image": [
+        4226.0,
+        522.0
+      ],
+      "snapped": false,
+      "note": "line fit failed; kept the picked position",
+      "pitch": [
+        105.0,
+        54.16
+      ]
+    },
+    "pa_R_front_far": {
+      "approx": [
+        4022.0,
+        520.0
+      ],
+      "image": [
+        4022.0,
+        520.0
+      ],
+      "snapped": false,
+      "note": "line fit failed; kept the picked position",
+      "pitch": [
+        88.5,
+        54.16
+      ]
+    },
+    "ga_R_goal_near": {
+      "approx": [
+        4690.0,
+        604.0
+      ],
+      "image": [
+        4690.0,
+        604.0
+      ],
+      "snapped": false,
+      "note": "snap moved 29 px (> 6); kept the picked position",
+      "pitch": [
+        105.0,
+        24.84
+      ]
+    },
+    "ga_R_front_near": {
+      "approx": [
+        4575.0,
+        602.0
+      ],
+      "image": [
+        4575.0,
+        602.0
+      ],
+      "snapped": false,
+      "note": "line fit failed; kept the picked position",
+      "pitch": [
+        99.5,
+        24.84
+      ]
+    },
+    "ga_R_goal_far": {
+      "approx": [
+        4348.0,
+        543.0
+      ],
+      "image": [
+        4344.837076045318,
+        544.6314986471899
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        105.0,
+        43.16
+      ]
+    },
+    "ga_R_front_far": {
+      "approx": [
+        4266.0,
+        542.0
+      ],
+      "image": [
+        4266.0,
+        542.0
+      ],
+      "snapped": false,
+      "note": "line fit failed; kept the picked position",
+      "pitch": [
+        99.5,
+        43.16
+      ]
+    },
+    "pen_R": {
+      "approx": [
+        4297.0,
+        566.0
+      ],
+      "image": [
+        4301.5,
+        567.0
+      ],
+      "snapped": true,
+      "note": "",
+      "pitch": [
+        94.0,
+        34.0
+      ]
+    },
+    "arc_R_near": {
+      "approx": [
+        4307.0,
+        592.0
+      ],
+      "image": [
+        4307.0,
+        592.0
+      ],
+      "snapped": false,
+      "note": "snap moved 36 px (> 6); kept the picked position"
+    },
+    "arc_R_far": {
+      "approx": [
+        4118.0,
+        545.0
+      ],
+      "image": [
+        4118.0,
+        545.0
+      ],
+      "snapped": false,
+      "note": "snap moved 45 px (> 6); kept the picked position",
+      "pitch": [
+        88.5,
+        41.312
+      ]
+    }
+  },
+  "errors": {
+    "chosen": "sectioned_2",
+    "how": "cv2.findHomography per section, bounds [3540.0]",
+    "held_out_mean_m": 0.531,
+    "held_out_median_m": 0.432,
+    "held_out_max_m": 1.766,
+    "held_out_failed": 0,
+    "fit_rms_m": 0.436,
+    "line_alignment": {
+      "median_m": 0.084,
+      "mean_m": 0.349,
+      "p90_m": 1.226,
+      "samples": 1443,
+      "not_found_fraction": 0.078,
+      "per_line_median_m": {
+        "touch_near": 0.032,
+        "touch_far": 1.44,
+        "goal_L": 0.048,
+        "goal_R": 0.123,
+        "halfway": 0.117,
+        "centre_circle": 0.093,
+        "pa_L_near": 0.019,
+        "pa_L_far": 0.0,
+        "pa_L_front": 0.141,
+        "ga_L_near": 0.016,
+        "ga_L_far": 0.101,
+        "ga_L_front": 0.215,
+        "arc_L": 0.047,
+        "pa_R_near": 0.035,
+        "pa_R_far": 0.312,
+        "pa_R_front": 0.077,
+        "ga_R_near": 0.079,
+        "ga_R_far": 0.113,
+        "ga_R_front": 0.622,
+        "arc_R": 0.052
+      }
+    },
+    "held_out_per_landmark_m": {
+      "corner_L_near": 0.498,
+      "corner_R_near": 0.86,
+      "corner_L_far": 0.869,
+      "corner_R_far": 0.381,
+      "half_near": 0.544,
+      "half_far": 1.766,
+      "circle_near": 0.254,
+      "circle_far": 0.217,
+      "centre_spot": 0.613,
+      "pa_L_goal_near": 0.24,
+      "pa_L_front_near": 0.302,
+      "pa_L_goal_far": 1.052,
+      "pa_L_front_far": 0.642,
+      "ga_L_goal_near": 0.154,
+      "ga_L_front_near": 0.536,
+      "ga_L_goal_far": 0.327,
+      "ga_L_front_far": 0.376,
+      "pen_L": 0.317,
+      "arc_L_far": 0.314,
+      "pa_R_goal_near": 1.002,
+      "pa_R_front_near": 0.316,
+      "pa_R_goal_far": 0.366,
+      "pa_R_front_far": 0.785,
+      "ga_R_goal_near": 0.432,
+      "ga_R_front_near": 0.505,
+      "ga_R_goal_far": 0.634,
+      "ga_R_front_far": 0.485,
+      "pen_R": 0.185,
+      "arc_R_far": 0.419
+    },
+    "landmarks_used": 29,
+    "landmarks_not_snapped": [
+      "corner_R_near",
+      "corner_L_far",
+      "corner_R_far",
+      "pa_L_goal_near",
+      "pa_L_goal_far",
+      "ga_L_goal_near",
+      "ga_L_goal_far",
+      "ga_L_front_far",
+      "arc_L_near",
+      "arc_L_far",
+      "pa_R_goal_near",
+      "pa_R_goal_far",
+      "pa_R_front_far",
+      "ga_R_goal_near",
+      "ga_R_front_near",
+      "ga_R_front_far",
+      "arc_R_near",
+      "arc_R_far"
+    ]
+  },
+  "meta": {
+    "created_utc": "2026-10-10T01:56:15Z",
+    "opencv_version": "5.0.0",
+    "picked_by": "Claude, 2026-10-10: near-side landmarks measured on the top-hat line mask and zoomed crops; far-side landmarks (compressed to a few pixels, partly hidden by goal frames) placed from a first-pass homography on the near ones and then refined by scripts/calibrate.py (snap to local line fits). To be checked by the user on outputs/calibration/side_overlay_*.jpg.",
+    "orientation": "Side camera stands on the near touchline at roughly the halfway line, looking across; the near touchline is y = 0 at the bottom of the panorama, the left goal (x = 0) on the image left.",
+    "excluded_landmarks": [
+      "arc_L_near",
+      "arc_R_near"
+    ]
+  }
+}

@@ -48,9 +48,52 @@ eda:
     other: [200, 200, 200]
 
 pitch:
-  # Default full-size pitch; TeamTrack's real dimensions to be set in Phase 2 calibration.
+  # TeamTrack pitch: fitted 105.9 x 68.2 m from 31 drone landmarks (IFAB markings as scale,
+  # scripts/calibrate.py, 10 Oct) -> within 2 % of 105 x 68, so the standard size is kept.
   length_m: 105.0
   width_m: 68.0
+  markings:                       # IFAB fixed sizes: they anchor the metric scale when fitting
+    penalty_area_depth_m: 16.5
+    penalty_area_width_m: 40.32
+    goal_area_depth_m: 5.5
+    goal_area_width_m: 18.32
+    penalty_spot_m: 11.0
+    centre_circle_radius_m: 9.15
+
+# --------------------------------------------------------------------------- Phase 2: perception
+calibration:
+  dir: data/calibration           # <view>_points.json (picked landmarks) -> <view>.json (fit)
+  overlay_dir: outputs/calibration
+  fit_pitch_size: true            # fit L x W from the fixed-size markings ...
+  keep_default_size_within: 0.02  # ... but keep pitch.length_m/width_m if the fit agrees within 2 %
+  line_error:
+    sample_step_m: 0.5
+    max_search_m: 2.0             # no painted line within this -> "not found", not an error
+  views:
+    top:
+      line_mask: {kernel_px: 25, threshold: 30, max_saturation: 90, min_component_px: 150}
+      snap: {radius_px: 60, band_px: 12, inlier_px: 3.0, min_pixels: 25, spot_radius_px: 14,
+             max_move_px: 25}
+    side:
+      line_mask: {kernel_px: 15, threshold: 18, max_saturation: 110, min_component_px: 40,
+                  close_px: 3}
+      snap: {radius_px: 45, band_px: 8, inlier_px: 2.0, min_pixels: 12, spot_radius_px: 8,
+             max_move_px: 6}  # far lines meet at grazing angles: snaps only polish picks
+      overlay_rows: [420, 960]    # rows of the panorama saved in overlay images (the pitch band)
+      birdseye_px_per_m: 10
+      models:                     # candidates compared by held-out landmark error (undistort.py)
+        candidates: [homography, sectioned_2, sectioned_4, fisheye, cylindrical]
+        sections:                 # interior image-column boundaries per sectioned variant
+          sectioned_2: [3540]     # at the halfway line
+          sectioned_4: [2600, 3540, 4400]
+        section_margin_px: 150    # landmarks this close to a boundary are used by both sections
+        init:                     # starting point for the parametric models (from DATA_NOTES rows)
+          camera_m: [52.5, -15.0, 3.6]   # camera centre (pitch metres; z up)
+          horizon_v_px: 400
+          cylinder_f_px: 2070     # ~6500 px over ~180 degrees
+          cylinder_cu_px: 3540    # halfway line column
+          fisheye_f_px: 2000
+          fisheye_max_rms_px: 50  # cv2.fisheye.calibrate results worse than this are refitted
 
 # --------------------------------------------------------------------------- Phase 1: tactics
 formations:
@@ -172,5 +215,7 @@ eval:
     extra_matches: 10             # random-schedule matches on top of match_001 ...
     first_seed: 43                # ... with seeds 43, 44, ...
     dev_seeds: [1000, 1001, 1002] # tuning only; never reported as results
+    heldout_seeds: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]  # official numbers (10 Oct);
+                                  # never tune on these
     tolerance_s: 90.0             # a detected change within this of a true one is a hit
     workers: 4

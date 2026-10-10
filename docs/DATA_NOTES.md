@@ -26,7 +26,7 @@ Source: TeamTrack (Scott et al., 2024), Kaggle `atomscott/teamtrack`, MIT licenc
 
 - **soccer_side**: 4 clips, 4 with both video and CSV, covering match time 1680–1800 s (2.0 min) of half 1.
 - File name = `<camera>_<date>_<half>_<start_s>_<end_s>`; `D` = drone (top), `F` = fixed side camera. Video and CSV share the stem → pairing is by name.
-- **Top and side clips are the same match** (2022-02-20, half 1). Overlapping match time: 1680–1800 s — the same moments are seen from both cameras (useful for cross-checking; the two have different fps, so syncing needs care).
+- File names suggest the top and side clips are the same match (2022-02-20, half 1) with overlapping time 1680–1800 s. **Phase 2 measured otherwise:** after calibrating both views, no time offset in -270..+120 s, orientation or team-label mapping makes the two views' players coincide (best 14 m mean distance vs ~2 m for a true match), so the views are **not simultaneous** in these files (see FAILURE_LOG 2026-10-10). Treat them as independent footage.
 
 ## 2. Video metadata (OpenCV `VideoCapture`)
 
@@ -75,7 +75,7 @@ long = wide.stack(level=[0, 1], future_stack=True).dropna(how='all').reset_index
 - Goalkeepers are inside the 11 per team. Most extreme mean x per team in the overlapping clip `20220220_1_1680_1710`:
   - soccer_top: TeamID 0: PlayerID 0 at mean x=579 px (team mean 1147 px); TeamID 1: PlayerID 10 at mean x=2446 px (team mean 1312 px)
   - soccer_side: TeamID 0: PlayerID 10 at mean x=4073 px (team mean 3368 px); TeamID 1: PlayerID 6 at mean x=2609 px (team mean 3186 px)
-- In the top view these are the goalkeepers (they stand in their own penalty areas). In the side view TeamID 0's keeper has a **different PlayerID** and sits at the **opposite image side** (TeamID 1's keeper is out of the annotated range). → **TeamIDs agree between cameras, PlayerIDs do not**, and the drone image is rotated ~180° relative to the side camera (the pitch text reads upside down). Never join the two views on PlayerID.
+- In the top view these are the goalkeepers (they stand in their own penalty areas). In the side view TeamID 0's keeper has a **different PlayerID** and sits at the **opposite image side** (TeamID 1's keeper is out of the annotated range). → **TeamIDs agree between cameras, PlayerIDs do not**, and the drone image is rotated ~180° relative to the side camera (the pitch text reads upside down). Never join the two views on PlayerID. (Phase 2: the views turned out not to be simultaneous, so 'TeamIDs agree' rests only on shirt colours and keeper sides; it could not be checked.)
 - PlayerID continuity across consecutive clips (foot point, last frame → next first frame): soccer_top: same id moves median 4 px vs nearest other player 147 px; soccer_side: same id moves median 2 px vs nearest other player 48 px → **IDs are consistent across clips**, so clips can be concatenated.
 
 ## 5. Box sizes (players, native pixels)
@@ -103,6 +103,7 @@ long = wide.stack(level=[0, 1], future_stack=True).dropna(how='all').reset_index
   | 3250–3900 | 0.55 | 37911 |
   | 3900–4550 | 0.59 | 8302 |
   | 4550–5200 | 0.81 | 313 |
+- **Phase 2 finding:** the panorama behaves like one very wide **rectilinear** (pinhole) image looking straight across the pitch, not a fisheye: every line parallel to the touchlines is a horizontal image row (near touchline 882–895 px across the whole width), the goal lines converge towards the centre, and the halfway line is vertical. Held-out landmark error: sectioned homographies 0.53 m, one homography 0.60 m, `cv2.fisheye` 0.86 m (physically implausible fit), cylindrical model does not fit. Details: `data/calibration/side_model_comparison.json`, FAILURE_LOG.
 - Implication for Phase 2: a single `cv2.fisheye` model may not fit a stitched panorama. Options: fit `cv2.fisheye` / a cylindrical model from pitch lines and check lines become straight, or use **piecewise homographies** (one per horizontal section). Top view stays the primary geometry.
 
 ![side distortion](../outputs/eda/distortion_side.jpg)
@@ -111,7 +112,7 @@ long = wide.stack(level=[0, 1], future_stack=True).dropna(how='all').reset_index
 
 - The **whole pitch is visible** in the drone view, with all lines, both penalty areas and the centre circle. White-line mask covers 4.1% of the frame.
 - Outer line rectangle (`cv2.minAreaRect` on the white-line mask): **3100 × 1942 px**, rotated -89.9°, aspect ratio **1.597** (105×68 m = 1.544; 100×64 = 1.563; 105×70 = 1.500).
-- Assuming 105 m length: ~29.5 px/m, so a 30 px player blob ≈ 1.0 m. Pitch size is consistent with a full-size pitch; exact dimensions are a Phase 2 calibration item (config `pitch`).
+- Assuming 105 m length: ~29.5 px/m, so a 30 px player blob ≈ 1.0 m. **Correction (Phase 2 calibration):** the `minAreaRect` size above is too large (it picks up structures beyond the lines). The painted outer lines measure ~2930 x 1880-1920 px (mild perspective: the right end is ~2 % larger), and fitting the pitch size to 31 landmarks with the fixed IFAB markings as scale (penalty area 40.32 x 16.5 m) gives **105.9 x 68.2 m**, i.e. a standard 105 x 68 m pitch (config `pitch`, `data/calibration/top.json`).
 - The drone looks almost straight down → a single homography per clip should fit well.
 
 ![top lines](../outputs/eda/pitch_lines_top.jpg)
@@ -141,7 +142,7 @@ long = wide.stack(level=[0, 1], future_stack=True).dropna(how='all').reset_index
 - **Full-frame inference is useless on both views** (players shrink to ~4–5 px at 640 input) → tiled native-resolution inference is mandatory, which costs ~10–15 tiles per side-view frame (~0.25 s each on this laptop CPU) → sample at 2–5 fps.
 - **GT is almost gap-free** (644 NaN cells, all in two top clips, mostly one player for 117 frames): players keep boxes even when heavily overlapped. Detection recall vs GT will be capped below 100 %; also report recall on non-overlapped boxes. The loader must still handle NaN rows.
 - **No referee / no goalkeeper label** in GT. A detector + colour clustering will find referees (and the assistant referee on the side view) that GT does not contain; team-classification eval must ignore unmatched detections, and goalkeepers must be inferred from position (they are among the 11 per team).
-- **Top and side cameras overlap in time** (1680–1800 s of the same match) — a free cross-view consistency check for Phase 2 — but **PlayerIDs differ between the two views** and the drone image is rotated ~180°; match on TeamID + position only.
+- File names suggest the top and side cameras overlap in time (1680–1800 s), but Phase 2 found the views are **not simultaneous** (no offset/orientation makes them agree), so there is no cross-view check. PlayerIDs differ between the views and the drone image is rotated ~180°.
 - Shirt colours (from the GT overlays): TeamID 0 = white, TeamID 1 = dark blue; the keepers wear red and yellow. Two clearly separated outfield colours — good for `cv2.kmeans` team clustering; keepers will need special handling.
 - **The drone drifts** (median 4.7 px between first and last frame of a 30 s clip) → recompute or track the homography per clip.
 - **PlayerIDs sort as strings and attributes are alphabetical** in the CSV — positional indexing would silently scramble players.

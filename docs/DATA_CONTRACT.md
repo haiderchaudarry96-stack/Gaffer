@@ -95,6 +95,19 @@ Consumers never know which producer made it:
 - `track_id` stable within a match where possible; a re-found player with a new id is acceptable.
 - `team: "unknown"` players are ignored by consumers, never guessed.
 - `ball` may be `null` or `visible: false`; `possession` may be `null`.
+- **`source_video.uri` may name a clip list** (convention added 2026-10-10, no schema change). A match made of consecutive video files (TeamTrack ships ~30 s clips) is described by a small `*.clips.json` instead of one re-encoded video. `native_fps`, `width` and `height` are those of every clip (all clips must share them). Frame times `t` stay seconds from kickoff. The video reader accepts either a plain video or a clip list:
+
+  ```jsonc
+  // data/teamtrack/soccer_top/D_20220220_1_1530_1800.clips.json
+  {
+    "clips": [
+      { "path": "videos/D_20220220_1_1530_1560.mp4", "start_s": 1530.0 },   // path relative to this file
+      { "path": "videos/D_20220220_1_1560_1590.mp4", "start_s": 1560.0 }
+    ]
+  }
+  ```
+
+  Match time `t` maps to the clip with the largest `start_s <= t`, frame `round((t - start_s) * native_fps)`.
 - Validate with pydantic on load. Invalid files are rejected loudly.
 
 ### Ground truth

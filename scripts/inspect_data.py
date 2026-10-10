@@ -470,9 +470,12 @@ def write_notes(path: Path, ctx: dict) -> None:
           f"{NAME_RE.match(vc[0].stem)['half']}.")
     a("- File name = `<camera>_<date>_<half>_<start_s>_<end_s>`; `D` = drone (top), "
       "`F` = fixed side camera. Video and CSV share the stem → pairing is by name.")
-    a(f"- **Top and side clips are the same match** (2022-02-20, half 1). Overlapping match "
-      f"time: {ctx['overlap']} s — the same moments are seen from both cameras "
-      "(useful for cross-checking; the two have different fps, so syncing needs care).")
+    a(f"- File names suggest the top and side clips are the same match (2022-02-20, half 1) "
+      f"with overlapping time {ctx['overlap']} s. **Phase 2 measured otherwise:** after "
+      "calibrating both views, no time offset in -270..+120 s, orientation or team-label "
+      "mapping makes the two views' players coincide (best 14 m mean distance vs ~2 m for a "
+      "true match), so the views are **not simultaneous** in these files (see FAILURE_LOG "
+      "2026-10-10). Treat them as independent footage.")
     a("")
     a("## 2. Video metadata (OpenCV `VideoCapture`)")
     a("")
@@ -560,7 +563,8 @@ def write_notes(path: Path, ctx: dict) -> None:
       "**opposite image side** (TeamID 1's keeper is out of the annotated range). → **TeamIDs "
       "agree between cameras, PlayerIDs do not**, and the drone image is rotated ~180° "
       "relative to the side camera (the pitch text reads upside down). Never join the two "
-      "views on PlayerID.")
+      "views on PlayerID. (Phase 2: the views turned out not to be simultaneous, so 'TeamIDs "
+      "agree' rests only on shirt colours and keeper sides; it could not be checked.)")
     a("- PlayerID continuity across consecutive clips (foot point, last frame → next first "
       "frame): " + "; ".join(f"{v}: same id moves median {s:.0f} px vs nearest other player "
                              f"{o:.0f} px" for v, (s, o) in ctx["cont"].items())
@@ -626,8 +630,12 @@ def write_notes(path: Path, ctx: dict) -> None:
       f"**{pt['length_px']:.0f} × {pt['width_px']:.0f} px**, rotated {pt['angle']:.1f}°, "
       f"aspect ratio **{ratio:.3f}** (105×68 m = 1.544; 100×64 = 1.563; 105×70 = 1.500).")
     a(f"- Assuming 105 m length: ~{pt['length_px'] / 105:.1f} px/m, so a 30 px player blob ≈ "
-      f"{30 / (pt['length_px'] / 105):.1f} m. Pitch size is consistent with a full-size "
-      "pitch; exact dimensions are a Phase 2 calibration item (config `pitch`).")
+      f"{30 / (pt['length_px'] / 105):.1f} m. **Correction (Phase 2 calibration):** the "
+      "`minAreaRect` size above is too large (it picks up structures beyond the lines). The "
+      "painted outer lines measure ~2930 x 1880-1920 px (mild perspective: the right end is "
+      "~2 % larger), and fitting the pitch size to 31 landmarks with the fixed IFAB markings "
+      "as scale (penalty area 40.32 x 16.5 m) gives **105.9 x 68.2 m**, i.e. a standard "
+      "105 x 68 m pitch (config `pitch`, `data/calibration/top.json`).")
     a("- The drone looks almost straight down → a single homography per clip should fit well.")
     a("")
     a("![top lines](../outputs/eda/pitch_lines_top.jpg)")
@@ -773,9 +781,10 @@ def main() -> None:
         "referees (and the assistant referee on the side view) that GT does not contain; "
         "team-classification eval must ignore unmatched detections, and goalkeepers must be "
         "inferred from position (they are among the 11 per team).",
-        f"**Top and side cameras overlap in time** ({overlap} s of the same match) — a free "
-        "cross-view consistency check for Phase 2 — but **PlayerIDs differ between the two "
-        "views** and the drone image is rotated ~180°; match on TeamID + position only.",
+        f"File names suggest the top and side cameras overlap in time ({overlap} s), but "
+        "Phase 2 found the views are **not simultaneous** (no offset/orientation makes them "
+        "agree), so there is no cross-view check. PlayerIDs differ between the views and the "
+        "drone image is rotated ~180°.",
         "Shirt colours (from the GT overlays): TeamID 0 = white, TeamID 1 = dark blue; the "
         "keepers wear red and yellow. Two clearly separated outfield colours — good for "
         "`cv2.kmeans` team clustering; keepers will need special handling.",

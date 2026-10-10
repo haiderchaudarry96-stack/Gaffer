@@ -19,6 +19,7 @@ dependencies = [
     "pyyaml>=6.0",                     # MIT
     "python-dotenv>=1.0",              # BSD
     "scipy>=1.13",                     # BSD-3 (Hungarian assignment for formation templates)
+    "supervision>=0.30,<0.31",         # MIT (ByteTrack); pulls av (BSD, LGPL FFmpeg), no opencv
 ]
 
 [project.optional-dependencies]
