@@ -25,6 +25,72 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-14] Side view: the near assistant referee is output as a 12th "away" player
+**Stage:** team colour
+**Severity:** wrong output (open)
+
+**Input:** side eval clips 1710–1800 s at 2 fps (`py scripts\eval_tracking.py --view side --whole-source --save`); found by rescoring the saved `outputs/match_state_side_2fps.json`.
+**What happened:** the assistant referee on the near touchline (dark navy tracksuit, flag) is detected and tracked as one track for the whole window, and labelled **away in 173 of 180 scored frames**. They stand 0.3–0.8 m outside the touchline, which the contract keeps (5 m off-pitch tolerance, for throw-ins), so the formation engine would see 11 away outfield players. They are all of the unmatched "away" detections that lie > 10 m from any GT player (173 of 251 with the GT margin removed). The dev clip shows a similar rate (1.4 unmatched "away" per frame) and it was not noticed there.
+**Why (best guess):** dark navy is close to the away team's dark blue; the classifier down-weights lightness (`teams.l_weight` 0.5), which is where the two differ most. On the drone view the officials' kit falls outside both team gates and they become referees; from the side the near official is large and seen mostly against grass.
+**Screenshot / output:** outputs/failures/2026-10-14_side_touchline_person_as_away.jpg
+**Fix or mitigation:** open. Candidate: a track that stays outside the touchlines for most of its life is an official or staff member, not a player (players leave the pitch only briefly). Not implemented yet.
+**Measured impact:** a phantom away player in 96 % of side eval frames; side detection precision at 2 m 0.794 includes it.
+
+### [2026-10-14] Spare balls behind a goal are tracked as a "home" player
+**Stage:** detection / team colour
+**Severity:** wrong output (caught by eval, mitigated)
+
+**Input:** drone view, 270 s run at 2 fps (`py scripts\eval_tracking.py --view top --whole-source`), after the keeper fix below.
+**What happened:** a small heap of white spare balls ~1 m behind the goal line forms one blob of player size for the classical detector. It is white, like the home shirts, so its track voted "home" and was output as a home outfield player in **198 frames**. It also competed for the goal's keeper slot (see the entry below).
+**Why (best guess):** the top-view detector finds non-grass blobs of player size and has no notion of a person; GT has no label for objects, so the blob only shows up as an unmatched "home" detection.
+**Screenshot / output:** outputs/failures/2026-10-14_static_spare_balls_home.jpg
+**Fix or mitigation:** a track that stays within 0.3 m (95th percentile of its distance from its median position) for 20 s or more is an object, not a person, and is dropped from the output (`perception.static_object`). Thresholds chosen after seeing this case in the eval run. Known risk: a player who stands perfectly still for 20 s+ (e.g. a long stoppage) would be dropped too. Shrinking the search region does not help: it reaches 1 m behind the goal line (`detector.views.top.roi_margin_goal_m`) so that keepers on the line are found, and the balls lie just inside it.
+**Measured impact (top eval clips 1560–1800 s, 2 fps):** 0.32 static detections removed per frame; unmatched detections labelled "home" fell from 0.43 to 0.12 per frame (the same amount), so the filter removed objects, not players; raw precision 0.843 → 0.852. The same run's recall fell 0.976 → 0.955 for an unrelated reason: the scorer now counts only what the pipeline outputs, and at 2 fps 0.51 detections per frame never get a track id (0.07 at 4 fps).
+
+### [2026-10-14] Pipeline got the attacking direction backwards, so both keepers got the wrong label
+**Stage:** team colour / goalkeepers
+**Severity:** wrong output (caught by eval, fixed)
+
+**Input:** drone view, full 270 s run at 2 fps (`py scripts\eval_tracking.py --view top --whole-source`), first version of the keeper logic.
+**What happened:** the pipeline inferred "home attacks right"; the oracle (and the keepers' positions) say home attacks left. Consequences: the home keeper (red) was labelled **away goalkeeper in 468 frames**, i.e. every keeper label had the wrong team (`goalkeeper_team_correct` 0.00), and the away keeper (yellow) was labelled **referee in 476 frames**. Settled team accuracy was 0.907 instead of ~0.95.
+**Why:** (1) the direction rule (shared with the oracle) compared each team's median distance from its deepest player to each goal line. It relies on the keeper; in the pipeline keepers are only identified *after* the direction is known (their shirts are "other" colours), so it ran on outfield players only, and over this 4.5 min stretch the home attack sat deep in the opponent half. On the 30 s smoke-test window it happened to be right. (2) The keeper slot of a goal went to the "other" track nearest the goal line: spare balls and staff just behind the line beat the yellow keeper.
+**Screenshot / output:** outputs/failures/2026-10-14_direction_inverted_keepers.jpg (home keeper boxed as "GK20" in the away colour)
+**Fix or mitigation:** (1) direction by a per-frame vote on whose rearmost player is nearer each goal (the offside line keeps attackers behind the last defender, keepers not needed); it gives the same answer as before on both oracle files, and the right answer on the pipeline labels and on the oracle with its keepers removed. (2) A keeper candidate's median position must be on the pitch side of the goal line, and the longest track wins the slot. (3) After (1)+(2) the home keeper was right in every frame, but the away keeper was still "referee": their median position over the run was **20.6 m** from the goal line (they play far off the line), just outside the 20 m keeper zone. The zone was widened to 30 m; referee track medians were ≥ 39 m from both goal lines. This threshold was chosen after seeing eval-clip data.
+**Measured impact:** drone view at 2 fps after (1)+(2): settled team accuracy 0.907 → 0.957, keeper team right 0.00 → 1.00; final numbers after (3) in CLAUDE.md.
+
+### [2026-10-14] Tracking at 2 fps: ByteTrack fragments tracks and swaps ids between nearby players
+**Stage:** tracking
+**Severity:** degraded
+
+**Input:** dev clips only (top D_…_1530, side F_…_1680), `supervision` ByteTrack on the pipeline's detections, ids compared with TeamTrack PlayerIDs at the 2 fps output frames (`scripts/eval_tracking.py`; sweeps on cached detections).
+**What happened:** (1) out of the box (boxes enlarged 3×, detector scores passed through) the drone dev clip had **122 ID switches in 30 s for 22 players** (11 per player-minute), IDF1 0.39, 98 tracks: at 2 fps a player moves up to ~4 m (~120 px) between samples, so even 3× boxes stop overlapping. (2) ByteTrack multiplies IoU by the detection score, and the classical detector's "score" is a blob-area ratio, not a confidence: partial blobs never matched. (3) `update_with_detections` maps tracks back to detections by IoU of the Kalman box; with large boxes neighbours overlap, so this step is ambiguous (replaced by centre distance). (4) The remaining switches are swaps between players within 2–4 m of each other (27 of 40 within 2 m on the dev clip): a tackle merges two blobs, and when they part the 0.5 s gap is too long to tell who is who.
+**Why (best guess):** IoU association assumes overlap between consecutive frames; 2 fps breaks that for fast, small, look-alike objects.
+**Screenshot / output:** outputs/failures/2026-10-14_tracking_swap_2fps.png (a tackle at 1535.5 s reshuffles tracks 5 and 12)
+**Fix or mitigation:** matching boxes enlarged by 1 + 12 / fps (7× at 2 fps, 3× at 6 fps), unit scores for association, centre-distance mapping back; tracking at a higher rate than the output (an integer multiple of 2 fps; 5 fps does not land on the 0.5 s output grid, so 4 and 6 fps were measured). The tactics engine never reads track ids: switches only matter through the per-track team vote, so team accuracy decides what is acceptable.
+**Measured impact (dev clips):** top: 122 → 41 switches at 2 fps (IDF1 0.39 → 0.71), 24 at 4 fps (0.80), 17 at 6 fps (0.86); side: 42 at 2 fps (IDF1 0.64), 30 at 6 fps (0.71). Eval-clip numbers: see Key numbers in CLAUDE.md.
+
+### [2026-10-14] Side view: a 1 m score mostly measures how the annotator drew the box bottom
+**Stage:** detection (evaluation)
+**Severity:** degraded (metric), no pipeline output affected
+
+**Input:** TeamTrack side clips, GT boxes vs. the lowest moving-player pixel (temporal-median background of 30 frames per clip, 566 isolated boxes); `py scripts\compare_detectors.py --view side`.
+**What happened:** TeamTrack side boxes end **2–3 px below the feet** (median 2 px on the far side, 3 px in the middle and near rows; boxes are also ~3–7 px loose at the top). On the far side one pixel row is 0.4–1 m of pitch depth, so the GT foot point sits ~1 m nearer the camera than the player. A correct detection with a tight box then misses the 1 m criterion. The size of the effect differs between clips: on the dev clip YOLOX boxes ended where GT boxes end (moving GT up 2.5 px made far-half F1 slightly worse, 0.59 → 0.56), on the three eval clips they ended ~2.5 px higher (F1@1 m 0.49 raw → 0.75 with GT moved up 2.5 px; far half 0.32 → 0.63).
+**Why (best guess):** hand-drawn boxes with a margin, possibly a different annotator or tool setting per clip; far-side depth resolution of a low panorama camera (see the 10 Oct side-geometry entry).
+**Screenshot / output:** outputs/failures/2026-10-14_side_gt_box_margin.png; outputs/compare_detectors_side.json (`+inset` rows)
+**Fix or mitigation:** report raw scores (as specified) and, labelled, scores against the GT foot point moved up by the measured margin (`teamtrack.views.side.gt_foot_inset_px: 2.5`, eval only); report the near and far halves separately and add a 2 m column. The oracle still uses the raw box bottom (unchanged since Day 1). Open question for step 5: on the eval clips the YOLOX foot points sit ~2.5 px above the GT ones, i.e. far-side pipeline positions lie up to ~1 m deeper than the oracle's, which will show up as metric error (defensive line, width) unless the oracle also uses the inset.
+**Measured impact:** YOLOX F1 at 1 m on the eval clips: 0.49 raw vs 0.75 with the margin removed; at 2 m: 0.78.
+
+### [2026-10-14] Side view: background subtraction loses standing, overlapping and camouflaged players
+**Stage:** detection
+**Severity:** wrong output (rejected method)
+
+**Input:** side eval clips 1710–1800 s, 150 frames at 2 fps, `cv2.createBackgroundSubtractorMOG2` on the pitch band, blobs filtered by expected person size from the mapper's ground scale; tuned on the dev clip only.
+**What happened:** three failure types (2 m criterion, dev clip): (1) players standing still for a while are learnt into the background (15 s history: 102 misses; 60 s history fixed most of it, F1@1 m 0.42 → 0.48); (2) two players at different depths overlap in the image and form one tall blob whose foot point is the nearer player's; (3) a white shirt in front of the white fence/stands, or a lost leg, gives a blob whose foot point is > 2 m off. On the eval clips: F1 at 1 m **0.29** (near half 0.47, far 0.12), at 2 m 0.56, 17.8 unmatched boxes per frame — versus tiled YOLOX 0.49 / 0.78 at 1 m / 2 m.
+**Why (best guess):** a static-camera background model sees motion, not people; the side view has 0.47 overlapping player pairs per frame (DATA_NOTES), and far players are 14 × 24 px.
+**Screenshot / output:** outputs/failures/2026-10-14_side_background_misses.png; outputs/compare_detectors_side.json
+**Fix or mitigation:** tiled YOLOX (cv2.dnn) stays the side-view detector (`detector.views.side.method`); MOG2 stays selectable as a 22× faster fallback (156 ms vs 3.4 s per frame).
+**Measured impact:** F1 at 1 m 0.29 (MOG2) vs 0.49 (YOLOX); at 2 m 0.56 vs 0.78.
+
 ### [2026-10-10] Top-view classical detector: players on painted lines and touching pairs are missed; referees count as false positives
 **Stage:** detection
 **Severity:** degraded

@@ -100,14 +100,19 @@ def load_gt(csv: Path) -> GroundTruth:
                        int(missing["frame"].nunique()))
 
 
-def foot_points(df: pd.DataFrame, mode: str) -> np.ndarray:
+def foot_points(df: pd.DataFrame, mode: str, inset_px: float = 0.0) -> np.ndarray:
     """Image point that touches the ground for each box: `centre` (top-down view: the player is
-    a blob seen from above) or `bottom` (side view: feet at the bottom edge)."""
+    a blob seen from above) or `bottom` (side view: feet at the bottom edge).
+
+    `inset_px` moves the bottom point up: TeamTrack side-view boxes are drawn with a margin of
+    ~2-3 px below the feet (measured, FAILURE_LOG 2026-10-14), and on the far side one pixel
+    row is 0.4-1 m of depth.
+    """
     x = df["bb_left"].to_numpy() + df["bb_width"].to_numpy() / 2
     if mode == "centre":
         y = df["bb_top"].to_numpy() + df["bb_height"].to_numpy() / 2
     elif mode == "bottom":
-        y = df["bb_top"].to_numpy() + df["bb_height"].to_numpy()
+        y = df["bb_top"].to_numpy() + df["bb_height"].to_numpy() - float(inset_px)
     else:
         raise ValueError(f"unknown foot point mode {mode!r}")
     return np.stack([x, y], axis=1)

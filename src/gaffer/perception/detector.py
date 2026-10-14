@@ -12,8 +12,14 @@ recall in `scripts/compare_detectors.py`):
 - `TiledYoloxDetector` (side view, and the comparison baseline): YOLOX-S (OpenCV Model Zoo,
   Apache 2.0) in `cv2.dnn` on overlapping native-resolution tiles over the pitch region,
   with cross-tile NMS.
+- `BackgroundDetector` (side-view classical baseline): the side camera is static (0.3 px drift
+  per clip), so `cv2.createBackgroundSubtractorMOG2` learns the empty scene over the sampled
+  frames; foreground blobs (`cv2.connectedComponentsWithStats`) are kept when their foot point
+  lies on the pitch and their size matches a person standing there (expected height from the
+  local ground scale of the mapper), and wide blobs (players side by side) are split.
+  Stateful: feed it consecutive sampled frames.
 
-Both return `Detections` in native image pixels (xywh).
+All return `Detections` in native image pixels (xywh).
 """
 
 from __future__ import annotations
@@ -245,6 +251,146 @@ def _px_per_m(mapper: PitchMapper, model: PitchModel) -> float:
     return float(np.median(np.linalg.norm(b - a, axis=1)))
 
 
+# --------------------------------------------------------------------------- background (side view)
+
+
+@dataclass(frozen=True)
+class BackgroundSettings:
+    """From config `detector.background`."""
+
+    history_s: float
+    var_threshold: float
+    detect_shadows: bool
+    open_px: int
+    close_w_px: int
+    close_h_px: int
+    player_height_m: float
+    player_width_m: float
+    min_height_frac: float
+    max_height_frac: float
+    min_fill: float
+    split_factor: float
+    pad_top_m: float
+
+    @classmethod
+    def from_config(cls, c: dict[str, Any]) -> BackgroundSettings:
+        return cls(float(c["history_s"]), float(c["var_threshold"]), bool(c["detect_shadows"]),
+                   int(c["open_px"]), int(c["close_px"][0]), int(c["close_px"][1]),
+                   float(c["player_height_m"]), float(c["player_width_m"]),
+                   float(c["min_height_frac"]), float(c["max_height_frac"]),
+                   float(c["min_fill"]), float(c["split_factor"]), float(c["pad_top_m"]))
+
+
+def ground_scale_px(mapper: PitchMapper, foot_uv: np.ndarray) -> np.ndarray:
+    """Pixels per metre along the pitch length (x) at each image foot point.
+
+    For a camera looking across the pitch, x is roughly perpendicular to the viewing direction,
+    so a person of height Z standing there is about Z times this many pixels tall (pinhole:
+    both scale as focal length / distance). This gives expected box sizes from geometry alone.
+    """
+    xy = mapper.to_pitch(np.asarray(foot_uv, dtype=float).reshape(-1, 2))
+    a = mapper.to_image(xy - [0.5, 0.0])
+    b = mapper.to_image(xy + [0.5, 0.0])
+    return np.linalg.norm(b - a, axis=1)
+
+
+class BackgroundDetector:
+    """MOG2 background subtraction for a static camera (see module docstring)."""
+
+    name = "background"
+
+    def __init__(self, s: BackgroundSettings, model: PitchModel, roi: dict[str, float],
+                 fps: float = 2.0) -> None:
+        self.s, self.model, self.roi = s, model, roi
+        self._roi_cache: tuple[int, np.ndarray, tuple[int, int, int, int]] | None = None
+        self.debug: dict[str, np.ndarray] = {}
+        self.reset(fps)
+
+    def reset(self, fps: float) -> None:
+        """Forget the learnt background (new video, or a new sampling rate)."""
+        self.fps = float(fps)
+        hist = max(5, int(round(self.s.history_s * self.fps)))
+        self.mog = cv2.createBackgroundSubtractorMOG2(history=hist,
+                                                      varThreshold=self.s.var_threshold,
+                                                      detectShadows=self.s.detect_shadows)
+        self.frames_seen = 0
+
+    def _band(self, mapper: PitchMapper, shape: tuple[int, int]
+              ) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+        """Pitch ROI mask and the image band (x0, y0, x1, y1) around it, padded upwards by the
+        height of a player standing on the far touchline."""
+        key = id(mapper)
+        if self._roi_cache is None or self._roi_cache[0] != key:
+            h, w = shape
+            roi = pitch_roi(mapper, self.model, shape=(h, w), **self.roi)
+            ys, xs = np.nonzero(roi)
+            if len(xs) == 0:
+                raise DetectorError("the pitch is not visible in this view (empty ROI)")
+            top = np.array([[xs[np.argmin(ys)], ys.min()]], dtype=float)
+            pad = int(np.ceil(self.s.pad_top_m * ground_scale_px(mapper, top)[0]))
+            band = (int(xs.min()), max(0, int(ys.min()) - pad), int(xs.max()) + 1,
+                    int(ys.max()) + 1)
+            self._roi_cache = (key, roi, band)
+        return self._roi_cache[1], self._roi_cache[2]
+
+    def detect(self, frame: np.ndarray, mapper: PitchMapper) -> Detections:
+        s = self.s
+        h, w = frame.shape[:2]
+        roi, (x0, y0, x1, y1) = self._band(mapper, (h, w))
+        fg = self.mog.apply(frame[y0:y1, x0:x1])
+        self.frames_seen += 1
+        fg = np.where(fg == 255, 255, 0).astype(np.uint8)  # 127 = shadow -> background
+        if s.open_px > 1:
+            fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN,
+                                  cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (s.open_px,) * 2))
+        if s.close_w_px > 1 or s.close_h_px > 1:
+            fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, cv2.getStructuringElement(
+                cv2.MORPH_RECT, (max(1, s.close_w_px), max(1, s.close_h_px))))
+        self.debug = {"fg": fg, "band": np.array([x0, y0, x1, y1])}
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(fg, connectivity=8)
+        if n <= 1:
+            return Detections.empty()
+        bx, by = stats[1:, cv2.CC_STAT_LEFT] + x0, stats[1:, cv2.CC_STAT_TOP] + y0
+        bw, bh = stats[1:, cv2.CC_STAT_WIDTH], stats[1:, cv2.CC_STAT_HEIGHT]
+        area = stats[1:, cv2.CC_STAT_AREA]
+        foot = np.stack([bx + bw / 2, by + bh], axis=1).astype(float)
+        fx = np.clip(foot[:, 0].round().astype(int), 0, w - 1)
+        fy = np.clip(foot[:, 1].round().astype(int), 0, h - 1)
+        on = roi[fy, fx] > 0
+        ppm = np.zeros(len(foot))
+        if on.any():
+            ppm[on] = ground_scale_px(mapper, foot[on])
+        h_exp, w_exp = s.player_height_m * ppm, s.player_width_m * ppm
+        ok = (on & (bh >= s.min_height_frac * h_exp) & (bh <= s.max_height_frac * h_exp)
+              & (area >= s.min_fill * h_exp * w_exp))
+        boxes, scores = [], []
+        for i in np.nonzero(ok)[0]:
+            k = int(round(bw[i] / w_exp[i])) if bw[i] >= s.split_factor * w_exp[i] else 1
+            fill = float(np.clip(area[i] / (k * h_exp[i] * w_exp[i] * 0.6), 0.0, 1.0))
+            if k <= 1:
+                boxes.append([bx[i], by[i], bw[i], bh[i]])
+                scores.append(fill)
+                continue
+            # players side by side: split the blob by k-means on its pixel columns
+            ys_, xs_ = np.nonzero(labels == i + 1)
+            pts = xs_.astype(np.float32).reshape(-1, 1)
+            crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
+            cv2.setRNGSeed(42)
+            _, lab_k, _ = cv2.kmeans(pts, k, None, crit, 3, cv2.KMEANS_PP_CENTERS)
+            for j in range(k):
+                sel = lab_k.ravel() == j
+                if sel.sum() < 4:
+                    continue
+                sx, sy = xs_[sel] + x0, ys_[sel] + y0
+                boxes.append([sx.min(), sy.min(), sx.max() - sx.min() + 1,
+                              sy.max() - sy.min() + 1])
+                scores.append(fill)
+        if not boxes:
+            return Detections.empty()
+        return Detections(np.array(boxes, dtype=float), np.array(scores, dtype=float),
+                          np.full(len(boxes), PERSON, dtype=int))
+
+
 # --------------------------------------------------------------------------- YOLOX in cv2.dnn
 
 
@@ -354,8 +500,11 @@ class TiledYoloxDetector:
 # --------------------------------------------------------------------------- factory
 
 
+AnyDetector = ClassicalBlobDetector | TiledYoloxDetector | BackgroundDetector
+
+
 def make_detector(cfg: dict[str, Any], view: str, model: PitchModel, method: str | None = None,
-                  **overrides: Any) -> ClassicalBlobDetector | TiledYoloxDetector:
+                  **overrides: Any) -> AnyDetector:
     """The detector configured for a view (`detector.views.<view>.method`), or `method`."""
     d = cfg["detector"]
     vcfg = d["views"][view]
@@ -373,4 +522,7 @@ def make_detector(cfg: dict[str, Any], view: str, model: PitchModel, method: str
         return TiledYoloxDetector(runner, int(t["tile_px"]), int(t["overlap_px"]),
                                   float(t["upscale"]), float(t["conf_threshold"]),
                                   float(t["nms_threshold"]), model, roi)
+    if m == "background":
+        return BackgroundDetector(BackgroundSettings.from_config({**d["background"], **overrides}),
+                                  model, roi, fps=float(cfg["perception"]["sample_fps"]))
     raise DetectorError(f"unknown detector method {m!r}")

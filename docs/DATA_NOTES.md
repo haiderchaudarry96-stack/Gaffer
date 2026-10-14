@@ -86,6 +86,7 @@ long = wide.stack(level=[0, 1], future_stack=True).dropna(how='all').reset_index
 | soccer_side | 14 / 22 / 48 | 24 / 38 / 76 | 9×9 | 3.7 px |
 
 - Top view: players are ~30 px blobs seen from directly above — **no human silhouette**. Phase 0 smoke test: COCO YOLOX-S in `cv2.dnn` finds **0** persons on the full top frame and on the native 640×640 centre crop (max objectness 0.06), and **1 of 12** GT players on a dense native 1280×640 region. See `docs/FAILURE_LOG.md`.
+- **Phase 2 (14 Oct): side GT boxes are drawn with a margin.** Against the lowest moving-player pixel (temporal-median background, 566 isolated boxes), box bottoms sit a median **2 px (far rows) to 3 px (middle/near rows) below the feet**, and tops 3–7 px above the head. On the far side one pixel row is 0.4–1 m of depth, so the box bottom places a far player ~1 m nearer the camera than the feet. YOLOX boxes match this margin on the dev clip but end ~2.5 px higher on the other three clips. Detection scores are therefore reported raw and with the GT foot moved up 2.5 px (`teamtrack.views.side.gt_foot_inset_px`), near and far half separately (FAILURE_LOG 2026-10-14).
 - Side view: players are taller than wide (median ~38 px high) and look like people; YOLOX finds 11 persons on a native 640×640 crop but **0 on the full 6500×1000 frame letterboxed to 640** (players shrink to ~4 px). → Phase 2 needs tiled inference at native resolution for the side view.
 
 ![box sizes](../outputs/eda/box_sizes.png)

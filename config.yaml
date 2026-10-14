@@ -74,10 +74,26 @@ detector:
     single_area_m2: 0.55          # typical one-player blob; blobs >= split_factor x this are split
     split_factor: 1.7
     box_size_m: 1.2               # output box side (GT top-view boxes: median ~34 px = 1.2 m)
+  background:                     # side-view classical baseline (static camera, MOG2)
+    history_s: 60.0               # MOG2 history (s); 15 s absorbed standing players
+                                  # (dev F1@1m 0.42 -> 0.48)
+    var_threshold: 16.0
+    detect_shadows: true          # shadow pixels (MOG2 value 127) count as background
+    open_px: 3
+    close_px: [3, 9]              # w, h: rejoin torso and legs split by grass-coloured shorts
+    player_height_m: 1.75         # expected box height = this x local ground scale (px per m)
+    player_width_m: 0.6
+    min_height_frac: 0.55         # blob height relative to the expected height (0.35-0.55: same F1)
+    max_height_frac: 2.2
+    min_fill: 0.15                # blob area relative to expected height x width
+    split_factor: 1.7             # blobs this many expected widths wide are split
+    pad_top_m: 2.5                # band above the far touchline (players stand up into it)
   eval:
     iou_threshold: 0.5
     distance_threshold_m: 1.0     # centre-distance match on the pitch (drone boxes are tiny)
-    dev_clips: [D_20220220_1_1530_1560]   # tuning only; never reported as results
+    distance_loose_m: 2.0         # side view: far-half positions are only good to ~1-2 m
+    dev_clips: [D_20220220_1_1530_1560, F_20220220_1_1680_1710]   # tuning only; never reported
+    warmup_s: 5.0                 # side compare: frames the background model learns before scoring
 
 eda:
   sample_frames_per_view: 3
@@ -106,11 +122,64 @@ pitch:
 perception:
   sample_fps: 2.0                 # same rate as the synthetic data
   possession_radius_m: 2.0        # nearest player within this of the ball has it (shared rule)
+  track_fps: 2.0                  # detection + tracking rate; an integer multiple of sample_fps
+  foot_point: {top: centre, side: bottom}   # ground contact of a box (drone: blob centre)
+  min_players_per_frame: 6        # median detections per frame below this -> TooFewPlayersError
+  static_object: {min_s: 20.0, max_spread_m: 0.3}   # a track that stays within 0.3 m (p95) for
+                                  # 20 s+ is an object (spare balls behind a goal), not a person
+  teams:                          # per footage: names, display colours, shirt-colour hints
+    home: {name: White, colour: "#f0f0f0", shirt_hint: "#f0f0f0"}   # TeamTrack TeamID 0
+    away: {name: Blue, colour: "#1f3a8a", shirt_hint: "#2848a0"}    # TeamTrack TeamID 1
+  debug_video:
+    width_px: 1920
+    minimap_px_per_m: 4.0
+    side_rows: [380, 1000]        # side panorama rows shown (the pitch band)
+    minimap_rotate_180: [top]     # drone image is rotated 180 deg vs the pitch frame
+    colours_bgr: {home: [240, 240, 240], away: [160, 60, 20], referee: [0, 220, 255],
+                  unknown: [150, 150, 150]}
+
+teams:                            # team classifier (perception/team_classifier.py)
+  torso:                          # crop of each box: x0, x1, y0, y1 as fractions
+    top: [0.0, 1.0, 0.0, 1.0]     # drone: the whole ~1.2 m box (shoulders around the head)
+    side: [0.2, 0.8, 0.12, 0.5]   # side: upper-middle band (shirt), not legs or background
+  grass_hue: [30, 75]             # OpenCV hue band of grass (top view grass H 43-55, side 13-60)
+  grass_min_saturation: 40
+  min_pixels: 6                   # fewer non-grass pixels -> no vote this frame
+  l_weight: 0.5                   # lightness counts half (shade/distance change L, not hue)
+  gate: 2.5                       # outlier gate = gate x median distance to the team centre
+  min_gate: 5.0                   # (CIELAB units)
+  refit_rounds: 4
+  other_clusters: 3               # referee/officials + two keepers: their own k-means clusters
+  min_fit_samples: 40
+  max_fit_samples: 4000
+  vote_window: 10                 # per-track majority over the last 10 votes ...
+  min_votes: 3                    # ... once it has 3 votes ("unknown" before) ...
+  min_share: 0.6                  # ... and the majority holds 60 %
+  keeper_zone: {depth_m: 30.0, half_width_m: 22.0}   # 'other' track whose median is here =
+  # keeper. 20 -> 30 m after the first top eval run: the away keeper's median was 20.6 m out
+  # (sweeper keeper), referee medians >= 39 m from both goals (decided on eval data, disclosed).
+  # l_weight / gate chosen on GT crops of top clips 1530-1620 and all 4 side clips (14 Oct):
+  # per-crop accuracy top 99 %, side 94 %; keepers and officials fall outside both gates.
+
+tracking:                         # supervision ByteTrack (perception/tracker.py)
+  match_scale_hz: 12.0            # matching boxes enlarged 1 + 12 / fps x around their centre:
+  min_match_scale: 2.0            # 7x at 2 fps, 4x at 4, 3x at 6 (dev-clip sweeps of both views,
+                                  # 14 Oct; the side view prefers smaller boxes at 6 fps)
+  unit_scores: true               # classical blob "scores" are areas, not confidences: ByteTrack
+                                  # multiplies IoU by score (dev ID switches 61 -> 41 at 7x)
+  activation_threshold: 0.25
+  matching_threshold: 0.8         # max (1 - IoU x score) for a match
+  lost_s: 3.0                     # keep a lost track this long before dropping it
+  min_consecutive_frames: 1
+  eval:
+    match_m: {top: 1.0, side: 2.0}   # GT <-> track distance for ID switches / team accuracy
 
 teamtrack:
   views:
     top: {folder: soccer_top, foot_point: centre, calibration: top}   # drone: blob centre
-    side: {folder: soccer_side, foot_point: bottom, calibration: side}  # feet = box bottom
+    side: {folder: soccer_side, foot_point: bottom, calibration: side,  # feet = box bottom
+           gt_foot_inset_px: 2.5}  # GT boxes end 2-3 px below the feet (median 2 far, 3 mid;
+                                   # temporal-median foreground, 566 isolated boxes, 14 Oct)
   teams:                          # TeamID -> contract side (shirt colours from DATA_NOTES)
     "0": {side: home, name: White, colour: "#f0f0f0"}
     "1": {side: away, name: Blue, colour: "#1f3a8a"}

@@ -64,26 +64,29 @@ def possession(players: list[ObservedPlayer], ball: tuple[float, float] | None,
 
 def infer_attacking_direction(frames: list[ObservedFrame], length: float
                               ) -> dict[str, str] | None:
-    """Direction each team attacks, from the median position of its deepest players.
+    """Direction each team attacks, by a per-frame vote on who stands deepest at each end.
 
-    For each team: `left_gap` = median over frames of its smallest x (distance of its deepest
-    player from the left goal line), `right_gap` = median of (length - largest x). A keeper
-    keeps one of the two small. The team with the smaller left_gap - right_gap defends left
-    and so attacks right. Returns None if a team is never seen.
+    In a frame where both teams have 3+ players, the team whose rearmost player is nearer the
+    left goal line gets a vote for "defends left", and the team whose rearmost player is
+    nearer the right goal line a vote for "defends right". The offside rule keeps attackers
+    behind the defenders' last outfield player, so this holds in most frames even without
+    goalkeepers, which the pipeline only identifies after the direction is known. (A first
+    version compared median gaps to the goal lines; without keepers it got the 270 s drone
+    run backwards, FAILURE_LOG 2026-10-14.) Returns None if no frame shows both teams.
     """
-    stats: dict[str, list[tuple[float, float]]] = {"home": [], "away": []}
+    vote, seen = 0, False  # vote > 0: home defends left
     for f in frames:
-        for side in stats:
-            xs = [p.x for p in f.players if p.team == side]
-            if len(xs) >= 3:
-                stats[side].append((min(xs), length - max(xs)))
-    if not stats["home"] or not stats["away"]:
+        hx = [p.x for p in f.players if p.team == "home"]
+        ax = [p.x for p in f.players if p.team == "away"]
+        if len(hx) < 3 or len(ax) < 3:
+            continue
+        seen = True
+        # home deeper at the left end, and away deeper at the right end -> home defends left
+        vote += int(np.sign(min(ax) - min(hx))) + int(np.sign(max(ax) - max(hx)))
+    if not seen:
         return None
-    score = {s: float(np.median([a for a, _ in v]) - np.median([b for _, b in v]))
-             for s, v in stats.items()}
-    left_defender = min(score, key=score.get)
-    other = "away" if left_defender == "home" else "home"
-    return {left_defender: "right", other: "left"}
+    home_left = vote >= 0
+    return {"home": "right" if home_left else "left", "away": "left" if home_left else "right"}
 
 
 def assemble(match_id: str, source: str, fps: float, length: float, width: float,
