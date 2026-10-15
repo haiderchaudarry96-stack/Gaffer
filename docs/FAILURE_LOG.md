@@ -25,16 +25,89 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-15] `line_drop`: an absolute line-height rule measures the phase of play, not a tactical drop
+**Stage:** change detection (`line_drop` events)
+**Severity:** wrong output (feature implemented, switched off by default)
+
+**Input:** synthetic dev set (match_001 + seeds 43-52) and held-out seeds 110-119; TeamTrack top and side clips, pipeline vs oracle (`scripts/tune_line_drop.py`, `scripts/plot_line_levels.py`).
+**What happened:**
+1. **No ground truth.** Synthetic GT cannot label a line drop without changing the frozen contract (`GTNoiseEvent.kind` is a closed list), and the generator never drops a line on purpose: its back line follows the ball and possession (`back_line_ball_gain`). Every synthetic `line_drop` is therefore a false alarm for a tactical drop; recall cannot be measured.
+2. **The rule fires on ball movement.** Rule: the 30 s trailing defensive line sits ≥ X m deeper than its reference for ≥ Y s (causal, same hysteresis as shape changes). On the dev set the 30 s line level moves a median **10.5 m per minute** (p90 27 m). No setting of X ∈ {4..12} m × Y ∈ {30..180} s met the budget of ≤ 1 false alarm per match fixed before the sweep; the fewest was 12 m / 180 s with **1.55 per match** (dev), **1.70 per match on seeds 110-119**.
+3. **Real footage is worse.** On the drone clips the home line moves from 57 m to 19 m from its goal in 40 s (1610-1650 s): real lines follow play far more than the generator's. With 12 m / 180 s nothing fires in 4 minutes; with looser settings (8 m / 60 s, 4 m / 30 s) events appear, but at the moments when play moves into a team's half.
+4. **Perception is not the problem.** On the drone view the pipeline's line level follows the oracle's within ~1 m, and at every threshold the pipeline fires exactly the same events as the oracle, at the same times (4/4 at 4 m / 30 s). On the side view the pipeline is uncertain in 2/3 of the windows, so there is little to compare.
+**Why (best guess):** a defensive line "dropping" is only meaningful *for a given ball position*: a team that sits deeper when the opponent has the ball in midfield. The rule would need to condition on the ball and on possession, and the pipeline does not see the ball on the drone view (entry below).
+**Screenshot / output:** outputs/failures/2026-10-15_line_drop_levels_top.png (pipeline vs oracle line level), outputs/failures/2026-10-15_line_drop_levels_side.png; outputs/tune_line_drop_dev.json
+**Fix or mitigation:** implemented (`tactics/events.py: line_levels, detect_line_drops`, tested) and **switched off by default** (`tactics.line_drop.enabled: false`, thresholds kept at the dev choice 12 m / 180 s): with no measurable benefit it only adds false candidates for the agent. To revisit once the pipeline sees the ball: measure the line only when the opponent has the ball in the middle third.
+**Measured impact:** 1.70 false line-drop candidates per match on held-out seeds when enabled; 0 events on the real clips at the configured setting.
+
+### [2026-10-15] Treating 4-3-3 and 4-2-3-1 as one family for change detection loses real changes
+**Stage:** change detection
+**Severity:** trade-off (measured, switched off)
+
+**Input:** `formations.change_equivalent: [["4-3-3", "4-2-3-1"]]` (change detection only; labels, confidences and segments keep the exact formation), synthetic dev set (match_001 + 43-52) and new held-out seeds 110-119, with and without (`--no-change-equivalence`).
+**What happened:**
+
+| | dev 42-52 without | dev with | **held-out 110-119 without** | held-out with |
+|---|---|---|---|---|
+| hits / true changes | 39 / 43 | 36 / 43 | **34 / 38** | 28 / 38 |
+| false positives | 27 | 18 | **34** | 16 |
+| of which 4-3-3 ↔ 4-2-3-1 | 11 | 0 | 18 (16 in seed 111) | 0 |
+| mean detection delay | 41.1 s | 41.5 s | 42.1 s | 39.6 s |
+| timeline max | 7.9 KB | 8.2 KB | 14.6 KB | 6.6 KB |
+
+The family removes every pair flip-flop, but **all 6 hits it loses on held-out (3 on dev) are real 4-3-3 ↔ 4-2-3-1 switches**, which become invisible by construction. Unlike 3-5-2 = 5-3-2 (no hits lost on 100-109), this is not free.
+**Why (best guess):** single vs double pivot is a genuine tactical change a coach wants to hear about (the 10 Oct entry already argued this), and the synthetic schedule switches between these two as often as between any other pair.
+**Screenshot / output:** outputs/eval_synthetic_heldout2_nocheq.json vs outputs/eval_synthetic_heldout2_cheq.json (and the dev pair)
+**Fix or mitigation:** **off by default** (`change_equivalent: []`): the Phase 3 agent can reject a false candidate, but it can never recover a change the detector did not emit. The mechanism stays (one config line) in case the user prefers fewer, safer candidates. Better fix for later: classify in- and out-of-possession shapes separately (needs the ball, see the ball entry).
+**Measured impact:** see table; real TeamTrack clips unchanged either way (no 4-3-3 / 4-2-3-1 windows in them).
+
+### [2026-10-15] The pipeline never sees the ball on the drone view: no possession, no pressing
+**Stage:** detection
+**Severity:** degraded (open)
+
+**Input:** saved pipeline MatchStates (`outputs/match_state_top_4fps.json`, 540 frames; `match_state_side_2fps.json`, 240 frames), found while designing `line_drop` (step 6).
+**What happened:** the drone pipeline outputs a ball in **0 of 540** frames, so `possession` is null everywhere and the timeline's `possession_pct` and `pressing_index` are always null on real top-view output. The side pipeline has a ball in 10 of 240 frames (possession in 3). The oracle has the GT ball in 533 of 541 top frames.
+**Why:** the top-view detector is the classical blob detector, built for players: a ball is ~0.22 m across (~6 px at drone scale), far below its `min_area_m2: 0.12`, and nothing else looks for it. On the side view the COCO "sports ball" class of YOLOX fires rarely on 9×9 px balls.
+**Screenshot / output:** counts above (no image: the failure is an absence)
+**Fix or mitigation:** open. Consequences, stated where they matter: (1) `line_drop` cannot condition on the ball (it would be the natural way to separate "the team sits deeper" from "the ball is in their half", see the line_drop entry); (2) the Phase 3 agent cannot use `possession: dead` or the ball position to recognise set pieces on real footage; (3) pressing and possession are not compared in `eval_real.py`. Options: a small-blob + motion ball detector on the drone view, or a ball-specific ONNX model in `cv2.dnn`.
+**Measured impact:** possession / pressing missing in 100 % of top-view pipeline frames.
+
+### [2026-10-15] Re-tuning team colours on GT crops picked settings that put officials into the teams
+**Stage:** team colour (tuning method)
+**Severity:** wrong output (caught on dev data, fixed before any eval run)
+
+**Input:** dev clips only (top D_…_1530, side F_…_1680), `scripts/tune_teams.py`, re-choosing `teams.l_weight` / `teams.gate` without eval data (they had been chosen with eval data on 14 Oct).
+**What happened:** the first version scored per-crop accuracy on **GT boxes** and chose `l_weight 1.0, gate 3.5` (98.5 % vs 94.8 % for the old setting). Running the pipeline on the dev clips with it, the drone view had **2.0 unmatched detections per frame labelled home/away** (officials and staff in a team colour). Re-scored on the pipeline's own **detection crops**, the same setting keeps only 41 % (top) / 25 % (side) of the non-player crops out of both teams.
+**Why:** GT has no officials, so a GT-crop score rewards wider gates (every player fits) and never sees the people the gates exist to keep out. A first guard (keeper crops must stay outside the gates) passed on GT crops; fitted on the detection crops, which include the officials and shift the team centres, the same setting also swallows half the keeper crops.
+**Screenshot / output:** outputs/tune_teams_dev.json (detection-crop grid), outputs/tune_officials_dev.log
+**Fix or mitigation:** the score is now 3-class accuracy on the pipeline's dev detection crops: matched outfield player -> their team, matched keeper and every unmatched detection -> "other". Chosen `l_weight 0.75, gate 2.0` (ties within 0.1 % go to the smaller gate; gate 1.5 is worse, so 2.0 is an interior optimum).
+**Measured impact (dev):** non-player crops kept out of the teams 41 % / 25 % (1.0 / 3.5) -> 99 % / 80 % (0.75 / 2.0); outfield crops given the right team 96 % / 97 % -> 93 % / 96 % (crop level, before the per-track vote); team-labelled phantoms on the top dev clip 2.0 -> 0.0 per frame. Eval-clip numbers: CLAUDE.md Key numbers.
+
+### [2026-10-15] Pan/zoom camera: not supported
+**Stage:** camera motion / homography
+**Severity:** known limitation (out of scope; `perception/camera_motion.py` was cut on 14 Oct)
+
+**Input:** the hard-mode clip "2019-11-10: U13 CCL VLSC vs SOCA" by the YouTube channel *Bil Kleb* (CC BY), https://www.youtube.com/watch?v=3vxIlarKxjw, looked at by eye at **0:05, 0:40 and 1:30**. No pipeline run.
+**What is visible:** 0:05 — kickoff, camera zoomed onto the centre circle and halfway line, a handful of players, spectators on the far touchline; 0:40 — camera panned to one goal: the goal, one corner of the penalty box and part of the arc, a few players running towards it; 1:30 — camera near a corner flag, about a third of the pitch, faint white lines crossed by darker lines of other pitch layouts painted on the same grass.
+**What happened:** nothing in Gaffer's geometry holds for this camera:
+1. **Only part of the pitch is ever visible.** At 0:05 (kickoff) the view is zoomed onto the centre circle and halfway line: no goal line, penalty box or corner, ~6 players in view. At 0:40 it has panned to one goal (goal, one penalty-box corner, a sliver of the arc), at 1:30 to a corner flag. A homography needs ≥ 4 known pitch points in the frame, spread out; most frames show one marking (a circle, a line, part of a box) and many players are off-screen, so even a perfect frame gives < 8 of 10 outfield players (`tactics.min_players`) most of the time.
+2. **The lines are faint and ambiguous.** The white paint is worn and thin at this distance, and the grass carries dark lines from other pitch layouts painted over the same field (visible at 0:40 and 1:30), so a line mask finds markings that belong to no model of *this* pitch. The TeamTrack drone and side calibrations relied on crisp lines (FAILURE_LOG 2026-10-10).
+3. **The homography would change every few seconds.** The camera pans to follow the ball and zooms in and out, so the image-to-pitch mapping must be re-estimated on every frame. Our per-frame re-anchoring (`perception/drift.py`) corrects a few pixels of drone wobble around one fixed calibration; it cannot follow a 90° pan or a 2× zoom, and with one marking in view there is nothing to re-anchor to.
+**Why (best guess):** a single amateur camera that follows the ball is the common grassroots setup, but it needs a different approach: per-frame keypoint detection of pitch landmarks (a trained model) plus camera-motion tracking between landmark sightings, and formations only when most of a team is in view. That is a project of its own.
+**Screenshot / output:** none, by design. The players are minors (U13) and we do not hold the original file (the owner was asked for it; DATA_SOURCES), so no frame of this video is committed or redistributed; this entry describes it in words only. Anyone can check it at the timestamps above.
+**Fix or mitigation:** known limitation, stated in the README and report: Gaffer needs a **fixed or near-fixed camera that shows the whole pitch** (drone or fixed panorama, like TeamTrack). Phase 3's `check_frame_quality` should report a camera that moves as "homography not ok" rather than guess.
+**Measured impact:** not run: the pipeline has no calibration for this camera, and none would hold beyond a few seconds.
+
 ### [2026-10-14] Side view: the near assistant referee is output as a 12th "away" player
 **Stage:** team colour
-**Severity:** wrong output (open)
+**Severity:** wrong output (fixed 15 Oct)
 
 **Input:** side eval clips 1710–1800 s at 2 fps (`py scripts\eval_tracking.py --view side --whole-source --save`); found by rescoring the saved `outputs/match_state_side_2fps.json`.
 **What happened:** the assistant referee on the near touchline (dark navy tracksuit, flag) is detected and tracked as one track for the whole window, and labelled **away in 173 of 180 scored frames**. They stand 0.3–0.8 m outside the touchline, which the contract keeps (5 m off-pitch tolerance, for throw-ins), so the formation engine would see 11 away outfield players. They are all of the unmatched "away" detections that lie > 10 m from any GT player (173 of 251 with the GT margin removed). The dev clip shows a similar rate (1.4 unmatched "away" per frame) and it was not noticed there.
 **Why (best guess):** dark navy is close to the away team's dark blue; the classifier down-weights lightness (`teams.l_weight` 0.5), which is where the two differ most. On the drone view the officials' kit falls outside both team gates and they become referees; from the side the near official is large and seen mostly against grass.
 **Screenshot / output:** outputs/failures/2026-10-14_side_touchline_person_as_away.jpg
-**Fix or mitigation:** open. Candidate: a track that stays outside the touchlines for most of its life is an official or staff member, not a player (players leave the pitch only briefly). Not implemented yet.
-**Measured impact:** a phantom away player in 96 % of side eval frames; side detection precision at 2 m 0.794 includes it.
+**Fix or mitigation:** fixed 15 Oct by a geometric rule (user decision): a track beyond a touchline for ≥ 75 % of its life is an official (`perception.official`, `pipeline.official_tracks`; thresholds chosen on the dev clips only with `scripts/tune_officials.py`, no GT player flagged on either dev clip). Independently, the team-colour settings were re-chosen on dev clips (`l_weight 0.75`, `gate 2.0`), which by themselves keep more officials out of the teams.
+**Measured impact:** a phantom away player in 96 % of side eval frames before; after: of the 178 eval detections beyond the near touchline, **173 are "referee"** (the assistant referee) and 5 "home"; unmatched detections labelled "away" 47 % → 22 %; side precision with referee-labelled detections removed 0.831 → 0.888 (raw precision 0.794 unchanged: it counts every output detection).
 
 ### [2026-10-14] Spare balls behind a goal are tracked as a "home" player
 **Stage:** detection / team colour

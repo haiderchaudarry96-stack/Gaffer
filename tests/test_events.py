@@ -108,3 +108,54 @@ def test_end_to_end_flickers_produce_no_event(small_synth_cfg):
     result, gt = _run(small_synth_cfg, schedule)
     assert sum(e.kind == "flicker" for e in gt.noise_events) == 3
     assert result.timeline.events == []
+
+
+def test_change_family_hides_433_4231_but_keeps_the_label(cfg):
+    from dataclasses import replace
+
+    fam = replace(cfg, change_families={"4-3-3": "4-3-3", "4-2-3-1": "4-3-3"})
+    ws = windows(["4-4-2"] * 20 + ["4-3-3"] * 10 + ["4-2-3-1"] * 6 + ["4-3-3"] * 10
+                 + ["4-2-3-1"] * 10)
+    assert len(detect_changes(ws, cfg)) >= 2  # without the family: flip-flop candidates
+    changes = detect_changes(ws, fam)
+    assert len(changes) == 1  # 4-4-2 -> (4-3-3 family) only
+    assert (changes[0].from_formation, changes[0].to_formation) == ("4-4-2", "4-3-3")
+    assert fam.family("4-2-3-1") == "4-2-3-1"  # segments / labels keep the exact formation
+    assert fam.change_family("4-2-3-1") == "4-3-3"
+    assert fam.change_family("5-3-2") == cfg.family("5-3-2")  # 3-5-2 = 5-3-2 still applies
+
+
+def _levels(values: list[float | None], step: float = 5.0) -> list[tuple[float, float | None,
+                                                                         float]]:
+    return [(30.0 + i * step, v, 0.0 if v is None else 0.9) for i, v in enumerate(values)]
+
+
+def test_line_drop_fires_once_after_the_hold_and_reports_both_heights(cfg):
+    from gaffer.tactics.events import detect_line_drops
+
+    lv = _levels([35.0] * 20 + [25.0] * 30)
+    out = detect_line_drops(lv, "home", cfg, drop_m=8.0, hold_s=60.0)
+    assert len(out) == 1
+    d = out[0]
+    first_low = lv[20][0]
+    assert d.detected_at_s == pytest.approx(first_low + 60.0)
+    assert d.t == pytest.approx(first_low - cfg.window_s / 2)
+    e = d.to_event("evt_001")
+    assert e.type == "line_drop" and e.from_ is None and e.to is None
+    assert "35.0 m -> 25.0 m" in e.evidence
+
+
+def test_line_drop_ignores_short_dips_push_ups_and_disabled_config(cfg):
+    from gaffer.tactics.events import detect_line_drops
+
+    dip = _levels([35.0] * 20 + [25.0] * 11 + [35.0] * 20)  # held 50 s < 60 s
+    assert detect_line_drops(dip, "home", cfg, drop_m=8.0, hold_s=60.0) == []
+    up_then_back = _levels([25.0] * 20 + [35.0] * 30 + [25.0] * 30)  # push up re-baselines
+    out = detect_line_drops(up_then_back, "home", cfg, drop_m=8.0, hold_s=60.0)
+    assert len(out) == 1 and out[0].from_formation == "35.0"  # the drop from the new level
+    gap = _levels([35.0] * 20 + [25.0] * 5 + [None] * 10 + [25.0] * 20)  # 50 s gap > 30 s
+    assert all(d.detected_at_s > gap[35][0] for d in
+               detect_line_drops(gap, "home", cfg, drop_m=8.0, hold_s=60.0))
+    from dataclasses import replace
+
+    assert detect_line_drops(dip, "home", replace(cfg, line_drop_m=None)) == []

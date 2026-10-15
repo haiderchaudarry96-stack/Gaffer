@@ -151,6 +151,25 @@ def foot_xy(boxes: np.ndarray, mode: str) -> np.ndarray:
     return np.stack([b[:, 0] + b[:, 2] / 2, b[:, 1] + b[:, 3]], axis=1)
 
 
+def official_tracks(track_pos: dict[int, list[np.ndarray]], width: float,
+                    ocfg: dict[str, Any]) -> set[int]:
+    """Tracks that stay outside the touchlines for most of their life: officials or staff.
+
+    Players leave the pitch only briefly (throw-ins, a ball out of play); assistant referees and
+    staff live beyond the touchline. A track is an official when at least `min_share` of its
+    positions lie more than `outside_m` beyond either touchline (y < -outside_m or
+    y > width + outside_m). The near assistant referee of the side view was labelled "away" in
+    96 % of eval frames before this rule (FAILURE_LOG 2026-10-14).
+    """
+    m, share = float(ocfg["outside_m"]), float(ocfg["min_share"])
+    out = set()
+    for tid, pos in track_pos.items():
+        y = np.asarray(pos, float).reshape(-1, 2)[:, 1]
+        if len(y) and float(np.mean((y < -m) | (y > width + m))) >= share:
+            out.add(tid)
+    return out
+
+
 def _match_id(uri: str) -> str:
     name = Path(uri).name
     for suffix in (".clips.json", ".mp4", ".avi", ".mov", ".mkv"):
@@ -210,7 +229,9 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     foot_mode = pcfg["foot_point"][view]
 
     fps = float(fps or pcfg["sample_fps"])
-    track_fps = float(track_fps or max(fps, float(pcfg["track_fps"])))
+    cfg_tf = pcfg["track_fps"]
+    cfg_tf = cfg_tf[view] if isinstance(cfg_tf, dict) else cfg_tf
+    track_fps = float(track_fps or max(fps, float(cfg_tf)))
     mult = track_fps / fps
     if mult < 1 or abs(mult - round(mult)) > 1e-6:
         raise PipelineError(f"track_fps ({track_fps:g}) must be an integer multiple of the "
@@ -329,10 +350,14 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
               if len(p) / track_fps >= float(so["min_s"])
               and np.percentile(np.linalg.norm(np.array(p) - track_med[tid], axis=1), 95)
               <= float(so["max_spread_m"])}
+    officials = official_tracks(track_pos, model.width, pcfg["official"]) - static
     for r in records:
         for i in range(len(r.boxes)):
-            if int(r.track_ids[i]) in static:
+            tid = int(r.track_ids[i])
+            if tid in static:
                 r.teams[i] = "static"
+            elif tid in officials:
+                r.teams[i] = "referee"
 
     def observed(recs: list[FrameRecord], with_other: bool) -> list[ObservedFrame]:
         out = []

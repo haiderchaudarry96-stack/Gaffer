@@ -20,6 +20,7 @@ dependencies = [
     "python-dotenv>=1.0",              # BSD
     "scipy>=1.13",                     # BSD-3 (Hungarian assignment for formation templates)
     "supervision>=0.30,<0.31",         # MIT (ByteTrack); pulls av (BSD, LGPL FFmpeg), no opencv
+    "requests>=2.32",                  # Apache 2.0 (scripts/download_teamtrack.py; already locked)
 ]
 
 [project.optional-dependencies]

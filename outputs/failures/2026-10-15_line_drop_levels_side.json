@@ -1,0 +1,20 @@
+{
+  "12 m / 180 s (config)": {
+    "pipeline": [],
+    "oracle": []
+  },
+  "8 m / 60 s": {
+    "pipeline": [],
+    "oracle": []
+  },
+  "6 m / 60 s": {
+    "pipeline": [],
+    "oracle": []
+  },
+  "4 m / 30 s": {
+    "pipeline": [],
+    "oracle": [
+      "home t=1750s 49.8->34.3 m"
+    ]
+  }
+}

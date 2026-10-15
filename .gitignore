@@ -20,6 +20,8 @@ models/
 outputs/*
 !outputs/eda/
 !outputs/failures/
+# Hard-mode YouTube frames (players are minors, original file not held): never commit
+outputs/_peek/
 
 # Editors / OS
 .vscode/

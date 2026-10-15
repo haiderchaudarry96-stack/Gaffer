@@ -12,6 +12,11 @@ Usage:
     py scripts\\teamtrack_to_matchstate.py --view top       # -> outputs/oracle_top.json
     py scripts\\teamtrack_to_matchstate.py --view side
     py scripts\\teamtrack_to_matchstate.py --view top --no-video   # skip re-anchoring (fast)
+    py scripts\\teamtrack_to_matchstate.py --view side --gt-inset  # -> oracle_side_inset.json
+
+The official oracle uses the raw GT box bottom. `--gt-inset` moves the side-view foot point up
+by `teamtrack.views.side.gt_foot_inset_px` (the measured annotation margin, FAILURE_LOG
+2026-10-14): a second, clearly labelled reference, used only to report metric error both ways.
 """
 
 from __future__ import annotations
@@ -53,19 +58,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fps", type=float, default=float(cfg["perception"]["sample_fps"]))
     ap.add_argument("--no-video", action="store_true",
                     help="use the reference calibration without per-frame re-anchoring")
-    ap.add_argument("--out", default=None, help="default outputs/oracle_<view>.json")
+    ap.add_argument("--set", default=None, choices=["eval2"],
+                    help="clip set (teamtrack.clip_sets); default dev + eval. eval2 -> "
+                         "outputs/oracle_<view>_eval2[_inset].json")
+    ap.add_argument("--gt-inset", action="store_true",
+                    help="move the GT foot point up by gt_foot_inset_px (labelled variant)")
+    ap.add_argument("--out", default=None,
+                    help="default outputs/oracle_<view>.json (oracle_<view>_inset.json)")
     args = ap.parse_args(argv)
 
     timings: Counter = Counter()
     t_all = time.perf_counter()
     tt, view = cfg["teamtrack"], args.view
     vcfg = tt["views"][view]
+    inset = float(vcfg.get("gt_foot_inset_px", 0.0)) if args.gt_inset else 0.0
     try:
         calib = Calibration.for_view(cfg, view)
-        clips = find_clips(view, cfg)
+        clips = find_clips(view, cfg, [args.set] if args.set else None)
         if any(c.half != 1 for c in clips):
             raise DatasetError("only first-half clips are supported (all ours are half 1)")
-        match_id = f"teamtrack_{view}"
+        match_id = f"teamtrack_{view}" + (f"_{args.set}" if args.set else "")
         clip_list = write_clip_list(clips, repo_path(tt["clip_lists"]) / f"{match_id}.clips.json")
         src = VideoSource(clip_list)
         gts = [load_gt(c.csv) for c in clips]
@@ -104,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         if len(players_df) < n_expected:
             sampled_missing["frames"] += 1
             sampled_missing["objects"] += n_expected - len(players_df)
-        xy = g.mapper.to_pitch(foot_points(players_df, vcfg["foot_point"]))
+        xy = g.mapper.to_pitch(foot_points(players_df, vcfg["foot_point"], inset))
         ok = on_pitch(xy, L, W)
         dropped += int((~ok).sum())
         players = [ObservedPlayer(int(tm) * 100 + int(pid), team_side[tm], float(p[0]),
@@ -135,14 +147,17 @@ def main(argv: list[str] | None = None) -> int:
             {"uri": clip_list.relative_to(repo_path(".")).as_posix(),
              "native_fps": src.native_fps, "width": src.width, "height": src.height},
             "scripts/teamtrack_to_matchstate.py (oracle)",
-            f"TeamTrack {view} GT boxes, foot point = box {vcfg['foot_point']}; geometry "
+            f"TeamTrack {view} GT boxes, foot point = box {vcfg['foot_point']}"
+            + (f" moved up {inset:g} px (annotation margin removed)" if inset else "")
+            + "; geometry "
             f"{'re-anchored per frame' if geo.anchor and not args.no_video else 'static'}",
             float(cfg["perception"]["possession_radius_m"]),
             duration_s=src.end_s)
     except ContractError as exc:
         print(f"ERROR: oracle MatchState invalid: {exc}", file=sys.stderr)
         return 2
-    out = repo_path(args.out or f"outputs/oracle_{view}.json")
+    tag = (f"_{args.set}" if args.set else "") + ("_inset" if args.gt_inset else "")
+    out = repo_path(args.out or f"outputs/oracle_{view}{tag}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(match.model_dump_json(by_alias=True), encoding="utf-8")
     timings["assemble"] += time.perf_counter() - t3

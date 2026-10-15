@@ -18,7 +18,10 @@ against the ground-truth boxes projected with the same per-frame geometry:
 - **speed**: the pipeline's per-stage timing.
 
 The dev clip (`detector.eval.dev_clips`) is evaluated only with `--dev` (tuning); results come
-from the other clips, which are consecutive and run as one window.
+from the other clips, which are consecutive and run as one window. `--set eval2` runs the
+second eval set instead (`teamtrack.clip_sets`; never tuned on, but the same match and cameras
+as eval): all its clips are run and scored as one window, outputs
+`outputs/eval_second_set_tracking_<view>.json` and `match_state_<view>_eval2_<fps>fps.json`.
 
 Usage:
     py scripts\\eval_tracking.py --view top --track-fps 2 4 6 --whole-source --save
@@ -176,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--view", choices=["top", "side"], required=True)
     ap.add_argument("--track-fps", type=float, nargs="+", default=[2.0])
     ap.add_argument("--dev", action="store_true", help="dev clip only (tuning)")
+    ap.add_argument("--set", default=None, choices=["eval2"],
+                    help="second eval set (teamtrack.clip_sets), scored as one window")
     ap.add_argument("--start", type=float, default=None, help="limit the window (match s)")
     ap.add_argument("--end", type=float, default=None)
     ap.add_argument("--tag", default="")
@@ -188,13 +193,17 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     view = args.view
     try:
-        clips = find_clips(view, cfg)
-        dev = set(cfg["detector"]["eval"]["dev_clips"])
-        use = [c for c in clips if (c.stem in dev) == args.dev]
+        lists = repo_path(cfg["teamtrack"]["clip_lists"])
+        if args.set:
+            clips = use = find_clips(view, cfg, [args.set])
+            src = VideoSource(lists / f"teamtrack_{view}_{args.set}.clips.json")
+        else:
+            clips = find_clips(view, cfg)
+            dev = set(cfg["detector"]["eval"]["dev_clips"])
+            use = [c for c in clips if (c.stem in dev) == args.dev]
+            src = VideoSource(lists / f"teamtrack_{view}.clips.json")
         if not use:
             raise DatasetError("no clips selected")
-        lists = repo_path(cfg["teamtrack"]["clip_lists"])
-        src = VideoSource(lists / f"teamtrack_{view}.clips.json")
         gts = [load_gt(c.csv).boxes for c in clips]
     except (DatasetError, VideoError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -209,8 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     results: dict[str, Any] = {}
     for tf in args.track_fps:
         print(f"== {view}, tracking at {tf:g} fps, run {ra:.0f}-{rb:.0f} s, scored {a:.0f}-"
-              f"{b:.0f} s ({'DEV' if args.dev else 'eval'})", flush=True)
-        stem = f"{view}_{tf:g}fps"
+              f"{b:.0f} s ({args.set or ('DEV' if args.dev else 'eval')})", flush=True)
+        stem = f"{view}_{args.set}_{tf:g}fps" if args.set else f"{view}_{tf:g}fps"
         try:
             res = run(src.uri, view=view, start_s=ra, end_s=rb, track_fps=tf, cfg=cfg,
                       progress=True,
@@ -238,9 +247,13 @@ def main(argv: list[str] | None = None) -> int:
               f"{i['distinct_tracks']} tracks for {i['gt_players']} GT players "
               f"({i['tracks_per_gt_player']} per player), mean track {i['mean_track_length_s']} s")
         print("  " + res.timing_table().replace("\n", "\n  "), flush=True)
-    out = repo_path(f"outputs/eval_tracking_{view}{'_dev' if args.dev else ''}{args.tag}.json")
+    out = repo_path(f"outputs/eval_second_set_tracking_{view}{args.tag}.json" if args.set else
+                    f"outputs/eval_tracking_{view}{'_dev' if args.dev else ''}{args.tag}.json")
     old = json.loads(out.read_text(encoding="utf-8")).get("results", {}) if out.exists() else {}
-    out.write_text(json.dumps({"view": view, "dev": args.dev, "window": [a, b],
+    note = ("second eval set: never used for tuning, but NOT independent of the first eval "
+            "set (same match, same camera, neighbouring minutes)") if args.set else None
+    out.write_text(json.dumps({"view": view, "dev": args.dev, "set": args.set or
+                               ("dev" if args.dev else "eval"), "note": note, "window": [a, b],
                                "run_window": [ra, rb],
                                "results": {**old, **results}}, indent=2), encoding="utf-8")
     print(f"-> {out}")

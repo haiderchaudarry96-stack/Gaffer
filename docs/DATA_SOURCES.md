@@ -45,7 +45,7 @@ Use only footage and models whose terms permit this use, and record every one he
 | Clip length | ~30 s per file, consecutive files = consecutive segments |
 | Annotations | Per frame: bounding box (`bb_left`, `bb_top`, `bb_width`, `bb_height`) + `TeamID` + `PlayerID` for every player |
 | Local path | `data/teamtrack/soccer_top/{videos,annotations}`, `data/teamtrack/soccer_side/{videos,annotations}` |
-| Not used | basketball, handball, train/val splits (fetch later with `scripts/download_teamtrack.py` only if needed) |
+| Not used | basketball, handball, soccer train/val splits and side test clips 1800–1980 s (listed by `scripts/download_teamtrack.py --list`; not downloaded, see data/README.md) |
 
 Why it fits: amateur university match, full pitch visible, a **fixed side camera any club could install** (real-world impact), and **ground truth** to measure detection, team classification and formations honestly.
 
@@ -59,6 +59,7 @@ Why it fits: amateur university match, full pitch visible, a **fixed side camera
 | Camera | Elevated, **pans and zooms** to follow the ball |
 | Status | Original file requested from the owner. Do not use a ripped copy — YouTube's terms forbid third-party downloaders even for CC videos. |
 | Care | U13 players: no identification, no face close-ups, anonymous dots only |
+| Used so far | Looked at by eye at 0:05 / 0:40 / 1:30 for the pan/zoom limitation (FAILURE_LOG 2026-10-15, described in words only). A local copy downloaded by the user for this test lives in the gitignored `outputs/_peek/`: **never commit or redistribute frames** (minors; the original file is not held). |
 
 ### ❌ Considered and rejected
 

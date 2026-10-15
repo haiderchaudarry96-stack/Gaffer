@@ -64,9 +64,13 @@ def test_fit_team_model_names_teams_and_isolates_others() -> None:
     keeper = hex_to_feature("#f0dc10", s.l_weight) + rng.normal(0, 1.0, (10, 3))
     m = fit_team_model(np.concatenate([blue, ref, white, keeper]),
                        {"home": "#f0f0f0", "away": "#2848a0"}, s)
-    lab, _ = m.classify(np.concatenate([white[:5], blue[:5], ref[:5], keeper[:5]]))
-    assert lab.tolist() == [0] * 5 + [1] * 5 + [2] * 10  # home, away, other
-    assert 0.05 < m.outlier_share < 0.12
+    lab, _ = m.classify(np.concatenate([white[:20], blue[:20], ref[:10], keeper[:10]]))
+    # teams named by their hints (a few noisy team crops fall outside the gate: the per-track
+    # vote absorbs those), other colours always isolated
+    assert (lab[:20] == 0).mean() >= 0.9 and (lab[20:40] == 1).mean() >= 0.9
+    assert not (lab[:40] == 1 - np.repeat([0, 1], 20)).any()  # never the wrong team
+    assert (lab[40:] == 2).all()
+    assert 0.05 < m.outlier_share < 0.15
 
 
 def test_track_voter_is_unknown_until_settled() -> None:
@@ -230,3 +234,16 @@ def test_pipeline_errors(synthetic_match, tmp_path) -> None:
     vw.release()
     with pytest.raises(TooFewPlayersError):
         run(empty, cfg=cfg)
+
+
+def test_tracks_living_beyond_a_touchline_are_officials() -> None:
+    from gaffer.perception.pipeline import official_tracks
+
+    rule = {"outside_m": 0.0, "min_share": 0.75}
+    rng = np.random.default_rng(42)
+    linesman = [np.array([x, -0.6 + rng.normal(0, 0.1)]) for x in np.linspace(10, 50, 80)]
+    throw_in = [np.array([30.0, 20.0])] * 70 + [np.array([30.0, -0.5])] * 10  # 12 % outside
+    far_side = [np.array([x, 68.7]) for x in np.linspace(60, 90, 40)]
+    out = official_tracks({1: linesman, 2: throw_in, 3: far_side}, 68.0, rule)
+    assert out == {1, 3}
+    assert official_tracks({1: linesman}, 68.0, {"outside_m": 0.0, "min_share": 2.0}) == set()

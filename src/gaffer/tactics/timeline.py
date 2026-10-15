@@ -1,7 +1,8 @@
 """Build the compact `tactical_timeline.json` the agent reads.
 
-Segments are split at period boundaries, at every candidate change and at least every
-`max_segment_s`, so a segment never spans a formation change. Each segment carries, per team,
+Segments are split at period boundaries, at every candidate shape change and at least every
+`max_segment_s`, so a segment never spans a formation change. `line_drop` events are listed
+with the shape changes but do not split segments. Each segment carries, per team,
 the majority formation of its windows (or "uncertain"), and averaged shape metrics.
 
 CLI:
@@ -15,7 +16,7 @@ import argparse
 import sys
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +34,7 @@ from gaffer.schema import (
     load_match_state,
 )
 from gaffer.tactics.common import SIDES, TacticsConfig, TeamFrame, extract_team_frames
-from gaffer.tactics.events import DetectedChange, detect_changes
+from gaffer.tactics.events import DetectedChange, detect_changes, detect_line_drops, line_levels
 from gaffer.tactics.formation import UNCERTAIN, WindowResult, analyse_formations, parse_formation
 from gaffer.tactics.metrics import possession_share, span_metrics
 
@@ -48,8 +49,9 @@ class TacticsResult:
 
     timeline: TacticalTimeline
     windows: dict[Side, list[WindowResult]]
-    changes: list[DetectedChange]
+    changes: list[DetectedChange]  # shape changes only
     timings_s: dict[str, float]
+    line_drops: list[DetectedChange] = field(default_factory=list)
 
 
 def _r(v: float | None, nd: int = 1) -> float | None:
@@ -164,7 +166,11 @@ def build_timeline(match: MatchState, cfg: TacticsConfig | None = None) -> Tacti
         for period in match.periods[1:]:
             if 0.0 <= c.t - period.start_s <= cfg.snap_to_period_s:
                 c.t = period.start_s
-    events = [c.to_event(f"evt_{i + 1:03d}") for i, c in enumerate(changes)]
+    drops = sorted((d for s in SIDES
+                    for d in detect_line_drops(line_levels(team_frames[s], cfg), s, cfg)),
+                   key=lambda d: (d.t, d.team))
+    events = [c.to_event(f"evt_{i + 1:03d}") for i, c in
+              enumerate(sorted(changes + drops, key=lambda c: (c.t, c.team)))]
     timings["events"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
@@ -198,7 +204,8 @@ def build_timeline(match: MatchState, cfg: TacticsConfig | None = None) -> Tacti
         segments=segments, events=events, quality=quality,
     )
     timings["timeline"] = time.perf_counter() - t0
-    return TacticsResult(timeline=timeline, windows=windows, changes=changes, timings_s=timings)
+    return TacticsResult(timeline=timeline, windows=windows, changes=changes, timings_s=timings,
+                         line_drops=drops)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -225,8 +232,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{match.match_id}: {len(tl.segments)} segments, {len(tl.events)} candidate events, "
           f"{len(text.encode()) / 1024:.1f} KB -> {out}")
     for e in tl.events:
-        print(f"  {e.id} t={e.t:7.1f}s {e.team:4s} {e.from_} -> {e.to} "
-              f"(conf {e.confidence:.2f})")
+        what = f"{e.from_} -> {e.to}" if e.type == "shape_change" else e.evidence
+        print(f"  {e.id} t={e.t:7.1f}s {e.team:4s} {e.type}: {what} (conf {e.confidence:.2f})")
     print("timing: " + ", ".join(f"{k} {v:.2f}s" for k, v in
                                  {"load": t_load, **result.timings_s}.items()))
     return 0

@@ -1,13 +1,16 @@
 """Evaluate the tactics engine against synthetic ground truth.
 
 Usage:
-    py scripts\\eval_synthetic.py --heldout  # OFFICIAL: held-out seeds 100-109 (never tuned on)
+    py scripts\\eval_synthetic.py --heldout2   # OFFICIAL since 15 Oct: seeds 110-119
+    py scripts\\eval_synthetic.py --heldout2 --no-change-equivalence   # ablation: 4-3-3 != 4-2-3-1
+    py scripts\\eval_synthetic.py --heldout    # seeds 100-109 (official 10-14 Oct, now seen)
     py scripts\\eval_synthetic.py --heldout --no-equivalence   # ablation: no formation families
-    py scripts\\eval_synthetic.py            # match_001 + seeds 43-52 (tuning-time eval set)
-    py scripts\\eval_synthetic.py --dev      # tuning seeds only (never report these)
+    py scripts\\eval_synthetic.py            # match_001 + seeds 43-52 = the dev set "seeds 42-52"
+    py scripts\\eval_synthetic.py --dev      # old tuning seeds 1000-1002 (never report these)
 
-The held-out numbers are the official synthetic results (Phase 2 honesty check, 10 Oct): the
-eval seeds 43-52 were seen while deciding the 3-5-2 = 5-3-2 equivalence.
+Seeds 43-52 were seen while deciding the 3-5-2 = 5-3-2 equivalence (10 Oct), seeds 100-109 while
+deciding 4-3-3 = 4-2-3-1 for change detection (found there, 10 Oct). Everything changed on
+15 Oct is tuned on match_001 + seeds 43-52 and reported on seeds 110-119.
 
 Reports:
 - formation accuracy per rolling window (strict: "uncertain" counts as wrong; confident-only;
@@ -40,7 +43,8 @@ import numpy as np
 from gaffer.config import load_config, repo_path
 from gaffer.schema import GroundTruth, load_ground_truth, load_match_state, parse_match_state
 from gaffer.synthetic import generate_match, match_001_schedule, random_schedule
-from gaffer.tactics.common import SIDES, TacticsConfig
+from gaffer.tactics.common import SIDES, TacticsConfig, extract_team_frames
+from gaffer.tactics.events import line_levels
 from gaffer.tactics.formation import UNCERTAIN
 from gaffer.tactics.timeline import build_timeline
 
@@ -64,6 +68,7 @@ def _run_one(job: dict[str, Any]) -> dict[str, Any]:
     t_gen = time.perf_counter() - t0
     tcfg = TacticsConfig.from_config(cfg)
     result = build_timeline(match, tcfg)
+    tf = extract_team_frames(match, tcfg) if job.get("levels") else None
     return {
         "match_id": job["match_id"],
         "seed": job["seed"],
@@ -73,6 +78,10 @@ def _run_one(job: dict[str, Any]) -> dict[str, Any]:
         "changes": [{"team": c.team, "t": c.t, "detected_at_s": c.detected_at_s,
                      "from": c.from_formation, "to": c.to_formation,
                      "confidence": c.confidence} for c in result.changes],
+        "line_drops": [{"team": d.team, "t": d.t, "detected_at_s": d.detected_at_s,
+                        "from_m": float(d.from_formation), "to_m": float(d.to_formation)}
+                       for d in result.line_drops],
+        "line_levels": ({s: line_levels(tf[s], tcfg) for s in SIDES} if tf else None),
         "timeline_bytes": len(result.timeline.to_json().encode()),
         "timings_s": {"load_or_generate": t_gen, **result.timings_s},
     }
@@ -83,6 +92,8 @@ def _job_config(job: dict[str, Any]) -> dict[str, Any]:
     cfg = load_config()
     if job.get("no_equivalence"):
         cfg = {**cfg, "formations": {**cfg["formations"], "equivalent": []}}
+    if job.get("no_change_equivalence"):
+        cfg = {**cfg, "formations": {**cfg["formations"], "change_equivalent": []}}
     return cfg
 
 
@@ -225,15 +236,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--heldout", action="store_true",
                         help="run on the held-out seeds (eval.synthetic.heldout_seeds): the "
                              "official synthetic numbers")
+    parser.add_argument("--heldout2", action="store_true",
+                        help="run on eval.synthetic.heldout_seeds_2 (110-119): official since 15 "
+                             "Oct")
     parser.add_argument("--no-equivalence", action="store_true",
                         help="ablation: treat 3-5-2 and 5-3-2 (etc.) as different formations")
+    parser.add_argument("--no-change-equivalence", action="store_true",
+                        help="ablation: no change-detection-only families (4-3-3 = 4-2-3-1)")
     parser.add_argument("--extra", type=int, default=int(ev["extra_matches"]))
     parser.add_argument("--out", default=None,
                         help="default: outputs/eval_synthetic[_<mode>][_noeq].json")
     args = parser.parse_args(argv)
 
-    if args.dev or args.heldout:
-        key, prefix = ("heldout_seeds", "heldout") if args.heldout else ("dev_seeds", "dev")
+    if args.dev or args.heldout or args.heldout2:
+        key, prefix = (("heldout_seeds_2", "heldout2") if args.heldout2 else
+                       ("heldout_seeds", "heldout") if args.heldout else ("dev_seeds", "dev"))
         jobs = [{"match_id": f"synthetic_{prefix}_{s}", "seed": s, "scripted": False}
                 for s in ev[key]]
     else:
@@ -245,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for job in jobs:
         job["no_equivalence"] = args.no_equivalence
+        job["no_change_equivalence"] = args.no_change_equivalence
     t0 = time.perf_counter()
     with ProcessPoolExecutor(max_workers=int(ev["workers"])) as pool:
         runs = list(pool.map(_run_one, jobs))
@@ -252,8 +270,11 @@ def main(argv: list[str] | None = None) -> int:
 
     tcfg = TacticsConfig.from_config(_job_config(jobs[0]))
     tol = float(ev["tolerance_s"])
-    mode = "heldout" if args.heldout else "dev" if args.dev else "eval"
+    mode = ("heldout2" if args.heldout2 else "heldout" if args.heldout else
+            "dev" if args.dev else "eval")
     report: dict[str, Any] = {"mode": mode, "no_equivalence": args.no_equivalence,
+                              "no_change_equivalence": args.no_change_equivalence,
+                              "change_families": tcfg.change_families,
                               "matches": [r["match_id"] for r in runs],
                               "tolerance_s": tol, "window_s": tcfg.window_s,
                               "min_persist_s": tcfg.min_persist_s}
@@ -276,6 +297,14 @@ def main(argv: list[str] | None = None) -> int:
     for truth in sorted(conf):
         print(f"  {truth:9s}" + "".join(f"{conf[truth].get(lab, 0):>10d}" for lab in labels))
 
+    drops = [d for r in runs for d in r["line_drops"]]
+    report["line_drops"] = {
+        "per_match": round(len(drops) / len(runs), 2), "total": len(drops),
+        "note": "synthetic GT has no line drops (contract v1.0): every event here is ball- or "
+                "possession-driven line movement, i.e. a false alarm for a tactical drop",
+        "list": [{"match": r["match_id"], **d} for r in runs for d in r["line_drops"]]}
+    print(f"\nline_drop events: {len(drops)} in {len(runs)} matches "
+          f"({len(drops) / len(runs):.2f} per match; no GT: all are false alarms by construction)")
     sizes = [r["timeline_bytes"] for r in runs]
     report["timeline_bytes"] = {"max": max(sizes), "mean": round(float(np.mean(sizes)))}
     per_match = np.mean([r["timings_s"]["formation"] for r in runs])
@@ -287,7 +316,8 @@ def main(argv: list[str] | None = None) -> int:
           "a formation); real accuracy comes from Phase 2 pipeline vs oracle.")
 
     default_out = ("outputs/eval_synthetic" + ("" if mode == "eval" else f"_{mode}")
-                   + ("_noeq" if args.no_equivalence else "") + ".json")
+                   + ("_noeq" if args.no_equivalence else "")
+                   + ("_nocheq" if args.no_change_equivalence else "") + ".json")
     out = repo_path(args.out or default_out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")

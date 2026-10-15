@@ -149,3 +149,38 @@ long = wide.stack(level=[0, 1], future_stack=True).dropna(how='all').reset_index
 - **PlayerIDs sort as strings and attributes are alphabetical** in the CSV — positional indexing would silently scramble players.
 - Only 4.5 min (top) and 2.0 min (side) of continuous play — too short for real formation changes, as anticipated in the PLAN risks; shape-change accuracy must come from synthetic data, TeamTrack proves perception accuracy.
 
+
+## 10. Second eval set (added 15 Oct, checked by hand + script)
+
+The user downloaded 15 more clips by hand from the same Kaggle dataset (`atomscott/teamtrack`):
+**9 drone clips `D_20220220_1_1260_1290` … `D_20220220_1_1500_1530`** (Kaggle `soccer_top/val`)
+and **6 side clips `F_20220220_1_1800_1830` … `F_20220220_1_1950_1980`** (Kaggle
+`soccer_side/test`). Config: `teamtrack.clip_sets.<view>.eval2`; scripts use it only with
+`--set eval2`, so every earlier result keeps its meaning.
+
+- **What it is:** a *second eval set*: never used for tuning anything. **It is not independent
+  of the first eval set**: same match (20 Feb 2022, first half), same two cameras, the same teams
+  and kits, and neighbouring minutes (drone: the 4.5 min just before the dev clip; side: the
+  3 min just after the first eval clips). It tests generalisation over time within one match,
+  not to new teams, pitches or cameras.
+- **Files:** all 15 videos open with `cv2.VideoCapture` and decode their first and last frame:
+  drone 3840×2160, 29.97 fps, 900 frames (30.0 s); side 6500×1000, 25 fps, 750 frames (30.0 s),
+  same as the first set. All 15 CSVs parse with `teamtrack.load_gt` (23 objects: 11 + 11 + ball).
+  Sizes equal Kaggle's own listing; SHA-256 in `data/teamtrack_manifest.json` (56 files, 600.1 MB).
+- **Odd:** `D_…_1290_1320` has **281 empty cells** (frames with 21 instead of 23 objects); the
+  loader skips them, as on the first set (644 empty cells there).
+- **Geometry:** in the earlier minutes the drone sits up to **69 px** away from the calibration
+  frame (first set: max 14 px); per-frame re-anchoring absorbs it (line error 0.08–0.10 m at
+  0 / 15 / 29 s of every new clip, `homography_ok` everywhere). The side calibration fits the new
+  side clips as well as the old ones (line error 0.07–0.09 m).
+
+### Why `D_20220220_1_1620_1650.csv` is twice the size (first eval set)
+
+Same 904 lines and 93 columns as its neighbours, same frames and objects, no duplicates.
+The difference is number formatting: **78 % of its values are fractional** (`1331.5`, `52.75`,
+long float repr such as `2576.6666666666665`) against ~3 % in the other CSVs, and only 3 of 900
+rows are all-integer (neighbours: 88–100 integer rows, every 1–6 frames). The boxes were
+evidently produced differently for this clip (interpolated or smoothed between keyframes rather
+than drawn per frame). **Effect on the old results: none measurable**: pipeline vs GT on this
+clip, recall at 1 m 0.961 and matched position error 0.112 m (median), against 0.88–0.98 and
+0.11–0.20 m on the other clips. The file is left unchanged.

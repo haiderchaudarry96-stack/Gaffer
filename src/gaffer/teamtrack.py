@@ -43,9 +43,23 @@ class Clip:
     half: int
 
 
-def find_clips(view: str, cfg: dict[str, Any]) -> list[Clip]:
-    """All clips of a view (`top` | `side`), sorted by start time. Raises `DatasetError` with
-    a download hint if the folder is missing or empty."""
+def clip_set(view: str, cfg: dict[str, Any], start_s: float) -> str | None:
+    """Name of the clip set (`teamtrack.clip_sets`) a clip starting at `start_s` belongs to."""
+    for name, (a, b) in (cfg["teamtrack"].get("clip_sets", {}).get(view) or {}).items():
+        if float(a) <= start_s < float(b):
+            return name
+    return None
+
+
+def find_clips(view: str, cfg: dict[str, Any], sets: list[str] | tuple[str, ...] | None = None
+               ) -> list[Clip]:
+    """Clips of a view (`top` | `side`) in the given clip sets (default
+    `teamtrack.default_sets`: dev + eval, so adding footage never changes old results), sorted
+    by start time. Raises `DatasetError` with a download hint if the folder is missing or
+    empty."""
+    tt = cfg["teamtrack"]
+    want = set(sets if sets is not None else tt.get("default_sets") or [])
+    use_sets = bool(tt.get("clip_sets")) and bool(want)
     vcfg = cfg["teamtrack"]["views"][view]
     root = repo_path(cfg["paths"]["teamtrack"]) / vcfg["folder"]
     vids = sorted((root / "videos").glob("*.mp4"))
@@ -55,7 +69,7 @@ def find_clips(view: str, cfg: dict[str, Any]) -> list[Clip]:
     clips = []
     for v in vids:
         m = NAME_RE.match(v.stem)
-        if not m:
+        if not m or (use_sets and clip_set(view, cfg, float(m["start"])) not in want):
             continue
         csv = root / "annotations" / f"{v.stem}.csv"
         clips.append(Clip(view, v.stem, v, csv, float(m["start"]), float(m["end"]),

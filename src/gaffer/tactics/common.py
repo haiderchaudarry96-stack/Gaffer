@@ -31,6 +31,7 @@ class TacticsConfig:
     line_width_m: dict[int, float]
     overrides: dict[str, dict[str, Any]]
     families: dict[str, str]  # formation -> family name (first member of its group)
+    change_families: dict[str, str]  # extra groups for change detection only
     sample_fps: float
     window_s: float
     step_s: float
@@ -54,6 +55,8 @@ class TacticsConfig:
     snap_to_period_s: float
     low_visibility_players: float
     low_visibility_min_s: float
+    line_drop_m: float | None = None  # None: no line_drop events
+    line_drop_hold_s: float | None = None
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any] | None = None) -> TacticsConfig:
@@ -61,6 +64,8 @@ class TacticsConfig:
         cfg = cfg if cfg is not None else load_config()
         f, t, p = cfg["formations"], cfg["tactics"], cfg["pitch"]
         m, ch, tl, gk = t["metrics"], t["change"], t["timeline"], t["goalkeeper"]
+        ld = t.get("line_drop")
+        ld = ld if ld and ld.get("enabled", True) else None
         return cls(
             pitch_length_m=float(p["length_m"]),
             pitch_width_m=float(p["width_m"]),
@@ -71,6 +76,8 @@ class TacticsConfig:
             overrides=dict(f.get("overrides") or {}),
             families={name: group[0] for group in (f.get("equivalent") or [])
                       for name in group},
+            change_families={name: group[0] for group in (f.get("change_equivalent") or [])
+                             for name in group},
             sample_fps=float(t["sample_fps"]),
             window_s=float(t["window_s"]),
             step_s=float(t["step_s"]),
@@ -95,12 +102,22 @@ class TacticsConfig:
             snap_to_period_s=float(tl["snap_to_period_s"]),
             low_visibility_players=float(tl["low_visibility_players"]),
             low_visibility_min_s=float(tl["low_visibility_min_s"]),
+            line_drop_m=float(ld["min_drop_m"]) if ld else None,
+            line_drop_hold_s=float(ld["min_hold_s"]) if ld else None,
         )
 
 
     def family(self, formation: str | None) -> str | None:
         """Family of a formation (itself unless listed in `formations.equivalent`)."""
         return None if formation is None else self.families.get(formation, formation)
+
+    def change_family(self, formation: str | None) -> str | None:
+        """Family used by the change detector: `formations.equivalent` plus
+        `formations.change_equivalent` (labels and segments keep the narrower `family`)."""
+        if formation is None:
+            return None
+        f = self.family(formation)
+        return self.change_families.get(f, self.change_families.get(formation, f))
 
 
 @dataclass

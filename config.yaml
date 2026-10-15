@@ -122,9 +122,16 @@ pitch:
 perception:
   sample_fps: 2.0                 # same rate as the synthetic data
   possession_radius_m: 2.0        # nearest player within this of the ball has it (shared rule)
-  track_fps: 2.0                  # detection + tracking rate; an integer multiple of sample_fps
+  track_fps: {top: 4.0, side: 2.0}  # detection + tracking rate per view, an integer multiple of
+                                  # sample_fps. Top 4 fps (user decision 14 Oct: ID switches
+                                  # 3.4 -> 1.6 /player-min, team acc 95.9 -> 98.5 %, 1.4x cost);
+                                  # side stays 2 fps (tiled YOLOX is 2.7 s per frame)
   foot_point: {top: centre, side: bottom}   # ground contact of a box (drone: blob centre)
   min_players_per_frame: 6        # median detections per frame below this -> TooFewPlayersError
+  official: {outside_m: 0.0, min_share: 0.75}  # a track beyond a touchline (by > outside_m) for
+                                  # >= 75 % of its life is an official/staff member, not a player
+                                  # (user decision 14 Oct; dev clips only, tune_officials.py:
+                                  # middle of the 0.5-0.9 plateau, no GT player flagged)
   static_object: {min_s: 20.0, max_spread_m: 0.3}   # a track that stays within 0.3 m (p95) for
                                   # 20 s+ is an object (spare balls behind a goal), not a person
   teams:                          # per footage: names, display colours, shirt-colour hints
@@ -145,8 +152,11 @@ teams:                            # team classifier (perception/team_classifier.
   grass_hue: [30, 75]             # OpenCV hue band of grass (top view grass H 43-55, side 13-60)
   grass_min_saturation: 40
   min_pixels: 6                   # fewer non-grass pixels -> no vote this frame
-  l_weight: 0.5                   # lightness counts half (shade/distance change L, not hue)
-  gate: 2.5                       # outlier gate = gate x median distance to the team centre
+  l_weight: 0.75                  # weight of lightness L* vs a*, b*; re-chosen on the dev clips
+                                  # only (15 Oct, scripts/tune_teams.py, 3-class crop accuracy);
+                                  # was 0.5, chosen with eval data on 14 Oct
+  gate: 2.0                       # outlier gate = gate x median distance to the team centre (was
+                                  # 2.5); >= 3.5 puts most officials/staff crops into a team
   min_gate: 5.0                   # (CIELAB units)
   refit_rounds: 4
   other_clusters: 3               # referee/officials + two keepers: their own k-means clusters
@@ -156,10 +166,9 @@ teams:                            # team classifier (perception/team_classifier.
   min_votes: 3                    # ... once it has 3 votes ("unknown" before) ...
   min_share: 0.6                  # ... and the majority holds 60 %
   keeper_zone: {depth_m: 30.0, half_width_m: 22.0}   # 'other' track whose median is here =
-  # keeper. 20 -> 30 m after the first top eval run: the away keeper's median was 20.6 m out
-  # (sweeper keeper), referee medians >= 39 m from both goals (decided on eval data, disclosed).
-  # l_weight / gate chosen on GT crops of top clips 1530-1620 and all 4 side clips (14 Oct):
-  # per-crop accuracy top 99 %, side 94 %; keepers and officials fall outside both gates.
+  # keeper. Re-checked on dev clips only (15 Oct): the home keeper's median is 24.5 m (top dev)
+  # and 24.2 m (side dev) from their goal line, so 30 m (a 5 m margin) stays. History: 20 -> 30 m
+  # on 14 Oct after an eval run (away keeper at 20.6 m), disclosed in FAILURE_LOG.
 
 tracking:                         # supervision ByteTrack (perception/tracker.py)
   match_scale_hz: 12.0            # matching boxes enlarged 1 + 12 / fps x around their centre:
@@ -175,6 +184,13 @@ tracking:                         # supervision ByteTrack (perception/tracker.py
     match_m: {top: 1.0, side: 2.0}   # GT <-> track distance for ID switches / team accuracy
 
 teamtrack:
+  # Clip sets by match time [start_s, end_s). Scripts use dev + eval unless asked (--set eval2).
+  # eval2 = the "second eval set" (downloaded by hand by the user, 15 Oct): never used for
+  # tuning, but NOT independent of eval (same match, same cameras, neighbouring minutes).
+  clip_sets:
+    top: {dev: [1530, 1560], eval: [1560, 1800], eval2: [1260, 1530]}   # eval2 = Kaggle val
+    side: {dev: [1680, 1710], eval: [1710, 1800], eval2: [1800, 1980]}  # eval2 = Kaggle test
+  default_sets: [dev, eval]
   views:
     top: {folder: soccer_top, foot_point: centre, calibration: top}   # drone: blob centre
     side: {folder: soccer_side, foot_point: bottom, calibration: side,  # feet = box bottom
@@ -246,6 +262,12 @@ formations:
   # back five without the ball). Switching inside a family is not a shape change. Eval showed
   # 62 of 89 false positives were 3-5-2 <-> 5-3-2 flip-flops with possession (FAILURE_LOG).
   equivalent: [["3-5-2", "5-3-2"]]
+  # Change-detection-only families (labels, confidences, segments keep the exact formation).
+  # [["4-3-3", "4-2-3-1"]] was measured on 15 Oct and is OFF: on seeds 110-119 it cut false
+  # positives 34 -> 16 but lost 6 of 38 real changes (hits 34 -> 28, all real 4-3-3 <-> 4-2-3-1
+  # switches); dev seeds 27 -> 18 FPs, 39 -> 36 hits. The Phase 3 agent can reject a false
+  # candidate but never recover a missed one (FAILURE_LOG 2026-10-15).
+  change_equivalent: []
   overrides:
     "4-3-3": {line_widths_m: [40.0, 26.0, 44.0]}
     "4-2-3-1": {line_widths_m: [40.0, 16.0, 40.0, 0.0]}
@@ -266,6 +288,14 @@ tactics:
   goalkeeper:                     # used only when no player carries role "goalkeeper"
     max_depth_m: 20.0             # deepest player within this of own goal line ...
     min_gap_m: 8.0                # ... and this far behind the next deepest is the keeper
+  line_drop:                      # defensive line (30 s trailing mean, deepest 4) sits this much
+    enabled: false                # OFF (15 Oct): 1.70 false alarms per match on seeds 110-119,
+                                  # none on the real clips, recall unmeasurable (FAILURE_LOG)
+    min_drop_m: 12.0              # deeper than its reference level ...
+    min_hold_s: 180.0             # ... for this long (causal). Dev seeds (tune_line_drop.py): NO
+                                  # setting met 1 false alarm per match (synthetic lines follow
+                                  # the ball, median 10.5 m per minute); this is the grid's fewest,
+                                  # 1.55 per match. Synthetic GT cannot label drops (contract v1.0)
   change:
     min_persist_s: 20.0           # a new formation must hold this long to become a candidate
     max_uncertain_gap_s: 30.0     # uncertain stretch longer than this resets the challenger
@@ -351,7 +381,9 @@ eval:
     extra_matches: 10             # random-schedule matches on top of match_001 ...
     first_seed: 43                # ... with seeds 43, 44, ...
     dev_seeds: [1000, 1001, 1002] # tuning only; never reported as results
-    heldout_seeds: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]  # official numbers (10 Oct);
-                                  # never tune on these
+    heldout_seeds: [100, 101, 102, 103, 104, 105, 106, 107, 108, 109]  # official 10-14 Oct; seen
+                                  # (the 4-3-3 = 4-2-3-1 problem was found on them)
+    heldout_seeds_2: [110, 111, 112, 113, 114, 115, 116, 117, 118, 119]  # official since 15 Oct;
+                                  # first run 15 Oct, never tune on these
     tolerance_s: 90.0             # a detected change within this of a true one is a hit
     workers: 4

@@ -142,13 +142,15 @@ src/gaffer/
   schema.py               # pydantic models — the data contract
   config.py               # loads config.yaml
   llm/bedrock_client.py   # Bedrock Converse API: chat, tool calling, retries, usage logging
-  perception/             # detector (cv2.dnn), tracker, team_classifier, pitch (homography), camera_motion, pipeline
+  perception/             # detector (cv2.dnn), tracker, team_classifier, pitch (homography), drift, pipeline
+                          # (camera_motion.py was cut 15 Oct: pan/zoom cameras are a stated limitation)
   tactics/                # formation, events, metrics, timeline
   agent/                  # tools (data + vision), loop, report, alerts
   api/                    # FastAPI app + static frontend
   aws/                    # s3 helpers, cloudwatch metrics
 scripts/                  # smoke tests, inspect_data, make_synthetic_match, eval_synthetic,
-                          # teamtrack_to_matchstate, download_teamtrack, calibrate, eval_real, eval_agent
+                          # teamtrack_to_matchstate, download_teamtrack, calibrate, eval_real, eval_agent,
+                          # tune_teams / tune_officials / tune_line_drop (dev data only)
 tests/                    # pytest (LLM always mocked)
 data/                     # teamtrack/ (videos gitignored), synthetic/, labels/, data/README.md with licences
 outputs/                  # generated artefacts, llm_calls.jsonl, agent_trace.jsonl, alerts.jsonl
@@ -217,13 +219,18 @@ py scripts\inspect_data.py              # writes docs\DATA_NOTES.md + sample fra
 
 # synthetic data + tactics eval
 py scripts\make_synthetic_match.py --out data\synthetic\match_001.json
-py scripts\eval_synthetic.py --heldout # OFFICIAL: held-out seeds 100-109 (--no-equivalence = ablation)
-py scripts\eval_synthetic.py           # match_001 + seeds 43-52 (tuning-time set); --dev = tuning seeds
+py scripts\eval_synthetic.py --heldout2 # OFFICIAL since 15 Oct: seeds 110-119 (--no-change-equivalence = ablation)
+py scripts\eval_synthetic.py --heldout  # seeds 100-109 (official 10-14 Oct, now seen; --no-equivalence = ablation)
+py scripts\eval_synthetic.py            # dev set "seeds 42-52" = match_001 + 43-52; --dev = old seeds 1000-1002
+py scripts\tune_line_drop.py            # line_drop X/Y sweep on the dev set (no GT: false-alarm rate only)
 py -m gaffer.tactics.timeline --match data\synthetic\match_001.json --out outputs\tactical_timeline.json
 py scripts\plot_formation_windows.py --team home --start 1450 --end 1900 --out outputs\failures\<name>.png
 
 # real video (TeamTrack)
+py scripts\download_teamtrack.py --check              # verify the 26 TeamTrack files (size + SHA-256); no flag = download
+py scripts\download_teamtrack.py --list               # other soccer clips on Kaggle (anonymous)
 py scripts\teamtrack_to_matchstate.py --view top      # oracle MatchState from GT boxes (+ coverage)
+py scripts\teamtrack_to_matchstate.py --view side --gt-inset   # labelled variant: GT foot moved up 2.5 px
 py scripts\eval_drift.py                               # drone re-anchoring: none / per clip / per frame
 py scripts\compare_detectors.py --view top             # classical vs tiled YOLOX; --dev = tuning clip only
 py scripts\compare_detectors.py --view side            # MOG2 background vs tiled YOLOX, seq 2 fps, near/far halves
@@ -232,8 +239,16 @@ py scripts\calibrate.py --view top      # landmarks: data\calibration\top_points
 py scripts\calibrate.py --view side     # compares homography / sectioned / cv2.fisheye / cylindrical
 py -m gaffer.perception.pipeline --source data\clips\teamtrack_top.clips.json --out outputs\match_state_top.json --debug-video outputs\debug_top.mp4
 py -m gaffer.perception.pipeline --source data\teamtrack\soccer_top\videos\<clip>.mp4 --out outputs\match_state.json   # view from video size
-py scripts\eval_tracking.py --view top --track-fps 2 4 6 --whole-source --save   # IDs, teams, detection vs GT; --dev = tuning
-py scripts\eval_real.py                  # detection P/R, team accuracy, formation: pipeline vs oracle
+py scripts\eval_tracking.py --view top --track-fps 4 --whole-source --save   # IDs, teams, detection vs GT; --dev = tuning
+py scripts\eval_tracking.py --view side --track-fps 2 --whole-source --save  # (writes the MatchStates eval_real reads)
+py scripts\eval_real.py --tag after      # pipeline vs oracle: formations, metric error, events, coverage (dev + eval)
+py scripts\plot_line_levels.py --view top --out outputs\failures\<name>.png   # line level, pipeline vs oracle
+py scripts\tune_teams.py                 # team-colour settings on the dev clips only (3-class crop accuracy)
+py scripts\tune_officials.py             # officials (touchline) rule on the dev clips only
+# second eval set (teamtrack.clip_sets.eval2; never tuned on, NOT independent of eval): outputs\run_second_set.sh
+py scripts\teamtrack_to_matchstate.py --view top --set eval2          # oracle_top_eval2.json (+ side, side --gt-inset)
+py scripts\eval_tracking.py --view top --set eval2 --track-fps 4 --whole-source --save   # eval_second_set_tracking_top.json
+py scripts\eval_real.py --set eval2                                    # eval_second_set_real.json
 
 # agent
 py -m gaffer.agent.loop --match outputs\match_state.json
@@ -255,20 +270,57 @@ These go into the technical report, README and video. Re-measure at the end of e
 - OpenCV version: `5.0.0` (`opencv-contrib-python==5.0.0.93`)
 - YOLOX-S (COCO) via `cv2.dnn`, laptop CPU: ~115–145 ms per 640×640 inference; side view 11 persons on a native crop, 0 on the full frame; top view ~1/12 recall (Phase 0 smoke test)
 - Bedrock smoke test (Nova 2 Lite): plain call 2.1 s / 93 tokens; tool round trip 2 calls, ~2.1 s / 2,100 tokens
-- **Official synthetic numbers = held-out seeds 100–109** (10 matches never used before, engine unchanged since Phase 1; see FAILURE_LOG 2026-10-10 held-out entry):
+- **Official synthetic numbers since 15 Oct = held-out seeds 110–119** (first run 15 Oct, final config, engine unchanged since Phase 1 apart from two options that are off by default; `eval_synthetic.py --heldout2`):
+  - Formation accuracy per 30 s window: **97.7 % when confident** (98.3 % family), coverage 79.3 %; full view 97.6 % / coverage 99.8 %; broadcast window 98.0 % / coverage 31.6 %; strict 77.4 %.
+  - Shape changes (38 true, ±90 s): **34 hits / 4 misses (3 found late after low visibility) / 34 false positives / mean delay 42 s** (max 125 s), new formation right 31/34. FP causes: set piece 14, other 11 (18 of the 34 are 4-3-3 ↔ 4-2-3-1 flips, 16 in seed 111), partial view 8, counter 1. Timeline max **14.0 KB**, mean 6.3 KB.
+  - **One-shot detector baseline for Phase 3 = 34 false positives, 34/38 hits on seeds 110–119** (replaces 52 FPs / 31 of 36 on 100–109). The self-verifying agent must beat this.
+  - 4-3-3 = 4-2-3-1 as a change-only family (measured, **off**): 110–119 FPs 34 → 16 but hits 34 → 28 (all 6 lost are real 4-3-3 ↔ 4-2-3-1 switches); dev set (42–52) FPs 27 → 18, hits 39 → 36. Unlike 3-5-2 = 5-3-2 it is not free (FAILURE_LOG 2026-10-15).
+  - `line_drop` (implemented, **off**): synthetic GT cannot label drops (contract v1.0); best dev setting 12 m / 180 s still gives 1.55 false alarms per match (dev), **1.70 per match on 110–119**; 0 events on the real clips.
+  - Dev set check (match_001 + 43–52, `eval_synthetic.py`): reproduces 10 Oct exactly with the final config (96.4 % when confident, 39/43 hits, 27 FPs, 41 s, 7.9 KB).
+- History: official synthetic numbers 10–14 Oct = held-out seeds 100–109 (now seen: the 4-3-3 ↔ 4-2-3-1 problem was found on them; see FAILURE_LOG 2026-10-10 held-out entry):
   - Formation accuracy per 30 s window: **97.0 % when confident** (97.5 % family), coverage 79.3 %; full view 96.8 % / coverage 99.9 %; broadcast window 98.6 % / coverage 29.3 %; strict (uncertain = wrong) 76.9 %. Upper bound: generator and engine share one model of a formation.
   - Shape changes (36 true, ±90 s): **31 hits / 5 misses (4 found late after low visibility) / 52 false positives (36 are 4-3-3 ↔ 4-2-3-1 flips, 33 of them in 2 matches) / mean delay 51 s** (max 105 s), new formation right 30/31. Timeline max **15.3 KB** (breaks the 8 KB target on 2 matches), mean 7.2 KB.
   - Without the 3-5-2 = 5-3-2 equivalence: same accuracy (97.0 %), same hits, **67** false positives, timeline max 16.4 KB → the equivalence (decided after seeing eval seeds) generalises.
   - Tuning-time eval set (seeds 42–52, superseded, kept for history): 96.4 % when confident, 39/43 hits, 27 FPs, 41 s delay, timeline max 7.9 KB. Tactics engine ~20–30 s per 90-min match on laptop CPU.
-  - **One-shot detector baseline for Phase 3 = the held-out 52 false positives** (31/36 hits): the self-verifying agent must beat this.
+  - One-shot baseline until 14 Oct: 52 false positives (31/36 hits) on 100–109; superseded (see above).
   - Timeline size: worst case **16.4 KB** (held-out, no equivalence; 15.3 KB with it). Limit relaxed on 10 Oct from 8 KB to **"compact, under 20 KB"**: in Phase 3 the agent reads the timeline through tools, never as one blob. Do not tune the engine for size.
 - TeamTrack detection, **top view (classical OpenCV detector)**, 8 eval clips / 48 frames (dev clip D_…_1530 excluded): **P 0.843 / R 0.978 / F1 0.906 at ≤ 1 m** (IoU ≥ 0.5: P 0.718 / R 0.832); recall on isolated players 0.991; position error 0.17 m; ~4.0 unmatched per frame = referee + assistant referee + staff, 3.0 of them outside the lines (GT has no referee labels). Tiled YOLOX (COCO, cv2.dnn) on the same view: R 0.06 (5.0 s/frame), conf 0.1 R 0.14, 2× upscaled tiles R 0.54 (18 s/frame) → rejected, no fine-tuning needed. **Side view (tiled YOLOX, cv2.dnn)**, 3 eval clips / 150 frames: F1 **0.49 at ≤ 1 m raw, 0.75 with the GT box margin removed, 0.78 at ≤ 2 m** (near half 0.91 / far half 0.66 at 2 m); 3.4 s/frame. MOG2 background baseline: 0.29 / 0.53 / 0.56, 0.16 s/frame → rejected (dev clip: YOLOX 0.72 / 0.73 / 0.87).
-- **Pipeline output vs GT** (tracked detections, static objects removed; eval = top 1560–1800 s, side 1710–1800 s; dev in brackets), detection P / R: **top @1 m, 2 fps 0.852 / 0.955, 4 fps 0.858 / 0.974** [dev 0.856 / 0.974, 0.857 / 0.986]; with referee-labelled detections removed P 0.991 / 0.998. **Side @2 m, 2 fps 0.794 / 0.771** [dev 0.857 / 0.894]; 0.861 / 0.836 with the GT margin removed. At 2 fps 0.5–0.7 detections per frame never get a track id (0.07 at 4 fps).
+- **Pipeline output vs GT, final settings (15 Oct: top tracks at 4 fps, officials rule, dev-chosen team colours)** (eval [dev]): **top @1 m 0.858 / 0.974** [0.857 / 0.986], with referee-labelled detections removed **1.000 / 0.957** [0.999 / 0.982]; **side @2 m 0.794 / 0.771** [0.857 / 0.894], referee-labelled removed **0.888 / 0.744** (was 0.831 / 0.747) [0.950 / 0.888]. Unmatched detections labelled referee: top 99.8 % (was 98.9 %), side 53 % (was 24 %); side unmatched labelled "away" 47 % → 22 %.
+- History, 14 Oct settings. **Pipeline output vs GT** (tracked detections, static objects removed; eval = top 1560–1800 s, side 1710–1800 s; dev in brackets), detection P / R: **top @1 m, 2 fps 0.852 / 0.955, 4 fps 0.858 / 0.974** [dev 0.856 / 0.974, 0.857 / 0.986]; with referee-labelled detections removed P 0.991 / 0.998. **Side @2 m, 2 fps 0.794 / 0.771** [dev 0.857 / 0.894]; 0.861 / 0.836 with the GT margin removed. At 2 fps 0.5–0.7 detections per frame never get a track id (0.07 at 4 fps).
 - **Tracking** (ID switches per player-minute / IDF1): **top 2 fps 3.4 / 0.40, 4 fps 1.6 / 0.52** (4 min eval window; dev 30 s: 3.9 / 0.71, 2.2 / 0.80); **side 2 fps 8.8 / 0.39** (dev 3.8 / 0.64). Not a GT-margin artefact (side with margin removed: 9.7 / 0.42).
 - Formation-engine coverage (≥ 8 of 10 outfield players): oracle 100 % both views (GT annotates everyone); **detection-limited, top: home 98.9 %, away 100 %** (before team-classification losses).
-- TeamTrack team-classification accuracy (matched players with a settled home/away label; eval [dev]): **top 2 fps 95.9 % (unknown 2.8 %), 4 fps 98.5 % (unknown 1.3 %)** [96.2 %, 97.9 %]; **side 2 fps 91.8 % (unknown 6.2 %, wrong 7.5 %)** [94.0 %]; keeper team right 100 % top, 98 % side. Not fully held out: `l_weight`/`gate` were chosen on GT crops incl. eval clips, keeper zone 30 m on eval data. Side: the near assistant referee is labelled "away" in 96 % of frames (FAILURE_LOG, open).
-- Formation agreement, OpenCV pipeline vs oracle (ground-truth boxes): `TBD`
-- Perception throughput, full pipeline, laptop CPU (s of processing per s of video, incl. debug video): **top 2 fps 0.73–1.00** (same code, two runs: ±30 % run-to-run on this laptop; geometry 38 %, decode 24 %, detection 23 %), **top 4 fps 1.42**; **side 2 fps 5.8** (tiled YOLOX 94 % of the time, 2.7 s/frame). Tracking + teams < 2 % of the time. EC2: `TBD`.
+- **Team classification, final (15 Oct), settings re-chosen on dev clips only** (`l_weight 0.75`, `gate 2.0`, keeper zone 30 m re-checked: dev keepers at 24.5 m; `scripts/tune_teams.py`) (eval [dev]): **top 4 fps 98.6 %** (unknown 2.4 %, players labelled referee 1.8 %) [98.1 %, 4.0 %, 0.5 %]; **side 2 fps 92.1 %** (unknown 7.0 %, wrong 7.0 %, referee 3.4 %) [94.3 %]; keeper team right 100 % top, 98 % side. Before (14 Oct settings, chosen with eval data): top 98.5 % (unknown 1.3 %, referee 0.2 %), side 91.8 %. Cost of the tighter gate: more real players read as referee/unknown on the top eval clips (mid-pitch players, partly referee-track ID swaps), see formation coverage below. **Near assistant referee (side): "away" in 96 % of frames → "referee" in 173 of 178** near-touchline detections (officials rule: a track beyond a touchline for ≥ 75 % of its life; dev-chosen, no GT player flagged).
+- History: TeamTrack team-classification accuracy (matched players with a settled home/away label; eval [dev]): **top 2 fps 95.9 % (unknown 2.8 %), 4 fps 98.5 % (unknown 1.3 %)** [96.2 %, 97.9 %]; **side 2 fps 91.8 % (unknown 6.2 %, wrong 7.5 %)** [94.0 %]; keeper team right 100 % top, 98 % side. Not fully held out: `l_weight`/`gate` were chosen on GT crops incl. eval clips, keeper zone 30 m on eval data. Side: the near assistant referee is labelled "away" in 96 % of frames (FAILURE_LOG, open).
+- **Pipeline vs oracle (`scripts/eval_real.py`, final settings, 15 Oct; BEFORE = AFTER step 6: the two step-6 options are off, and switching them on changes nothing on these clips)**. Formation per 30 s window, agreement on windows where both are confident (exact = family here); uncertain share pipeline / oracle; coverage (frames with ≥ 8 outfield) pipeline / oracle; metric error per 30 s window, mean / p90 (m):
+
+  | view, split | team | both conf. | exact | uncertain p / o | coverage p / o | def. line | width | compactness | centroid |
+  |---|---|---|---|---|---|---|---|---|---|
+  | **top eval** 1560–1800 s | home | 38 of 42 | **100 %** | 9.5 / 0 % | 91.2 / 100 % | 0.51 / 0.99 | 0.56 / 1.43 | 0.10 / 0.25 | 0.29 / 0.52 |
+  | | away | 39 of 42 | **89.7 %** | 4.8 / 2.4 % | 99.6 / 100 % | 0.37 / 0.97 | 0.33 / 1.08 | 0.23 / 0.56 | 0.29 / 0.74 |
+  | top dev 1530–1560 s | home / away (1 window each: cells are home / away) | 1 / 1 | 100 / 100 % | 0 / 0 % | 96.7 / 100 % | 0.14 / 0.16 | 0.23 / 0.22 | 0.57 / 0.15 | 0.44 / 0.06 |
+  | side eval 1710–1800 s | home | 4 of 12 | 100 % | 66.7 / 0 % | 50.0 / 100 % | 2.25 / 4.91 | 5.51 / 8.96 | 0.72 / 1.72 | 2.74 / 4.27 |
+  | | away | 4 of 12 | 50 % (75 % vs inset oracle) | 66.7 / 8.3 % | 51.1 / 100 % | 0.62 / 0.87 | 0.77 / 1.48 | 1.27 / 2.66 | 1.02 / 1.70 |
+  | side dev 1680–1710 s | home / away (1 window each) | 1 / 1 | 100 / 100 % | 0 / 0 % | 93.3 / 86.7 % | 0.63 / 0.35 | 2.82 / 4.44 | 0.50 / 0.98 | 1.03 / 1.74 |
+
+  Per frame (top eval, home / away): line 0.60 / 0.40 m mean (p90 2.15 / 0.70), width 0.83 / 0.59, centroid 0.71 / 0.66. Candidate events: **top eval oracle 3, pipeline 4, all 3 matched with the same new formation**, 1 pipeline-only (away 1650 s 4-4-2 → 3-5-2); side eval oracle 1 (home 1755 s 4-4-2 → 3-4-3), pipeline 0. Side vs the inset oracle (GT foot moved up 2.5 px, labelled variant; shifts GT positions 0.92 m median): errors are not smaller (home width 6.89 m), so the side error is mostly perception, not the annotation margin. Same comparison on the 14 Oct perception settings (top eval): home 100 % exact, uncertain 0 %, coverage 95.4 %, per-window line 0.22 / 0.48 m; away 87.5 %; i.e. the dev-chosen team colours cost the home side ~4 points of coverage and some metric accuracy. Pipeline line level vs oracle on the drone view: within ~1 m throughout (outputs/failures/2026-10-15_line_drop_levels_top.png).
+- **Second eval set (15 Oct, `--set eval2`, no re-tuning, final config)**: drone 1260–1530 s (9 clips), side 1800–1980 s (6 clips). **Never tuned on, but NOT independent of the first eval set** (same match, cameras, teams; neighbouring minutes). dev / eval / **eval2**:
+
+  | metric | drone dev | drone eval | **drone eval2** | side dev | side eval | **side eval2** |
+  |---|---|---|---|---|---|---|
+  | detection F1 raw (P / R) | 0.917 | 0.912 (0.858 / 0.974) | **0.922** (0.864 / 0.989) | 0.875 | 0.782 (0.794 / 0.771) | **0.846** (0.827 / 0.866) |
+  | F1, referee-labelled removed | 0.990 | 0.978 | **0.989** | 0.918 | 0.810 | **0.885** |
+  | team accuracy (unknown) | 98.1 % (4.0) | 98.6 % (2.4) | **99.0 %** (1.9) | 94.3 % (7.1) | 92.1 % (7.0) | **90.5 %** (9.0) |
+  | ID switches / player-min, IDF1 | 2.18, 0.80 | 1.61, 0.52 | **1.31, 0.45** | 3.82, 0.64 | 8.79, 0.40 | **11.86, 0.23** |
+  | formation exact agreement, home / away | 100 / 100 % (1 win) | 100 / 89.7 % | **89.1 / 88.1 %** (46 / 42 of 48) | 100 / 100 % | 100 / 50 % (4 / 4 of 12) | **82.6 / 57.9 %** (23 / 19 of 30) |
+  | pipeline uncertain, home / away | 0 / 0 % | 9.5 / 4.8 % | **2.1 / 6.2 %** | 0 / 0 % | 66.7 / 66.7 % | **23.3 / 36.7 %** |
+  | coverage pipeline, home / away | 96.7 / 96.7 % | 91.2 / 99.6 % | **97.8 / 99.6 %** | 93.3 / 86.7 % | 50.0 / 51.1 % | **73.9 / 70.6 %** |
+  | 30 s line error mean, home / away (m) | 0.14 / 0.16 | 0.51 / 0.37 | **0.39 / 0.47** | 0.63 / 0.35 | 2.25 / 0.62 | **0.39 / 0.60** |
+  | candidates oracle / pipeline / matched | 0 / 0 / 0 | 3 / 4 / 3 | **2 / 6 / 2** | 0 / 0 / 0 | 1 / 0 / 0 | **1 / 1 / 1 (opposite direction)** |
+  | s of processing per s of video | 0.99 | 1.20 | 1.06 | 5.46 | 5.46 | 4.42 |
+
+  Worse on eval2: drone home formation agreement (100 → 89 %) and 4 extra candidates (oracle itself hovers between 4-4-2 and 3-4-3 in these minutes: out-and-back pairs); drone IDF1 (66 → 84 tracks for 22 players); side team accuracy (more unknown) and ID switches 8.8 → 11.9 / IDF1 0.40 → 0.23 (longer window, more fragmented tracks). Not tuned. Files: `outputs/eval_second_set_*.json|log`.
+- **Ball:** the drone pipeline outputs no ball (0 of 540 frames: the classical detector finds players only), so possession and pressing are null on real top-view output; side 10 of 240 frames (FAILURE_LOG 2026-10-15).
+- Perception throughput, full pipeline, laptop CPU (s of processing per s of video, incl. debug video): **top 2 fps 0.73–1.00** (same code, two runs: ±30 % run-to-run on this laptop; geometry 38 %, decode 24 %, detection 23 %), **top 4 fps 1.42** (15 Oct rerun: 1.20; geometry 47 %, detection 28 %, decode 15 %); **side 2 fps 5.8** (15 Oct: 5.46; tiled YOLOX 94 % of the time, 2.7 s/frame). Tracking + teams < 2 % of the time. EC2: `TBD`.
 - Pitch size fitted from IFAB markings (31 top-view landmarks): **105.9 × 68.2 m** → within 2 %, so config keeps 105 × 68.
 - Calibration, held-out (leave-one-out) landmark error / line-alignment error: **top 0.11 m mean, 0.38 m max / 0.036 m median** (single homography, 31 landmarks); **side 0.53 m mean, 1.77 m max / 0.08 m median** (2 sectioned homographies, 29 landmarks; single homography 0.60 m, `cv2.fisheye` 0.86 m, cylindrical does not fit). Line-alignment error is measured to the painted line centres (bilinear, `cv2.ximgproc.thinning`): top 0.041 m.
 - Drone drift (top view, 36 frames): median line error **0.198 m uncorrected → 0.089 m anchored per clip → 0.040 m anchored every frame** (ECC on the line image, 142 ms/frame); max shift 13.8 px; the drone wobbles within clips, so the pipeline re-anchors every sampled frame.
@@ -279,13 +331,16 @@ These go into the technical report, README and video. Re-measure at the end of e
 
 ## Current status
 
-**Phase:** 2 — in progress, Day 2 (14 Oct): steps 1–4 done (side detection, team classifier, tracker, pipeline) and reported; steps 5–7 not started. Day 1 committed (`c7f2efa`); Day 2 not committed yet (user commits).
+**Phase:** 2 — Day 2 steps 5–7 done (15 Oct, user answers received: 4-3-3 family and line_drop stay OFF; officials rule + assistant-referee fix accepted). Now: **second eval set** (15 new clips, downloaded by hand by the user). Day 2 steps 1–4 committed (`f599e74`); steps 5–7 + second set not committed yet (user commits).
 **Bedrock model + region:** `global.amazon.nova-2-lite-v1:0` (fallback `apac.amazon.nova-micro-v1:0`), ap-southeast-2. Real calls + tool calling work.
 **Done:** Phase 0 + Phase 1: contract frozen at v1.0 (`schema.py`; nullable segment metrics, GT `noise_events`/`visibility`); synthetic 90-min generator (`gaffer/synthetic.py`, decoys, broadcast-window visibility, 2 fps, match file gitignored); tactics engine (template fit with Hungarian assignment, families `3-5-2`≈`5-3-2`, hysteresis detector, metrics, <8 KB timeline); 65 tests (47 new); eval numbers above; 5 failure cases logged with images.
 **Phase 2 so far (10 Oct):** Step 0 held-out check recorded (official synthetic numbers above; `eval_synthetic.py --heldout`). `perception/pitch.py` (pitch model, top-hat line mask, landmark snapping, pitch-size fit, homography, leave-one-out + line-alignment error), `perception/undistort.py` (side-model comparison, bird's-eye rectification), `scripts/calibrate.py`, `data/calibration/*`, 8 new tests (73 total). Findings: the side panorama is near-rectilinear, not a fisheye; top and side clips are NOT simultaneous (no cross-view check possible); DATA_NOTES corrected. `supervision` 0.30.9 installed and locked. `*.clips.json` convention documented (DATA_CONTRACT, data/README.md).
 **Day 1 (later, 10 Oct):** `gaffer/teamtrack.py` (clip discovery, NaN-safe GT loader), `perception/video.py` (video or `*.clips.json`, sequential decode), `perception/drift.py` (per-frame re-anchoring + per-frame quality), `perception/matchstate.py` (shared MatchState assembly: off-pitch drop, possession, attacking direction from keepers), `perception/tiling.py`, `perception/detector.py` (classical top-view detector + tiled YOLOX), `gaffer/evaluation.py`; scripts `teamtrack_to_matchstate.py` (oracle; tactics engine runs on it unchanged: top 3 candidates, side 1), `eval_drift.py`, `compare_detectors.py`, `coverage_check.py`; `data/clips/*.clips.json`; 12 more tests (85 total). Both views infer the same attacking directions independently (TeamID 0 = home attacks left).
 **Day 2 (14 Oct):** (1) side detection: MOG2 background detector added to `detector.py` and `compare_detectors.py --view side` (near/far halves, 2 m column, `+inset` rows for the GT box margin) → tiled YOLOX stays the side detector, MOG2 kept as a 22× faster fallback; GT-margin finding in DATA_NOTES. (2) `perception/team_classifier.py`: torso Lab colour minus grass, `cv2.kmeans` k=2 with outlier gating + 3 "other" clusters, per-track vote, keepers by zone, else referee. (3) `perception/tracker.py`: supervision ByteTrack with matching boxes enlarged 1 + 12/fps, unit scores, centre-distance mapping back. (4) `perception/pipeline.py` (`run`, `run_window` for Phase 3, `write_outputs`, CLI, per-stage timing, static-object filter), `perception/render.py` (debug video + minimap), direction by rearmost-player vote in `matchstate.py`, `scripts/eval_tracking.py`; 8 tests (93 total). Eval runs on the final code: top 2 + 4 fps, top dev 2 + 4 fps, side 2 fps (eval + dev); side 6 fps not run (~30 min). 6 failure entries dated 14 Oct. Numbers: Key numbers above.
-**Next:** steps 5–7 (wait for the user). Still open from the Day 2 list: `scripts/eval_real.py` (metric error, formation agreement pipeline vs oracle), `scripts/download_teamtrack.py`, `camera_motion.py`. Tactics engine must run on pipeline output unchanged.
+**Day 2, steps 5–7 (15 Oct):** user decisions applied first: `perception.track_fps` per view (top 4, side 2); officials rule (`perception.official`, `pipeline.official_tracks`, dev-tuned with `scripts/tune_officials.py`); team colours re-chosen on dev clips only (`scripts/tune_teams.py`, 3-class accuracy on dev detection crops after a GT-crop objective proved blind to officials) → `l_weight 0.75`, `gate 2.0`, keeper zone 30 m kept on dev evidence. Step 5: `scripts/eval_real.py` (pipeline vs oracle per team, dev/eval cut separately; side also vs `oracle_side_inset.json` from `teamtrack_to_matchstate.py --gt-inset`). Step 6: `formations.change_equivalent` (`TacticsConfig.change_family`, detector only) and `line_drop` events (`events.line_levels` / `detect_line_drops`, timeline lists them without splitting segments), both measured and **off by default** (trade-off / no benefit, FAILURE_LOG); seeds 110–119 added (`--heldout2`, `--no-change-equivalence`); `scripts/tune_line_drop.py`, `scripts/plot_line_levels.py`. Step 7: `scripts/download_teamtrack.py` + `data/teamtrack_manifest.json` (26 files, 290.7 MB, SHA-256; `--check` verified, `--list` works anonymously; the download path needs Kaggle credentials and is untested), `data/README.md` updated (other soccer clips on Kaggle); `camera_motion.py` cut, pan/zoom limitation logged with 3 hard-mode frames. `requests` declared in pyproject (already locked). 5 failure entries dated 15 Oct, the 14 Oct assistant-referee entry closed. 97 tests (5 new), ruff clean.
+**Second eval set (15 Oct):** download check done — 9 drone clips 1260–1530 s (Kaggle val) + 6 side clips 1800–1980 s (Kaggle test), all open/parse, sizes = Kaggle listing, SHA-256 in `data/teamtrack_manifest.json` (56 files, note on the 30 new). Config `teamtrack.clip_sets` (dev / eval / eval2 by match time; `find_clips` defaults to dev + eval, so old results keep their meaning); `--set eval2` in `teamtrack_to_matchstate.py`, `eval_tracking.py`, `eval_real.py`. **eval2 is never-tuned but NOT independent of eval** (same match, cameras, teams, neighbouring minutes). `D_…_1620_1650.csv` is 2× size because its boxes are fractional (interpolated/smoothed), no measurable effect (DATA_NOTES §10). Hard-mode frames moved to gitignored `outputs/_peek/` (minors, original not held); FAILURE_LOG pan/zoom entry now words only. Runs done 10:10–10:30 (`outputs/run_second_set.sh`, 20 min; logs + JSON `outputs/eval_second_set_*`): results in Key numbers ("Second eval set"). 97 tests, ruff clean.
+**Next:** wait for the user.
+**Later, if time (do not build unless asked):** a track-level dev objective for team colours (score settled per-track labels after voting on cached dev detections, not single crops; might win back the home coverage the tighter gate cost); ball detection on the drone view (possession, pressing, set pieces, a ball-aware line_drop); classify in- and out-of-possession shapes separately (the better fix for 4-3-3 ↔ 4-2-3-1, family stays OFF).
 **Blockers:** none
 
 <!-- Update the five lines above at the end of every session. Keep it short. -->
