@@ -25,6 +25,39 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-15] Agent spike: the model's free text can contradict the tool results it cites
+**Stage:** agent
+**Severity:** wrong output (text only; every decision was right)
+
+**Input:** build step 4 spike, Nova 2 Lite (`global.amazon.nova-2-lite-v1:0`), the 10 candidates of dev seed 45, synthetic backend (`scripts/spike_agent.py --seeds 45`).
+**What happened:** all 10 decisions matched the rules arm, with valid citations and clocks, but the text is not always true. (1) evt_005 was rejected because the shape **reverted** after 35 s (rules verdict), yet its recorded reason says "Re-analysis shows no revert". (2) The alert for evt_004 (3-5-2 -> 3-4-3: one midfielder fewer, one forward more) suggests "exploit the extra midfield player". (3) Several reasons say "held for 20 s": that is the engine's persistence rule, not the 60 s look-ahead that was checked. (4) On 5 of 6 confirmed candidates the model called `render_evidence` before `record_decision` (blocked by the guard, one wasted call each); one reason exceeded 200 characters (rejected as invalid arguments).
+**Why (best guess):** grounding checks that refs exist and that clocks fall inside cited windows; it does not check what the sentence claims (number matching was cut on 15 Oct). The verdict's own numbers (share held, revert time) are in the tool results but the small model paraphrases loosely, and the line-by-line difference ("midfield 5->4, front line 2->3") is only in the card.
+**Screenshot / output:** outputs/spike/spike_20261015T120444.json, outputs/spike/trace_20261015T120444.jsonl, outputs/spike/alerts_llm_20261015T120444.jsonl
+**Fix or mitigation:** open (step 4 is a measurement). Options: show the rules verdict's reason (code-written, always true) as the primary reason in the UI and the model's text as the explanation; put the line-by-line difference and the look-ahead numbers into the `record_decision` / `propose_alert` context; a `next` hint in the rules block to stop the render-before-decide call.
+**Measured impact:** 10 / 10 decisions right vs the rules arm; 1 of 10 reasons contradicts its verdict; 1 of 6 suggestions is tactically wrong; 5 guard blocks + 1 invalid call in 38 LLM calls.
+
+### [2026-10-15] Validation seeds 100-109: 4-3-3 <-> 4-2-3-1 flips that last over a minute become false alerts
+**Stage:** agent (rules verifier)
+**Severity:** wrong output (known limitation)
+
+**Input:** rules arm with the thresholds frozen on dev, seeds 100-109 (validation, never tuned on; `scripts/eval_agent.py --set val`).
+**What happened:** false alerts 52 -> 19 and alerted real changes 31 -> 28 (3 real changes uncertain, none rejected). 14 of the 19 remaining false alerts are 4-3-3 <-> 4-2-3-1 flips, 12 of them in seeds 104 and 105, the two matches already known for this (FAILURE_LOG 2026-10-10).
+**Why (best guess):** the persistence/revert checks only see 60 s after detection. When a team spends more than a minute in its out-of-possession shape (wide forwards dropped), the new label holds for the whole look-ahead and no reverse candidate appears inside it.
+**Screenshot / output:** outputs/eval_agent_val.json
+**Fix or mitigation:** not tuned (validation data). The same fix as before would help: classify in- and out-of-possession shapes separately (needs the ball). Seed 111 of the final set has 16 such flips, so this is the main risk for the final bar (false alerts <= 16).
+**Measured impact:** 14 of 19 validation false alerts.
+
+### [2026-10-15] A hard coverage gate in the verifier blocked a third of the real changes
+**Stage:** agent (rules verifier, build step 1)
+**Severity:** wrong output (caught on dev data, fixed before validation)
+
+**Input:** rules arm with the design rules, dev seeds 42-52 (`scripts/eval_agent.py --set dev`).
+**What happened:** with "coverage >= 0.6 before and after, else no verdict", the rules arm cut false alerts from 27 to 1 but left **13 of 39 real changes uncertain**: changes made around a broadcast-window stretch, where the team is partly off-screen just before or after. All 13 had >= 4 confident look-ahead windows, almost all with 100 % in the new shape.
+**Why (best guess):** double counting: a window is only confident when >= 8 outfield players are visible in enough of its frames, so persistence over confident windows already accounts for visibility. Coverage measured over all frames punishes the honest gaps a second time.
+**Screenshot / output:** outputs/eval_agent_dev.json (before/after in this entry; reasons per candidate in the file)
+**Fix or mitigation:** coverage now asks for a second look (`need_more`) but never blocks a verdict once that look is done. Persistence thresholds were then chosen on dev by a fixed rule (most alerted hits minus false alerts): `persist_pass` 0.7 -> 0.6, `min_confident_windows` 4 -> 3 (63 of 81 grid settings pass the step-1 gate).
+**Measured impact (dev):** alerted real changes 25 -> 37 (design thresholds) -> 39 of 43 (frozen), false alerts 1 -> 4 -> 4.
+
 ### [2026-10-15] `line_drop`: an absolute line-height rule measures the phase of play, not a tactical drop
 **Stage:** change detection (`line_drop` events)
 **Severity:** wrong output (feature implemented, switched off by default)

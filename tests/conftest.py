@@ -69,3 +69,15 @@ def small_synth_cfg() -> dict[str, Any]:
     sc["noise_events"].update({"set_pieces": [0, 0], "counters": [0, 0], "flickers": [0, 0]})
     sc["camera"]["broadcast_fraction"] = 0.0
     return c
+
+
+@pytest.fixture(autouse=True)
+def _no_aws_network(monkeypatch):
+    """No test may reach AWS (no Bedrock credits in pytest): botocore's HTTP layer raises.
+    Stubbed clients (botocore Stubber) answer before this layer and keep working."""
+    import botocore.endpoint
+
+    def _blocked(*args, **kwargs):
+        raise RuntimeError("network access to AWS is disabled in tests")
+
+    monkeypatch.setattr(botocore.endpoint.Endpoint, "make_request", _blocked)

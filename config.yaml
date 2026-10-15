@@ -387,3 +387,63 @@ eval:
                                   # first run 15 Oct, never tune on these
     tolerance_s: 90.0             # a detected change within this of a true one is a hit
     workers: 4
+
+# --------------------------------------------------------------------------- Phase 3: agent
+agent:
+  # docs/AGENT_DESIGN.md. Deterministic checks (agent/verify.py): the rules are the judge, the
+  # LLM orchestrates and writes. Thresholds set on the dev seeds 42-52 only (build step 1),
+  # then frozen; seeds 100-109 = validation, 110-119 = final eval (run once).
+  # FROZEN 15 Oct after build step 1 (scripts/eval_agent.py --set dev --grid): rules arm on dev
+  # 39/43 alerted, 4 false alerts (one-shot 39 / 27); 63 of 81 grid settings pass the step-1 gate;
+  # chosen by max(alerted hits - false alerts) -> persist_pass 0.7 -> 0.6, min_confident 4 -> 3
+  # (design values gave 37 / 4). Never re-tune on seeds 100-119.
+  verify:
+    lookahead_s: 60.0             # verification waits this much play after detection (user, 15 Oct)
+    before_s: 45.0                # coverage "before" window: [onset - before_s, onset]
+    min_coverage: 0.6             # share of team frames with >= tactics.min_players outfield;
+                                  # below it -> a second look first, never a verdict on its own
+    persist_pass: 0.6             # new family share of confident look-ahead windows -> held
+    persist_fail: 0.4             # at or below -> not held (reject)
+    min_confident_windows: 3      # fewer confident look-ahead windows -> persistence unknown
+    min_footage_frac: 0.6         # share of the look-ahead that must exist (clip ends)
+    geometry:                     # check_frame_quality (video backend) -> refuse when broken
+      min_homography_ok_share: 0.9
+      max_shift_px_per_s: 25.0
+      max_zoom_change: 0.03
+  views:                          # camera trust per view (Phase 2 numbers, DATA_NOTES)
+    top: {camera_trust: reliable, max_decision: confirmed, reanalysis_fps: [4, 6]}
+    side: {camera_trust: experimental, max_decision: uncertain, reanalysis_fps: [4]}  # user 15 Oct
+  reanalysis:
+    context_s: 30.0               # extra seconds before [onset - before_s] so the window engine
+                                  # has a baseline (one window_s)
+    synthetic_sample_fps: 2.0     # synthetic/annotation backend: engine at the MatchState rate
+  vision:
+    quality_frames: 6             # frames sampled by check_frame_quality (video backend)
+    max_window_s: 600.0           # longest window any tool accepts
+    max_reanalysis_s: 360.0       # estimated OpenCV time per re-analysis (video backend)
+  limits:                         # docs/AGENT_DESIGN.md §6
+    max_llm_calls_per_candidate: 8
+    max_vision_calls_per_candidate: 3
+    max_reanalyses_per_candidate: 2
+    max_invalid_in_a_row: 2       # malformed / unknown tool calls in a row -> rules fallback
+    max_identical_calls: 2        # the 3rd identical call ends the candidate
+    max_nudges: 1                 # text instead of a tool call -> one nudge, then fallback
+    max_llm_calls_per_match: 150
+    max_tokens_per_match: 400000
+    max_cost_usd_per_match: 0.50
+    max_candidates_llm: 30        # more candidates in a match -> the rest go to the rules
+  llm:
+    max_rpm: 18                   # client-side token bucket; account quota is 20 requests/min
+    temperature: 0.0
+    max_tokens: 400
+    tool_choice: any              # every turn is a tool call (checked on Nova in step 4)
+    # USD per 1000 tokens [input, output]. Third-party price lists (15 Oct), not the AWS page:
+    # confirm before relying on cost numbers.
+    prices_per_1k:
+      global.amazon.nova-2-lite-v1:0: [0.0003, 0.0025]
+      apac.amazon.nova-micro-v1:0: [0.000035, 0.00014]
+  outputs:
+    trace: outputs/agent_trace.jsonl
+    alerts: outputs/alerts.jsonl
+    evidence_dir: outputs/evidence
+    timeline_suffix: _timeline_verified.json
