@@ -419,8 +419,22 @@ agent:
     synthetic_sample_fps: 2.0     # synthetic/annotation backend: engine at the MatchState rate
   vision:
     quality_frames: 6             # frames sampled by check_frame_quality (video backend)
+    pair_dt_s: 0.5                # each sample is a frame pair this far apart (camera motion rate;
+                                  # 0.2 s: 1 px of noise at 960 px width = 20 px/s, too coarse)
+    analysis_width_px: 960        # motion / cut checks run on frames downscaled to this width
+    orb_features: 1500            # ORB keypoints per frame (cv2.ORB_create)
+    min_inliers: 25               # RANSAC inliers needed to call two frames aligned
+    cut_min_hist_corr: 0.5        # HSV histogram correlation between samples below this -> cut
+    static_max_shift_px: 10.0     # static views: shift vs the calibration frame still "same camera"
     max_window_s: 600.0           # longest window any tool accepts
     max_reanalysis_s: 360.0       # estimated OpenCV time per re-analysis (video backend)
+    max_opencv_s_per_match: 1200.0  # re-analysis OpenCV time per match (cache hits are free)
+    s_per_frame: {top: 0.33, side: 2.8}  # budget estimate per tracked frame (Phase 2 timings:
+                                  # top 4 fps 1.2-1.4 s/s incl. debug video, side 2.7 s/frame)
+    grid_s: 5.0                   # re-analysis windows snap outwards to this grid (cache reuse)
+    cache_dir: outputs/agent_cache/video
+    evidence_width_px: 1280       # evidence frame width (PNG)
+    evidence_max_bytes: 400000    # evidence PNG size cap (downscaled until it fits)
   limits:                         # docs/AGENT_DESIGN.md §6
     max_llm_calls_per_candidate: 8
     max_vision_calls_per_candidate: 3

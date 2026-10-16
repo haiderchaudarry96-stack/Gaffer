@@ -12,8 +12,9 @@ within what the rules verdict allows (`verify.allowed_decisions`), citations mus
 cited times / `mm:ss` clocks must fall inside a cited tool's window (+-5 s).
 
 Vision backends: `synthetic` / `annotation` (no video: quality from the MatchState, re-analysis
-= tactics engine on a slice at the MatchState rate, minimaps only) are implemented here; the
-`video` backend (OpenCV on the source video) is build step 5 and raises until then.
+= tactics engine on a slice at the MatchState rate, minimaps only) and `video` (OpenCV 5 on the
+source video via `agent/vision.py`: camera checks, perception re-run with budget + cache, an
+evidence frame with the shape projected back into the image).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ import cv2
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from gaffer.agent.alerts import AlertError, AlertStore
+from gaffer.agent.alerts import AlertError, AlertStore, compose_explanation
 from gaffer.agent.context import MatchContext, PassData
 from gaffer.agent.verify import (
     Candidate,
@@ -37,11 +38,13 @@ from gaffer.agent.verify import (
     PassEvidence,
     VerdictResult,
     allowed_decisions,
+    decision_reason,
     evaluate,
 )
+from gaffer.agent.vision import OverBudget, VideoBackend, VisionError, problems_of, snap, write_png
 from gaffer.config import repo_path
 from gaffer.perception.pitch import PitchModel
-from gaffer.tactics.formation import UNCERTAIN, build_template, fit_template
+from gaffer.tactics.formation import UNCERTAIN, WindowResult, build_template, fit_template
 from gaffer.tactics.metrics import possession_share, span_metrics
 
 CLOCK_RE = re.compile(r"\b(\d{1,3}):([0-5]\d)\b")
@@ -239,8 +242,14 @@ class CandidateState:
     refs: dict[str, RefInfo] = field(default_factory=dict)
     geometry: Geometry | None = None
     second_look: bool = False
+    looked: bool = False  # a vision tool (quality check / re-analysis) has run successfully
+    data: PassData | None = None  # the re-analysed pass that covers the required span
+    quality: dict[str, Any] | None = None  # last check_frame_quality summary (for reports)
+    reanalysis: dict[str, Any] | None = None  # last reanalyse_window summary (for reports)
     decision: Decision | None = None
-    reason: str = ""
+    reason: str = ""  # code-written (verify.decision_reason): the primary reason everywhere
+    explanation: str = ""  # the model's own text for the decision, shown apart from `reason`
+    verdict_ref: str = "R0"  # ref of the last result that updated the verdict
     citations: list[dict[str, Any]] = field(default_factory=list)
     evidence_image: str | None = None
     alert_id: str | None = None
@@ -265,12 +274,26 @@ class Toolbox:
     error result the model can read."""
 
     def __init__(self, ctx: MatchContext, store: AlertStore | None = None,
-                 evidence_dir: str | Path | None = None) -> None:
+                 evidence_dir: str | Path | None = None,
+                 video: VideoBackend | None = None) -> None:
         self.ctx = ctx
         self.cfg = ctx.cfg["agent"]
         self.store = store or AlertStore()
         self.evidence_dir = repo_path(evidence_dir or self.cfg["outputs"]["evidence_dir"])
         self.statuses: dict[str, str] = {c.id: "candidate" for c in ctx.candidates}
+        self.video = video  # OpenCV on the source video (backend "video")
+
+    def reanalysis_fps(self) -> list[int]:
+        """Allowed re-analysis rates for this camera view (config `agent.views`)."""
+        views = self.cfg["views"]
+        return sorted(int(f) for f in views.get(self.ctx.view or "top",
+                                                views["top"])["reanalysis_fps"])
+
+    def _need_video(self) -> VideoBackend:
+        if self.video is None:
+            raise _ToolFailure("no_video", "this match has no video backend configured",
+                               {"retryable": False})
+        return self.video
 
     # ---------------------------------------------------------------- state
     def new_state(self, cand: Candidate) -> CandidateState:
@@ -291,7 +314,34 @@ class Toolbox:
                               second_look=st.second_look)
 
     def rules_block(self, st: CandidateState) -> dict[str, Any]:
-        return st.verdict.as_dict()
+        return {**st.verdict.as_dict(), "next_step": self.next_step(st)}
+
+    def next_step(self, st: CandidateState) -> str:
+        """What the protocol expects next (spike 15 Oct: 5 of 6 confirmations called
+        render_evidence before record_decision and were blocked)."""
+        if st.decision == "confirmed":
+            return ("render_evidence" if st.evidence_image is None else
+                    f"propose_alert, citing [{st.verdict_ref}] in the explanation")
+        if st.decision is not None:
+            return "done"
+        v = st.verdict
+        a, b = self.ctx.required_span(st.cand)
+        if v.verdict == "confirm" and not st.looked:
+            return (f"check_frame_quality over [{a:.0f}, {b:.0f}] (a confirmation needs a "
+                    "vision check)")
+        left = st.reanalyses < int(self.cfg["limits"]["max_reanalyses_per_candidate"])
+        if v.verdict == "need_more":
+            if "quality_check" in v.missing:
+                return f"check_frame_quality over [{a:.0f}, {b:.0f}]"
+            if not st.second_look and left and not st.exhausted:
+                return f"reanalyse_window over [{a:.0f}, {b:.0f}] with event_id {st.cand.id}"
+            if self.ctx.backend == "video" and left and not st.exhausted:
+                return "reanalyse_window at a higher sample_fps, or record_decision(uncertain)"
+            return "record_decision(uncertain): no more evidence can be gathered"
+        allowed = " or ".join(allowed_decisions(v.verdict))
+        if v.verdict == "confirm":
+            return f"record_decision({allowed}) now; render_evidence only after it"
+        return f"record_decision({allowed}) now"
 
     def card(self, st: CandidateState) -> str:
         """The first user message for a candidate (built by code: no LLM call)."""
@@ -316,6 +366,7 @@ class Toolbox:
             f"footage {ctx.footage[0]:.0f}-{ctx.footage[1]:.0f} s; unavailable: {unavailable}",
             f"rules: verdict {st.verdict.verdict}, failed {st.verdict.failed}, missing "
             f"{st.verdict.missing}; required re-analysis span [{a:.0f}, {b:.0f}]",
+            f"next step: {self.next_step(st)}",
         ]
         return "\n".join(lines)
 
@@ -354,6 +405,8 @@ class Toolbox:
         except _ToolFailure as exc:
             return self._err(st, ref, name, None, exc.code, str(exc), exc.extra)
         st.refs[ref] = RefInfo(name, window, True)
+        if name in ("check_frame_quality", "reanalyse_window"):
+            st.verdict_ref = ref
         return {"ref": ref, **result}
 
     def reject(self, st: CandidateState, name: str, msg: str) -> dict[str, Any]:
@@ -466,7 +519,7 @@ class Toolbox:
     def _t_check_frame_quality(self, st: CandidateState, a: QualityArgs):
         lo, hi = self._window(a.start_s, a.end_s)
         if self.ctx.backend == "video":
-            raise _ToolFailure("not_built", "video backend arrives in build step 5")
+            return self._video_quality(st, lo, hi)
         frames = [f for f in self.ctx.match.frames if lo <= f.t <= hi]
         if not frames:
             raise _ToolFailure("no_frames", f"no frames in {lo:.0f}-{hi:.0f} s")
@@ -478,52 +531,115 @@ class Toolbox:
         # no video: positions are exact by construction, so a synthetic "cut" (switch to the
         # broadcast-window view) is reported but cannot invalidate the geometry
         st.geometry = Geometry(h_ok, 0.0, 0.0, False)
-        cov = {s: _r(self.ctx.coverage(s, lo, hi)) for s in ("home", "away")}
-        problems = [f"{s} coverage {c:.2f} < {self.ctx.vcfg.min_coverage:.2f}"
-                    for s, c in cov.items() if c is not None and c < self.ctx.vcfg.min_coverage]
+        cov = self._coverage(lo, hi)
+        problems = self._coverage_problems(cov)
         if h_ok < self.ctx.vcfg.min_homography_ok_share:
             problems.append(f"homography ok in {h_ok:.0%} of frames")
         if cut:
             problems.append("view switches (synthetic broadcast window; positions unaffected)")
+        st.looked = True
         self._update_verdict(st)
-        return {"backend": self.ctx.backend, "window": [round(lo, 1), round(hi, 1)],
-                "frames_checked": len(frames), "homography_ok_share": _r(h_ok),
-                "camera_motion": "not measured (no video)", "camera_cut": cut,
-                "coverage": cov, "unknown_share": _r(unknown),
-                "ok": st.verdict.verdict != "refuse", "problems": problems[:4],
-                "rules": self.rules_block(st)}, (lo, hi)
+        out = {"backend": self.ctx.backend, "window": [round(lo, 1), round(hi, 1)],
+               "frames_checked": len(frames), "homography_ok_share": _r(h_ok),
+               "camera_motion": "not measured (no video)", "camera_cut": cut,
+               "coverage": cov, "unknown_share": _r(unknown),
+               "ok": st.verdict.verdict != "refuse", "problems": problems[:4],
+               "rules": self.rules_block(st)}
+        st.quality = {k: v for k, v in out.items() if k != "rules"}
+        return out, (lo, hi)
+
+    def _coverage(self, lo: float, hi: float) -> dict[str, float | None]:
+        return {s: _r(self.ctx.coverage(s, lo, hi)) for s in ("home", "away")}
+
+    def _coverage_problems(self, cov: dict[str, float | None]) -> list[str]:
+        m = self.ctx.vcfg.min_coverage
+        return [f"{s} coverage {c:.2f} < {m:.2f}" for s, c in cov.items()
+                if c is not None and c < m]
+
+    def _video_quality(self, st: CandidateState, lo: float, hi: float):
+        """OpenCV on the video: re-anchored geometry, camera motion / zoom, cuts
+        (`vision.VideoBackend.quality`); player coverage from the stored MatchState."""
+        vb = self._need_video()
+        try:
+            q = vb.quality(lo, hi)
+        except VisionError as exc:
+            raise _ToolFailure("vision_error", str(exc), {"retryable": False}) from exc
+        st.geometry = q.geometry
+        cov = self._coverage(lo, hi)
+        problems = problems_of(q, self.ctx.cfg) + self._coverage_problems(cov)
+        st.looked = True
+        self._update_verdict(st)
+        out = {"backend": "video", "view": self.ctx.view,
+               "window": [round(lo, 1), round(hi, 1)], **q.summary(), "coverage": cov,
+               "ok": st.verdict.verdict != "refuse", "problems": problems[:4],
+               "opencv_ms": q.opencv_ms, "rules": self.rules_block(st)}
+        st.quality = {k: v for k, v in out.items() if k != "rules"}
+        return out, (lo, hi)
 
     def _t_reanalyse_window(self, st: CandidateState, a: ReanalyseArgs):
         lo, hi = self._window(a.start_s, a.end_s)
-        if self.ctx.backend == "video":
-            raise _ToolFailure("not_built", "video backend arrives in build step 5")
+        if a.event_id and a.event_id != st.cand.id:
+            raise _NotAllowed(f"this conversation verifies {st.cand.id}, not {a.event_id}")
         if st.reanalyses >= int(self.cfg["limits"]["max_reanalyses_per_candidate"]):
             raise _NotAllowed("re-analysis limit for this candidate reached")
+        if self.ctx.backend == "video":
+            return self._video_reanalyse(st, a, lo, hi)
         st.reanalyses += 1
         data = self.ctx.reanalyse_tactics(lo, hi)
         out: dict[str, Any] = {
             "backend": self.ctx.backend,
             "note": f"no video: tactics re-run on the MatchState at {data.sample_fps:g} fps "
                     f"(requested {a.sample_fps})",
-            "window": [round(lo, 1), round(hi, 1)], "sample_fps": data.sample_fps,
-            "coverage": {s: _r(self.ctx.coverage(s, lo, hi, data)) for s in ("home", "away")}}
+            "window": [round(lo, 1), round(hi, 1)], "sample_fps": data.sample_fps}
+        return self._reanalysis_result(st, a, data, lo, hi, out), (lo, hi)
+
+    def _video_reanalyse(self, st: CandidateState, a: ReanalyseArgs, lo: float, hi: float):
+        """OpenCV perception re-run on the window (`vision.VideoBackend.reanalyse`): budget
+        refusal before running, disk cache, then the tactics engine at `sample_fps`."""
+        vb = self._need_video()
+        allowed = self.reanalysis_fps()
+        if a.sample_fps not in allowed:
+            raise _ToolFailure("fps_not_allowed", f"the {self.ctx.view} view allows "
+                               f"sample_fps {allowed}", {"retryable": True})
+        lo, hi = snap(lo, hi, vb.vc.grid_s, self.ctx.footage)
+        try:
+            r = vb.reanalyse(lo, hi, float(a.sample_fps))
+        except OverBudget as exc:
+            raise _ToolFailure("over_budget", str(exc), {
+                "max_window_s_at_this_fps": exc.max_window_s, "retryable": True}) from exc
+        except VisionError as exc:
+            raise _ToolFailure("vision_error", str(exc), {"retryable": False}) from exc
+        st.reanalyses += 1
+        data = self.ctx.tactics_pass(r.match, r.fps, (lo, hi))
+        out: dict[str, Any] = {
+            "backend": "video", "window": [round(lo, 1), round(hi, 1)],
+            "sample_fps": r.fps, "frames": len(r.match.frames),
+            "processing_s": round(r.processing_s, 1),
+            "cache": "hit" if r.cache_hit else "miss"}
+        return self._reanalysis_result(st, a, data, lo, hi, out), (lo, hi)
+
+    def _reanalysis_result(self, st: CandidateState, a: ReanalyseArgs, data: PassData,
+                           lo: float, hi: float, out: dict[str, Any]) -> dict[str, Any]:
+        """Labels, candidates and (with event_id) the comparison with this candidate, shared
+        by all backends; a pass that covers the required span replaces the first pass."""
+        out["coverage"] = {s: _r(self.ctx.coverage(s, lo, hi, data)) for s in ("home", "away")}
         teams = [st.cand.team] if a.event_id else ["home", "away"]
         out["labels"] = {t: self._strip(data, t, lo, hi) for t in teams}
         out["candidates_in_window"] = [
             {"t": round(c.t, 1), "team": c.team, "from": c.from_formation, "to": c.to_formation}
             for c in data.changes if lo <= c.t <= hi][:6]
         if a.event_id:
-            if a.event_id != st.cand.id:
-                raise _NotAllowed(f"this conversation verifies {st.cand.id}, not {a.event_id}")
             ev = self.ctx.evidence(st.cand, data)
             out["vs_event"] = {"event_id": st.cand.id, **{k: v for k, v in ev.summary().items()
                                                           if k != "source"},
                                "covers_required_span": ev.covers_required_span}
             if ev.covers_required_span:
-                st.latest, st.second_look = ev, True
+                st.latest, st.second_look, st.data = ev, True, data
+        st.looked = True
         self._update_verdict(st)
         out["rules"] = self.rules_block(st)
-        return out, (lo, hi)
+        st.reanalysis = {k: v for k, v in out.items() if k not in ("rules", "labels")}
+        return out
 
     def _strip(self, data: PassData, team: str, lo: float, hi: float) -> dict[str, Any]:
         ws = [w for w in data.windows[team] if lo <= w.t <= hi]
@@ -541,40 +657,131 @@ class Toolbox:
         if st.decision != "confirmed":
             raise _NotAllowed("render_evidence needs record_decision(confirmed) first")
         c = st.cand
-        before = (c.t - self.ctx.vcfg.before_s, c.t)
-        after = (c.detected_at_s, c.detected_at_s + self.ctx.vcfg.lookahead_s)
-        img = self.render_shapes(c, before, after)
-        path = self.evidence_dir / self.ctx.match.match_id / f"{c.id}.png"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if not cv2.imwrite(str(path), img):
-            raise _ToolFailure("render_failed", f"OpenCV could not write {path}")
+        try:
+            img, shows, frame_t = self.evidence_image(c, st.data or self.ctx.first)
+            path = self.evidence_dir / self.ctx.match.match_id / f"{c.id}.png"
+            size = write_png(path, img, int(self.cfg["vision"]["evidence_max_bytes"]))
+        except VisionError as exc:
+            raise _ToolFailure("render_failed", str(exc), {"retryable": False}) from exc
         st.evidence_image = _rel(path)
-        return {"image": st.evidence_image, "backend": self.ctx.backend,
-                "shows": [f"average {c.from_} shape {clock(before[0])}-{clock(before[1])}",
-                          f"average {c.to} shape {clock(after[0])}-{clock(after[1])}"],
-                "bytes": path.stat().st_size}, (before[0], after[1])
+        out = {"image": st.evidence_image, "backend": self.ctx.backend,
+               "next": self.next_step(st), "shows": shows, "bytes": size}
+        if frame_t is not None:
+            out.update(frame_t=round(frame_t, 1), clock=clock(frame_t))
+        lo = c.t - self.ctx.vcfg.before_s
+        return out, (min(lo, frame_t or lo), c.detected_at_s + self.ctx.vcfg.lookahead_s)
 
-    def render_shapes(self, c: Candidate, before: tuple[float, float],
-                      after: tuple[float, float]) -> np.ndarray:
+    def evidence_image(self, c: Candidate, data: PassData, note: str | None = None
+                       ) -> tuple[np.ndarray, list[str], float | None]:
+        """The evidence picture: on video, the frame where the new shape is clearest with the
+        positions and lines projected into it, above the before / after shape panels
+        (`note`: an extra red banner, e.g. for a render check that is not an alert).
+        Raises VisionError when the video cannot be read."""
+        panels = self.shape_panels(c, data)
+        img = self.render_shapes(c, panels)
+        shows = [p["caption"] for p in panels]
+        frame_t = None
+        if self.ctx.backend == "video":
+            vb = self._need_video()
+            frame_t, players, lines = self._evidence_content(c, data)
+            if frame_t is not None:
+                colours = self.ctx.cfg["perception"]["debug_video"]["colours_bgr"]
+                top = vb.evidence_frame(frame_t, players, lines, c.team, colours)
+                head = _bar(f"{c.id}: {self.team_name(c.team)} {c.from_} -> {c.to} | video "
+                            f"frame {clock(frame_t)}: players + {c.to} lines projected by "
+                            "this frame's homography (OpenCV 5)", top.shape[1])
+                k = top.shape[1] / img.shape[1]
+                img = np.vstack([head, top, cv2.resize(img, None, fx=k, fy=k,
+                                                       interpolation=cv2.INTER_AREA)])
+                shows.insert(0, f"video frame {clock(frame_t)} with players and {c.to} lines")
+        if note:
+            img = np.vstack([_bar(note, img.shape[1], (30, 30, 170)), img])
+        return img, shows, frame_t
+
+    def _evidence_content(self, c: Candidate, data: PassData
+                          ) -> tuple[float | None, dict[str, np.ndarray], list[np.ndarray]]:
+        """The frame where the new shape is clearest: inside the most confident look-ahead
+        window in the new formation, the sampled frame with most outfield players of the team;
+        both teams' positions (pitch metres) and the team's formation lines at that frame."""
+        cfg = self.ctx.tcfg
+        w = self.best_window(data, c.team, c.to, c.detected_at_s,
+                             c.detected_at_s + self.ctx.vcfg.lookahead_s)
+        if w is None:
+            return None, {}, []
+        frames = data.frames[c.team]
+        idx = [i for i, f in enumerate(frames) if w.t - w.window_s <= f.t <= w.t
+               and len(f.outfield) >= cfg.min_players]
+        if not idx:
+            return None, {}, []
+        # most players visible, then the frame the new template fits best: a single open-play
+        # frame has players at mixed depths, and the lines drawn through it zig-zag
+        tpl = build_template(c.to, cfg)
+        most = max(len(frames[j].outfield) for j in idx)
+        fits = {j: fit_template(frames[j].outfield[: cfg.outfield_players], tpl, cfg)
+                for j in idx if len(frames[j].outfield) == most}
+        i = min(fits, key=lambda j: fits[j].cost)
+        f, fit = frames[i], fits[i]
+        players = {s: data.frames[s][i].raw_outfield for s in ("home", "away")}
+        raw = f.raw_outfield[: cfg.outfield_players]
+        lines = []
+        for line in range(len(tpl.lines)):
+            sel = [k for k, s in enumerate(fit.assignment) if tpl.slot_line[s] == line]
+            if sel:
+                lp = raw[sel]
+                lines.append(lp[np.argsort(lp[:, 1])])
+        return float(f.t), players, lines
+
+    def best_window(self, data: PassData, team: str, label: str, lo: float, hi: float
+                    ) -> WindowResult | None:
+        """The most confident window ending in [lo, hi] whose label is in `label`'s family."""
+        fam = self.ctx.fam(label)
+        ws = [w for w in data.windows[team] if lo - 1e-6 <= w.t <= hi + 1e-6
+              and w.label != UNCERTAIN and self.ctx.fam(w.label) == fam]
+        return max(ws, key=lambda w: (w.confidence, w.t)) if ws else None
+
+    def shape_panels(self, c: Candidate, data: PassData) -> list[dict[str, Any]]:
+        """Before / after: the team's frames in the most confident window of each shape (the
+        latest pass first, then the first pass); none -> a "low visibility" panel. Averaging
+        every frame of the span gave messy shapes when the team was partly out of view
+        (spike 15 Oct)."""
+        v, name = self.ctx.vcfg, self.team_name(c.team)
+        spans = (((c.t - v.before_s, c.t), c.from_),
+                 ((c.detected_at_s, c.detected_at_s + v.lookahead_s), c.to))
+        out = []
+        for (lo, hi), label in spans:
+            w, src = None, data
+            for d in (data, self.ctx.first):
+                w = self.best_window(d, c.team, label, lo, hi)
+                if w is not None:
+                    src = d
+                    break
+            if w is None:
+                frames = [f for f in data.frames[c.team] if lo <= f.t <= hi]
+                out.append({"label": label, "frames": frames, "low_visibility": True,
+                            "caption": f"{name} {label}: low visibility, no confident {label} "
+                                       f"window in {clock(lo)}-{clock(hi)}"})
+                continue
+            a, b = w.t - w.window_s, w.t
+            frames = [f for f in src.frames[c.team] if a <= f.t <= b
+                      and len(f.outfield) >= self.ctx.tcfg.min_players]
+            out.append({"label": label, "frames": frames, "low_visibility": False,
+                        "caption": f"{name} {label} {clock(a)}-{clock(b)} (most confident "
+                                   f"window, {w.confidence:.2f})"})
+        return out
+
+    def render_shapes(self, c: Candidate, panels: list[dict[str, Any]]) -> np.ndarray:
         """Two pitch panels (OpenCV drawing): the team's average shape before and after,
         attacking right; slot means from the formation fit, joined line by line."""
         cfg = self.ctx.tcfg
         model = PitchModel(cfg.pitch_length_m, cfg.pitch_width_m)
-        name = self.team_name(c.team)
-        panels = []
-        for (lo, hi), label in ((before, c.from_), (after, c.to)):
-            panels.append(self._shape_panel(model, c.team, lo, hi, label,
-                                            f"{name} {label}  {clock(lo)}-{clock(hi)}"))
-        img = np.hstack([panels[0], np.full((panels[0].shape[0], 8, 3), 255, np.uint8),
-                         panels[1]])
-        head = np.full((34, img.shape[1], 3), 30, np.uint8)
-        cv2.putText(head, f"{c.id}: {c.from_} -> {c.to} ({clock(c.t)}), {self.ctx.backend} "
-                    "backend, attacking right", (8, 23), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                    (255, 255, 255), 1, cv2.LINE_AA)
+        drawn = [self._shape_panel(model, p) for p in panels]
+        img = np.hstack([drawn[0], np.full((drawn[0].shape[0], 8, 3), 255, np.uint8),
+                         drawn[1]])
+        head = _bar(f"{c.id}: {c.from_} -> {c.to} ({clock(c.t)}), {self.ctx.backend} "
+                    "backend, average shape, attacking right", img.shape[1])
         return np.vstack([head, img])
 
-    def _shape_panel(self, model: PitchModel, team: str, lo: float, hi: float, label: str,
-                     title: str) -> np.ndarray:
+    def _shape_panel(self, model: PitchModel, panel: dict[str, Any]) -> np.ndarray:
         cfg, ppm, m = self.ctx.tcfg, 6.0, 3.0
         w = int((model.length + 2 * m) * ppm)
         h = int((model.width + 2 * m) * ppm)
@@ -588,9 +795,14 @@ class Toolbox:
         for poly in model.lines(0.5).values():
             cv2.polylines(img, [px(poly).reshape(-1, 1, 2)], False, (225, 225, 225), 1,
                           cv2.LINE_AA)
-        frames = [f for f in self.ctx.first.frames[team]
-                  if lo <= f.t <= hi and len(f.outfield) >= cfg.min_players]
-        if label != UNCERTAIN and frames:
+        frames, label = panel["frames"], panel["label"]
+        if panel["low_visibility"]:
+            for f in frames:
+                for p in f.outfield:
+                    cv2.circle(img, tuple(int(v) for v in px(p)[0]), 1, (150, 200, 150), -1)
+            cv2.putText(img, "LOW VISIBILITY", (w // 2 - 150, h // 2), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.1, (0, 215, 255), 2, cv2.LINE_AA)
+        elif label != UNCERTAIN and frames:
             tpl = build_template(label, cfg)
             sums = np.zeros((len(tpl.slots), 2))
             counts = np.zeros(len(tpl.slots))
@@ -614,8 +826,8 @@ class Toolbox:
                                cv2.LINE_AA)
                     cv2.circle(img, tuple(int(v) for v in px(p)[0]), 7, (20, 20, 20), 1,
                                cv2.LINE_AA)
-        cv2.putText(img, title, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1,
-                    cv2.LINE_AA)
+        cv2.putText(img, panel["caption"], (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
+                    (255, 255, 255), 1, cv2.LINE_AA)
         cv2.putText(img, f"{len(frames)} frames", (8, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                     (230, 230, 230), 1, cv2.LINE_AA)
         return img
@@ -635,17 +847,17 @@ class Toolbox:
                     if not allowed else f"allowed: {', '.join(allowed)}")
             raise _NotAllowed(f"rules verdict is '{v.verdict}' ({v.reason}); "
                               f"'{a.decision}' is not allowed; {what}")
-        looked = {"check_frame_quality", "reanalyse_window"} & {
-            r.tool for r in st.refs.values() if r.ok}
-        if a.decision == "confirmed" and not looked:
+        if a.decision == "confirmed" and not st.looked:
             raise _NotAllowed("a confirmation needs a vision check first "
                               "(check_frame_quality or reanalyse_window)")
         cites = [c.model_dump() for c in a.citations]
         self.check_citations(st, cites, a.reason)
-        st.decision, st.reason, st.citations = a.decision, a.reason, cites
+        st.decision, st.citations = a.decision, cites
+        st.reason = decision_reason(st.verdict, a.decision)
+        st.explanation = "" if a.reason == st.reason else a.reason
         self.statuses[st.cand.id] = a.decision
-        return {"ok": True, "event_status": a.decision,
-                "next": "render_evidence" if a.decision == "confirmed" else "done"}, None
+        return {"ok": True, "event_status": a.decision, "recorded_reason": st.reason,
+                "next": self.next_step(st)}, None
 
     def check_citations(self, st: CandidateState, cites: list[dict[str, Any]], text: str
                         ) -> None:
@@ -683,9 +895,15 @@ class Toolbox:
         if not refs:
             raise _NotAllowed("the explanation must cite at least one tool result as [Rn]")
         self.check_citations(st, [{"ref": r} for r in refs], a.title + " " + a.explanation)
+        # what the coach reads first is written by code from the verdict: the title (team,
+        # shapes, clock) and the verified reason; the model's text follows, marked as its own
+        c = st.cand
+        title = f"{self.team_name(c.team)}: {c.from_} -> {c.to} ({clock(c.t)})"
+        agent_text = REF_RE.sub("", a.explanation).strip(" .") and a.explanation
+        explanation = compose_explanation(f"{st.reason} [{st.verdict_ref}]", agent_text or None)
         try:
-            alert = self.store.create(self.ctx.match.match_id, st.cand.id, st.cand.t, a.title,
-                                      a.explanation, a.suggestion, st.evidence_image)
+            alert = self.store.create(self.ctx.match.match_id, c.id, c.t, title, explanation,
+                                      a.suggestion, st.evidence_image)
         except AlertError as exc:
             raise _NotAllowed(str(exc)) from exc
         st.alert_id = alert.alert_id
@@ -705,6 +923,14 @@ class _ToolFailure(Exception):
 
 def _inside(t: float, windows: list[tuple[float, float]]) -> bool:
     return any(a - TIME_SLACK_S <= t <= b + TIME_SLACK_S for a, b in windows)
+
+
+def _bar(text: str, width: int, colour: tuple[int, int, int] = (30, 30, 30)) -> np.ndarray:
+    """A one-line caption bar (OpenCV text), dark by default."""
+    bar = np.full((30, width, 3), colour, np.uint8)
+    cv2.putText(bar, text, (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1,
+                cv2.LINE_AA)
+    return bar
 
 
 def _rel(p: Path) -> str:

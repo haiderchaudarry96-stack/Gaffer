@@ -5,7 +5,8 @@ questions the rules and tools ask: coverage of a team in a time span, the look-a
 for a candidate, and a **synthetic / annotation re-analysis**: the tactics engine re-run on a
 slice of the MatchState at its full frame rate (the engine normally samples 1 fps). That
 backend has no video; it is labelled as such everywhere and is never presented as OpenCV.
-The video backend (OpenCV re-run of the perception pipeline) is build step 5.
+The video backend (OpenCV re-run of the perception pipeline, `agent/vision.py`) feeds its
+re-analysed window through the same `tactics_pass`.
 """
 
 from __future__ import annotations
@@ -152,11 +153,17 @@ class MatchContext:
             return self._reanalysis_cache[key]
         frames = [f for f in self.match.frames if a <= f.t <= b]
         sliced = self.match.model_copy(update={"frames": frames})
-        tcfg = dataclasses.replace(self.tcfg, sample_fps=min(fps, self.match.fps))
-        team_frames = extract_team_frames(sliced, tcfg)
-        windows = analyse_formations(sliced, tcfg, team_frames)
-        changes = sorted((c for s in SIDES for c in detect_changes(windows[s], tcfg)),
-                         key=lambda c: (c.t, c.team))
-        data = PassData(windows, changes, team_frames, (a, b), tcfg.sample_fps)
+        data = self.tactics_pass(sliced, fps, (a, b))
         self._reanalysis_cache[key] = data
         return data
+
+    def tactics_pass(self, match: MatchState, fps: float, span: tuple[float, float]
+                     ) -> PassData:
+        """The tactics engine on `match` (a MatchState slice, or a window the perception
+        pipeline re-analysed on video) at `fps` frames per second."""
+        tcfg = dataclasses.replace(self.tcfg, sample_fps=min(float(fps), match.fps))
+        team_frames = extract_team_frames(match, tcfg)
+        windows = analyse_formations(match, tcfg, team_frames)
+        changes = sorted((c for s in SIDES for c in detect_changes(windows[s], tcfg)),
+                         key=lambda c: (c.t, c.team))
+        return PassData(windows, changes, team_frames, span, tcfg.sample_fps)

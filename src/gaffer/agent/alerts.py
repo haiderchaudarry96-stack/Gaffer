@@ -23,9 +23,26 @@ from pathlib import Path
 from gaffer.config import load_config, repo_path
 from gaffer.schema import Alert
 
+#: `Alert.explanation` = the code-written verdict reason first, then (if any) the model's text,
+#: clearly separated. The contract has one `explanation` field and stays unchanged.
+RULES_PREFIX = "Verified: "
+AGENT_SEP = "\nExplanation (agent): "
+
 
 class AlertError(ValueError):
     """An alert operation that is not allowed (unknown id, duplicate, decided twice)."""
+
+
+def compose_explanation(rules_reason: str, agent_text: str | None) -> str:
+    """`Alert.explanation`: the rules reason (primary, always true), then the model's text."""
+    out = RULES_PREFIX + rules_reason
+    return out + AGENT_SEP + agent_text if agent_text else out
+
+
+def split_explanation(explanation: str) -> tuple[str, str | None]:
+    """(rules reason, model explanation or None) of a stored `Alert.explanation`."""
+    head, sep, agent = explanation.partition(AGENT_SEP)
+    return head.removeprefix(RULES_PREFIX), (agent if sep else None)
 
 
 def _now() -> str:
@@ -100,7 +117,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.list:
             for a in store.all().values():
-                print(f"{a.alert_id:40s} {a.status:9s} t={a.match_time_s:7.1f}s  {a.title}")
+                rules, agent = split_explanation(a.explanation)
+                print(f"{a.alert_id:40s} {a.status:9s} t={a.match_time_s:7.1f}s  {a.title}\n"
+                      f"    verified: {rules}"
+                      + (f"\n    explanation (agent): {agent}" if agent else ""))
             return 0
         a = store.decide(args.approve or args.reject, approve=bool(args.approve), note=args.note)
     except AlertError as exc:

@@ -246,6 +246,19 @@ def allowed_decisions(verdict: Verdict) -> tuple[Decision, ...]:
     return ALLOWED[verdict]
 
 
+def decision_reason(v: VerdictResult, decision: Decision) -> str:
+    """The code-written reason for a recorded decision: the primary reason everywhere a decision
+    is shown (alerts, verified timeline, report). It restates the rules verdict and, when the
+    recorded decision is more cautious than the verdict, says so; it never contradicts it. The
+    model's own text is kept apart as the "explanation" (spike 15 Oct: 1 of 10 model reasons
+    contradicted its verdict, FAILURE_LOG)."""
+    if DECISION_OF[v.verdict] == decision and v.verdict != "need_more":
+        return v.reason
+    if v.verdict == "need_more":
+        return f"no verdict after the evidence budget: {v.reason}"
+    return f"rules: {v.verdict} ({v.reason}); recorded as {decision} (more cautious)"
+
+
 def cap(decision: Decision, limit: Decision) -> Decision:
     """The more cautious of two decisions (confirmed > uncertain > rejected)."""
     return decision if _RANK[decision] <= _RANK[limit] else limit

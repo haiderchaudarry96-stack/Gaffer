@@ -25,6 +25,38 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-15] Real drone candidates: the second OpenCV look never changed a decision
+**Stage:** agent (video backend, build step 5)
+**Severity:** limitation (evidence for the Agentic Vision claim on real footage)
+
+**Input:** all 11 pipeline candidates of the drone eval (1530-1800 s, 5) and eval2 (1260-1530 s, 6) MatchStates, rules arm (no LLM), video backend: `check_frame_quality` + `reanalyse_window` at 4 fps on [onset - 45 s, detection + 60 s] (`scripts/run_agent_video.py`).
+**What happened:** 7 rejected, 4 uncertain (the clip ends before 60 s of look-ahead), 0 confirmed. In **11 of 11** the decision equals what the first pass alone gives. The camera was always fine (lines fit in 100 % of sampled frames, shift <= 2.4 px/s, zoom <= 0.1 %, no cut), so the quality check never changed the path either. The 4 fps re-analysis moved the share of windows in the new shape by at most 0.17 (eval2 evt_003 0.62 -> 0.75, evt_006 0.33 -> 0.50 on 3 -> 2 windows). Once it changed the evidence but not the decision: eval evt_001, first pass "reverted after 55 s", second look no revert but held in only 17 % of 12 windows -> still rejected. Two candidates **held** on the second look (eval2 evt_003 75 %, eval evt_002 73 %) but are return legs of an earlier rejected change, so R rejects them, consistently. The oracle (GT boxes) confirms none of its 5 candidates either.
+**Why (best guess):** the drone pipeline is already close to the oracle (Phase 2: 89-100 % formation agreement), and the first pass already comes from 4 fps tracking; sampling the engine at 4 fps instead of 1 fps adds frames of the same quality. These candidates are out-and-back flips that perfect perception sees the same way.
+**Screenshot / output:** outputs/agent_video/report.json, outputs/agent_video/trace_rules.jsonl, outputs/agent_video_run.log
+**Fix or mitigation:** reported as is, not forced. The only real-frame case where OpenCV changes the next call and the decision is the **simulated pan/zoom** (real drone frames, sliding/zooming crop): `check_frame_quality` measures 190 px/s, 30 % zoom, lines fit in 33 % of frames -> refuse -> no re-analysis -> uncertain, where the first pass alone says reject. With no confirmed real candidate, the video evidence renderer is shown as a bannered render check on a real frame (`outputs/agent_video/render_check/`), not as an alert.
+**Measured impact:** 0 of 11 real decisions changed by OpenCV; 1 of 11 changed evidence; simulated pan: 1 of 1 refused.
+
+### [2026-10-15] Footage-limited candidates still pay for a 2-minute re-analysis that cannot change them
+**Stage:** agent (rules on the video backend)
+**Severity:** wasted compute (no wrong output)
+
+**Input:** same run as above.
+**What happened:** 4 of 11 real candidates (eval2 evt_005 / evt_006, eval evt_004 / evt_005) are within 60 s of the clip end. Rule F makes them uncertain whatever the evidence, but on video every verdict except a refusal waits for a second look, so each still ran a 104-127 s re-analysis: **477 s of the 1,545 s** of re-analysis in the run.
+**Why:** design rule "on real video every decision except a refusal needs a second OpenCV look" (AGENT_DESIGN §3 E) does not except F, which no second look can fix.
+**Screenshot / output:** outputs/agent_video/report.json (`reanalysis.processing_s` of those rows)
+**Fix or mitigation:** open, a design change for the user: let an F failure decide uncertain without the second look (saves ~30 % of real-clip OpenCV time here; would not change any decision).
+**Measured impact:** 477 s of OpenCV on 4 candidates.
+
+### [2026-10-15] Vision checks: the quality check is slower than designed, and drone re-anchoring absorbs a crop/zoom "pan"
+**Stage:** agent (video backend `check_frame_quality`)
+**Severity:** degraded (both measured, neither changes a decision)
+
+**Input:** 11 real windows of ~140 s, plus a simulated pan/zoom of eval2 1300-1440 s (sliding crop at 150 px/s, crop share 0.75 +- 0.12, resized back to 4K, 2 fps).
+**What happened:** (1) `check_frame_quality` takes **8-13 s** per call on the 4K drone video (design guess: 1-3 s): 12 frames decoded with H.264 seeks, plus 6 ECC re-anchorings. (2) On the simulated pan, the drone re-anchoring (affine ECC, ORB fallback) still fits the painted lines in **33 %** of frames: a pure crop + zoom of a nadir image is an affine change, which re-anchoring is built to undo. The camera-motion check (190 px/s, zoom 30 %) is what refuses it. A first version of the simulation jumped when the zoom changed the crop's travel range (measured 1,326 px/s); the crop range was then fixed for a smooth pan. (3) The first pair interval tried, 0.2 s, was too coarse: at 960 px analysis width, 1 px of noise is 20 px/s (a static drone read 17.6 px/s against the 25 px/s limit); pairs are 0.5 s apart now (static drone <= 2.4 px/s).
+**Screenshot / output:** outputs/agent_video_run.log (first simulation), outputs/agent_video_run2.log (smooth pan)
+**Fix or mitigation:** (1) accepted: ~6 % of a candidate's OpenCV time (re-analysis 104-178 s). (2) Geometry is refused if any of line fit, motion, zoom or cut fails, so line fit alone is not trusted. Real pan/zoom cameras (perspective change, partial pitch) would also fail the line fit; not testable without such a clip.
+**Measured impact:** quality check 8.0-12.6 s (real windows), 17.8 s (simulated pan).
+
 ### [2026-10-15] Agent spike: the model's free text can contradict the tool results it cites
 **Stage:** agent
 **Severity:** wrong output (text only; every decision was right)

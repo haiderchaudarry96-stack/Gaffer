@@ -7,6 +7,13 @@ LLM calls per candidate, whether `tool_choice=any` works, guard blocks, tokens, 
 throttling, and agreement with the rules arm. Dev seeds only (42-52); never 100-119.
 
     py scripts\\spike_agent.py --seeds 45 --max-candidates 10
+    py scripts\\spike_agent.py --seeds 45 --resume 20261016T090000   # continue a cut-off run
+    py scripts\\spike_agent.py --seeds 45 --baseline outputs\\spike\\spike_20261015T120444.json
+
+Rows are appended to `outputs/spike/rows_<stamp>.jsonl` as each candidate finishes, so a run
+cut off midway resumes with `--resume <stamp>` (finished candidates are skipped; their calls
+and cost count towards the hard caps). `--baseline` prints guard blocks / invalid calls / calls
+per candidate of an earlier spike next to this one.
 """
 
 from __future__ import annotations
@@ -27,6 +34,8 @@ from gaffer.llm.bedrock_client import BedrockClient, BedrockError
 HARD_MAX_CALLS = 100
 HARD_MAX_COST = 1.0
 DEV_SEEDS = set(range(42, 53))
+COMPARE = ("candidates", "guard_blocks", "invalid_calls", "llm_calls_per_candidate",
+           "agreement_with_rules", "cost_usd")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -36,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-candidates", type=int, default=10)
     ap.add_argument("--max-calls", type=int, default=HARD_MAX_CALLS)
     ap.add_argument("--max-cost-usd", type=float, default=HARD_MAX_COST)
+    ap.add_argument("--resume", default=None, metavar="STAMP", help="continue this run")
+    ap.add_argument("--baseline", default=None, help="earlier spike_<stamp>.json to compare")
     args = ap.parse_args(argv)
     seeds = [int(s) for s in args.seeds.split(",")]
     if not set(seeds) <= DEV_SEEDS:
@@ -51,15 +62,27 @@ def main(argv: list[str] | None = None) -> int:
 
     out_dir = repo_path("outputs/spike")
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%dT%H%M%S")
+    stamp = args.resume or time.strftime("%Y%m%dT%H%M%S")
+    rows_path = out_dir / f"rows_{stamp}.jsonl"
+    rows = ([json.loads(x) for x in rows_path.read_text(encoding="utf-8").splitlines()
+             if x.strip()] if rows_path.exists() else [])
+    done = {(x["match"], x["event_id"]) for x in rows}
+    if rows:
+        print(f"resuming {stamp}: {len(rows)} candidates already done")
     try:
         llm = BedrockClient(cfg)
     except BedrockError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     budget = make_budget(cfg, max_calls, max_cost)
+    budget.run_calls = sum(x["llm_calls"] for x in rows)  # the hard caps cover resumed parts
+    budget.run_cost = sum(x["cost_usd"] for x in rows)
+    for x in rows:
+        budget.run_tokens["in"] += x["tokens_in"]
+        budget.run_tokens["out"] += x["tokens_out"]
+        budget.run_tokens["total"] += x["tokens_in"] + x["tokens_out"]
     trace = TraceWriter(out_dir / f"trace_{stamp}.jsonl")
-    rows, t0 = [], time.perf_counter()
+    t0 = time.perf_counter()
     runners = []
     left = args.max_candidates
     for seed in seeds:
@@ -68,21 +91,30 @@ def main(argv: list[str] | None = None) -> int:
         ctx = _synthetic_context(seed, cfg)
         cands = ctx.candidates[:left]
         left -= len(cands)
+        cands = [c for c in cands if (ctx.match.match_id, c.id) not in done]
+        if not cands:
+            continue
         tb = Toolbox(ctx, AlertStore(out_dir / f"alerts_llm_{stamp}.jsonl"),
                      out_dir / "evidence")
         r = AgentRunner(ctx, tb, arm="llm", llm=llm, budget=budget, trace=trace,
                         run_id=f"spike{stamp}")
         runners.append(r)
-        llm_out = r.run(cands)
         tb_rules = Toolbox(ctx, AlertStore(out_dir / f"alerts_rules_{stamp}.jsonl"),
                            out_dir / "evidence_rules")
-        rules_out = AgentRunner(ctx, tb_rules, arm="rules",
-                                trace=TraceWriter(out_dir / f"trace_rules_{stamp}.jsonl"),
-                                run_id=f"spike{stamp}").run(cands)
-        for o, ro in zip(llm_out, rules_out, strict=True):
-            rows.append({"match": ctx.match.match_id, **asdict(o),
-                         "label": labels.get((ctx.match.match_id, o.event_id), "?"),
-                         "rules_decision": ro.decision})
+        rr = AgentRunner(ctx, tb_rules, arm="rules",
+                         trace=TraceWriter(out_dir / f"trace_rules_{stamp}.jsonl"),
+                         run_id=f"spike{stamp}")
+        for c in cands:  # one candidate at a time, appended at once (resume support)
+            o = r.run([c])[0]
+            ro = rr.run([c])[0]
+            row = {"match": ctx.match.match_id, **asdict(o),
+                   "label": labels.get((ctx.match.match_id, o.event_id), "?"),
+                   "rules_decision": ro.decision}
+            rows.append(row)
+            with rows_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, default=str) + "\n")
+            print(f"  {o.event_id}: {o.decision} by {o.decided_by}, llm {o.llm_calls}, "
+                  f"blocks {o.guard_blocks}", flush=True)
     wall = time.perf_counter() - t0
 
     n = len(rows)
@@ -104,14 +136,23 @@ def main(argv: list[str] | None = None) -> int:
         "agreement_with_rules": sum(x["decision"] == x["rules_decision"] for x in rows),
         "decisions": dict(Counter(f"{x['label']}:{x['decision']}" for x in rows)),
         "mean_llm_s_per_candidate": round(sum(x["llm_s"] for x in rows) / max(1, n), 1),
-        "wall_s": round(wall, 1),
+        "wall_s_this_invocation": round(wall, 1),
         "caps": {"max_calls": max_calls, "max_cost_usd": max_cost},
     }
     for x in rows:
         print(f"{x['match']} {x['event_id']} [{x['label']:3s}] {x['decision']:9s} "
               f"(rules {x['rules_decision']:9s}) by {x['decided_by']:28s} llm {x['llm_calls']} "
               f"blocks {x['guard_blocks']} tools {','.join(x['tool_calls'])}")
+        if x.get("explanation"):
+            print(f"      reason (code): {x['reason'][:110]}\n"
+                  f"      explanation (agent): {x['explanation'][:110]}")
+    if args.baseline:
+        b = json.loads(repo_path(args.baseline).read_text(encoding="utf-8"))["summary"]
+        summary["baseline"] = {k: b.get(k) for k in COMPARE}
     print(json.dumps(summary, indent=2))
+    if args.baseline:
+        print("before -> after: " + ", ".join(f"{k} {summary['baseline'][k]} -> {summary[k]}"
+                                              for k in COMPARE))
     out = out_dir / f"spike_{stamp}.json"
     out.write_text(json.dumps({"summary": summary, "rows": rows}, indent=2, default=str),
                    encoding="utf-8")

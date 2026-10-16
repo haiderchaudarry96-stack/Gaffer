@@ -14,7 +14,7 @@ import pytest
 from botocore.config import Config
 from botocore.stub import ANY, Stubber
 
-from gaffer.agent.alerts import AlertError, AlertStore
+from gaffer.agent.alerts import AlertError, AlertStore, split_explanation
 from gaffer.agent.context import MatchContext
 from gaffer.agent.loop import (
     AgentRunner,
@@ -24,12 +24,13 @@ from gaffer.agent.loop import (
     TraceWriter,
     make_budget,
 )
-from gaffer.agent.tools import TOOLS, Toolbox, tool_schema, tool_specs
+from gaffer.agent.tools import TOOLS, Toolbox, clock, tool_schema, tool_specs
 from gaffer.agent.verify import (
     Geometry,
     PassEvidence,
     VerifyConfig,
     allowed_decisions,
+    decision_reason,
     evaluate,
     rules_decision,
 )
@@ -326,6 +327,65 @@ def test_situation_b_low_coverage_second_look_confirms_then_alert(ctx, toolbox, 
     assert tr[-2]["kind"] == "decision" and tr[-2]["decision"] == "confirmed"
     assert tr[-1]["kind"] == "match_summary" and tr[-1]["llm_calls"] == 5
     assert llm.calls[0]["tool_choice"] == "any"
+
+
+def test_alert_never_shows_a_reason_that_contradicts_the_rules_verdict(ctx, toolbox, tmp_path):
+    """Problem 1 (spike 15 Oct): the model's text can contradict its own cited results. The
+    alert title, the alert's primary reason and the verified timeline are written by code from
+    the verdict; the model's text survives only as the separated "explanation"."""
+    _patch_evidence(ctx, ev(coverage_after=0.4), ev(source="reanalysis"))
+    c, a, b = _span(ctx)
+    lie = "Re-analysis shows the shape reverted after 30 s"
+    llm = FakeLLM([
+        [("reanalyse_window", {"start_s": a, "end_s": b, "sample_fps": 4, "event_id": c.id,
+                               "why": "second look"})],
+        [("record_decision", {"event_id": c.id, "decision": "confirmed", "reason": lie,
+                              "citations": [{"ref": "R1"}]})],
+        [("render_evidence", {"event_id": c.id, "why": "proof"})],
+        [("propose_alert", {"event_id": c.id, "title": "Red moved to a 5-4-1",
+                            "explanation": f"{lie} [R1].", "suggestion": "Press high."})],
+    ])
+    r = _runner(ctx, toolbox, llm, tmp_path)
+    out = r.run()[0]
+    verdict = evaluate(ev(source="reanalysis"), ctx.vcfg, second_look=True)
+    assert verdict.verdict == "confirm" and out.decision == "confirmed"
+    assert out.reason == verdict.reason and out.explanation == lie
+    alert = AlertStore(tmp_path / "alerts.jsonl").get(out.alert_id)
+    rules, agent = split_explanation(alert.explanation)
+    assert rules == f"{verdict.reason} [R1]" and "reverted" not in rules
+    assert agent is not None and lie in agent
+    assert alert.title == f"{toolbox.team_name(c.team)}: {c.from_} -> {c.to} ({clock(c.t)})"
+    ver = r.verified_timeline([out])["events"][0]["verification"]
+    assert ver["reason"] == verdict.reason
+    dec = [x for x in _trace(tmp_path) if x["kind"] == "decision"][0]
+    assert (dec["reason"], dec["explanation"]) == (verdict.reason, lie)
+
+
+def test_decision_reason_restates_the_verdict_and_marks_caution(vcfg):
+    conf = evaluate(ev(), vcfg)
+    assert decision_reason(conf, "confirmed") == conf.reason
+    cautious = decision_reason(conf, "uncertain")
+    assert cautious.startswith("rules: confirm") and "more cautious" in cautious
+    rej = evaluate(ev(reverted_after_s=30.0), vcfg)
+    assert decision_reason(rej, "rejected") == rej.reason
+    nm = evaluate(ev(share_new=0.5), vcfg)
+    assert decision_reason(nm, "uncertain").startswith("no verdict")
+
+
+def test_rules_block_names_the_next_step(ctx, toolbox):
+    """Problem 2: record_decision comes before render_evidence."""
+    c, a, b = _span(ctx)
+    st = toolbox.new_state(c)
+    assert f"next step: {toolbox.next_step(st)}" in toolbox.card(st)
+    # first-pass "confirm" still needs a vision check before any confirmation (guard)
+    assert st.verdict.verdict == "confirm"
+    assert toolbox.next_step(st).startswith("check_frame_quality")
+    q = toolbox.run(st, "check_frame_quality", {"start_s": a, "end_s": b, "why": "q"})
+    assert q["rules"]["verdict"] == "confirm"
+    assert q["rules"]["next_step"].startswith("record_decision(confirmed or uncertain)")
+    d = toolbox.run(st, "record_decision", {"event_id": c.id, "decision": "confirmed",
+                                            "reason": "held", "citations": [{"ref": q["ref"]}]})
+    assert d["next"] == "render_evidence" and d["recorded_reason"] == st.verdict.reason
 
 
 def test_situation_c_second_look_disagrees_and_confirm_is_blocked(ctx, toolbox, tmp_path):

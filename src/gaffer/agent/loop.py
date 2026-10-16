@@ -34,7 +34,7 @@ import numpy as np
 from gaffer.agent.alerts import AlertStore
 from gaffer.agent.context import MatchContext
 from gaffer.agent.tools import VISION_TOOLS, CandidateState, Toolbox, clock, tool_specs
-from gaffer.agent.verify import DECISION_OF, Candidate
+from gaffer.agent.verify import DECISION_OF, Candidate, evaluate
 from gaffer.config import load_config, repo_path
 from gaffer.llm.bedrock_client import (
     BedrockCallError,
@@ -53,12 +53,14 @@ How it works:
 - The first message is the candidate card. "rules" shows a verdict computed by code from the \
 evidence so far: need_more, confirm, reject, uncertain or refuse. Every vision tool result \
 updates it.
+- Every rules block has next_step: the call the protocol expects next. Follow it.
 - If the verdict is need_more, gather evidence: check_frame_quality and/or reanalyse_window over \
 the required re-analysis span, with event_id set. Do not record a decision while it is need_more.
 - Then call record_decision with a decision the verdict allows (confirm -> confirmed or \
-uncertain; reject -> rejected; uncertain/refuse -> uncertain or rejected), a short reason with \
-numbers taken from tool results, and citations of the refs you used, e.g. [{"ref": "R2"}].
-- After record_decision(confirmed): call render_evidence, then propose_alert. Title <= 80 \
+uncertain; reject -> rejected; uncertain/refuse -> uncertain or rejected), a short reason \
+(<= 200 characters) with numbers taken from tool results, and citations of the refs you used, \
+e.g. [{"ref": "R2"}].
+- Only after record_decision(confirmed): call render_evidence, then propose_alert. Title <= 80 \
 characters; explanation <= 280 characters, plain words for a coach, citing refs like [R2]; \
 suggestion <= 160 characters, one practical idea.
 
@@ -183,8 +185,9 @@ class Outcome:
     event_id: str
     decision: str
     decided_by: str
-    reason: str
+    reason: str  # code-written from the rules verdict (primary)
     verdict: str
+    explanation: str = ""  # the model's own text, shown apart from the reason
     llm_calls: int = 0
     tool_calls: list[str] = field(default_factory=list)
     guard_blocks: int = 0
@@ -198,6 +201,11 @@ class Outcome:
     llm_s: float = 0.0
     tool_s: float = 0.0
     trace_id: str = ""
+    first_verdict: str = ""  # rules verdict on the first pass alone (before any vision call)
+    first_reason: str = ""
+    quality: dict[str, Any] | None = None  # last check_frame_quality result (no rules block)
+    reanalysis: dict[str, Any] | None = None  # last reanalyse_window result (no labels)
+    tool_ms: dict[str, float] = field(default_factory=dict)  # wall time per tool, summed
 
 
 def _summary(result: dict[str, Any]) -> dict[str, Any]:
@@ -270,7 +278,10 @@ class AgentRunner:
     # ---------------------------------------------------------------- candidate
     def verify(self, c: Candidate, use_llm: bool = True) -> Outcome:
         st = self.tb.new_state(c)
-        out = Outcome(c.id, "", "", "", st.verdict.verdict, trace_id=self.trace_id(c))
+        # what the first pass alone would decide, if trusted without any vision call
+        fp = evaluate(st.first, self.ctx.vcfg, view=self.ctx.view, second_look=True)
+        out = Outcome(c.id, "", "", "", st.verdict.verdict, trace_id=self.trace_id(c),
+                      first_verdict=fp.verdict, first_reason=fp.reason)
         base = {"run_id": self.run_id, "trace_id": out.trace_id,
                 "match_id": self.ctx.match.match_id, "event_id": c.id,
                 "backend": self.ctx.backend, "arm": self.arm}
@@ -285,15 +296,17 @@ class AgentRunner:
         if not st.done:
             self._rules_policy(st, out, base)
         out.decision = st.decision or "uncertain"
-        out.reason = st.reason
+        out.reason, out.explanation = st.reason, st.explanation
         out.verdict = st.verdict.verdict
         out.tool_calls = list(st.tool_calls)
         out.alert_id, out.evidence_image = st.alert_id, st.evidence_image
+        out.quality, out.reanalysis = st.quality, st.reanalysis
         out.decided_by = ("agent" if out.fallback is None and self.arm == "llm"
                           else "rules" if self.arm == "rules" else out.fallback)
         self.trace.write({**base, "step": self._step + 1, "actor": "code", "kind": "decision",
                           "decision": out.decision, "decided_by": out.decided_by,
-                          "reason": out.reason, "citations": st.citations,
+                          "reason": out.reason, "explanation": out.explanation or None,
+                          "citations": st.citations,
                           "verdict": st.verdict.as_dict(), "alert_id": out.alert_id,
                           "llm_calls": out.llm_calls, "guard_blocks": out.guard_blocks,
                           "tokens": {"in": out.tokens_in, "out": out.tokens_out},
@@ -307,6 +320,7 @@ class AgentRunner:
         res = self.tb.run(st, name, args)
         dt = time.perf_counter() - t0
         out.tool_s += dt
+        out.tool_ms[name] = round(out.tool_ms.get(name, 0.0) + dt * 1000, 1)
         self._step += 1
         err = res.get("error")
         if err == "not_allowed":
@@ -484,10 +498,20 @@ class AgentRunner:
                            actor)
             if st.verdict.verdict == "need_more" and not st.second_look \
                     and st.reanalyses < int(self.limits["max_reanalyses_per_candidate"]):
-                fps = max(self._reanalysis_fps())
-                self._tool(st, out, base, "reanalyse_window",
-                           {"start_s": a, "end_s": b, "sample_fps": fps, "event_id": c.id,
-                            "why": "rules policy: second look"}, actor)
+                # low first-pass coverage -> the highest allowed rate, falling back to lower
+                # rates when OpenCV refuses on budget; otherwise the lowest rate
+                fps_opts = self.tb.reanalysis_fps()
+                cov = min(x if x is not None else 0.0
+                          for x in (st.first.coverage_before, st.first.coverage_after))
+                low = cov < self.ctx.vcfg.min_coverage
+                for fps in (sorted(fps_opts, reverse=True) if low else fps_opts[:1]):
+                    res = self._tool(st, out, base, "reanalyse_window",
+                                     {"start_s": a, "end_s": b, "sample_fps": fps,
+                                      "event_id": c.id,
+                                      "why": f"rules policy: second look (coverage {cov:.2f})"},
+                                     actor)
+                    if res.get("error") != "over_budget":
+                        break
             st.exhausted = True
             decision = DECISION_OF[st.verdict.verdict]
             refs = [r for r, info in st.refs.items() if info.ok
@@ -511,13 +535,9 @@ class AgentRunner:
             self._tool(st, out, base, "propose_alert", {
                 "event_id": c.id,
                 "title": f"{name} changed shape: {c.from_} -> {c.to} ({clock(c.t)})"[:80],
-                "explanation": (f"{st.verdict.reason} [{ref}].")[:280],
+                "explanation": f"[{ref}]",  # refs only: the alert shows the verified reason
                 "suggestion": "Check the evidence image and the clip around this moment."},
                 actor)
-
-    def _reanalysis_fps(self) -> list[int]:
-        views = self.cfg["agent"]["views"]
-        return list(views.get(self.ctx.view or "top", views["top"])["reanalysis_fps"])
 
     # ---------------------------------------------------------------- outputs
     def verified_timeline(self, outcomes: list[Outcome]) -> dict[str, Any]:
@@ -614,7 +634,19 @@ def main(argv: list[str] | None = None) -> int:
         except BedrockError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-    tb = Toolbox(ctx, AlertStore(args.alerts))
+    video = None
+    if ctx.backend == "video":
+        from gaffer.agent.vision import VideoBackend, VisionError
+
+        if not args.view:
+            print("ERROR: a video match needs --view (top / side)", file=sys.stderr)
+            return 2
+        try:
+            video = VideoBackend.for_match_file(args.match, ctx.match, args.view, cfg)
+        except VisionError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+    tb = Toolbox(ctx, AlertStore(args.alerts), video=video)
     runner = AgentRunner(ctx, tb, arm=args.arm, llm=llm,
                          budget=make_budget(cfg, args.max_calls, args.max_cost_usd),
                          trace=TraceWriter(args.trace or cfg["agent"]["outputs"]["trace"]))
@@ -622,7 +654,8 @@ def main(argv: list[str] | None = None) -> int:
     outcomes = runner.run(cands)
     for o in outcomes:
         print(f"{o.event_id} {o.decision:9s} by {o.decided_by:28s} llm {o.llm_calls} "
-              f"blocks {o.guard_blocks}  {o.reason[:90]}")
+              f"blocks {o.guard_blocks}  {o.reason[:90]}"
+              + (f"\n      explanation (agent): {o.explanation[:110]}" if o.explanation else ""))
     out = repo_path(f"outputs/{ctx.match.match_id}"
                     f"{cfg['agent']['outputs']['timeline_suffix']}")
     out.write_text(json.dumps(runner.verified_timeline(outcomes)), encoding="utf-8")
