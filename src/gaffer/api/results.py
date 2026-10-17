@@ -193,6 +193,10 @@ def analysis_result(storage: Storage, aid: str, status: dict[str, Any], store: A
     report = read_json(storage, f"{aid}/report.json")
     explanations = read_json(storage, f"{aid}/explanations.json")["candidates"]
     rows = read_json(storage, f"{aid}/run_rows.json")["rows"]
+    for e in report.get("inputs", {}).get("events", []):
+        a = e.get("alert")
+        if a and a.get("evidence_image"):
+            a["evidence_image"] = evidence_url(base_url, f"/api/analyses/{aid}", e["id"])
     for item in explanations + rows:  # local file paths -> the URL the API serves
         if item.get("evidence_image"):
             item["evidence_image"] = evidence_url(base_url, f"/api/analyses/{aid}",

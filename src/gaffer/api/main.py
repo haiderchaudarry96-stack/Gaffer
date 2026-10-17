@@ -18,6 +18,7 @@ from typing import Any
 
 import cv2
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -225,13 +226,21 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
             raise HTTPException(422, "known_source must be true, false or auto.")
         points_raw = form.get("pitch_points")
         name = safe_name(video.filename)
+        try:  # file copy and OpenCV off the event loop: status polls stay responsive
+            return await run_in_threadpool(_create, request, video.file, name, known,
+                                           str(points_raw) if points_raw else None)
+        finally:
+            await video.close()
+
+    def _create(request: Request, src: Any, name: str, known: bool | None,
+                points_raw: str | None) -> dict[str, Any]:
         aid = new_id()
         job_dir = storage.local_dir(aid)
         try:
             ext = check_extension(name, cfg)
             dest = job_dir / f"upload{ext}"
             with upload_lock:  # one copy at a time keeps disk use predictable
-                nbytes = save_stream(video.file, dest, cfg)
+                nbytes = save_stream(src, dest, cfg)
             info = probe(dest, name, nbytes)
             ks = check_rules(name, info, cfg, known)
             points = calib.parse_points(points_raw) if points_raw else None
@@ -239,8 +248,6 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
             _remove(job_dir)
             code = exc.status_code if isinstance(exc, UploadRefused) else 422
             raise HTTPException(code, str(exc)) from exc
-        finally:
-            await video.close()
         write_json(storage, f"{aid}/upload.json",
                    {"video": info.as_dict(), "upload_file": dest.name,
                     "known_source": None if ks is None else ks.__dict__})
