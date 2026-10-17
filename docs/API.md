@@ -20,7 +20,11 @@ Docker: `deploy/README.md`.
 - Analysis ids: 12 lowercase hex characters. Match ids inside results: `up_<id>`; alert ids
   `alr_up_<id>_evt_nnn` (the Phase 3 convention `alr_<match_id>_<event_id>`).
 - Image URLs in results are absolute (`http://<host>/api/...`), as the frontend expects.
-- Responses over 2 KB are gzipped (the demo bundle: 2.1 MB → 0.19 MB). CORS origins: `api.cors_origins`.
+- Responses over 2 KB are gzipped (the demo bundle: 2.1 MB → 0.19 MB). CORS origins: `api.cors_origins`
+  (credentials allowed, for the visitor cookie from the Vite dev server).
+- **Visitor cookie**: every `/api/` response to a browser without one sets `gaffer_visitor` (random
+  id, HttpOnly, SameSite=Lax, 1 year; `api.visitors`). No personal data. It keys the visitor's own
+  decision on the demo alert and their daily chat questions.
 - Times are match seconds (`t`, `start_s`) plus `mm:ss` clocks where the agent writes them.
 
 ## Endpoints
@@ -30,6 +34,7 @@ Docker: `deploy/README.md`.
 | `GET /api/health` | — | `{status, opencv_version, rules_fingerprint, bedrock, model_id, region, demo_available, analyses: {running, queued}, usage_today, limits}` |
 | `GET /api/demo` | — | the demo match (`samples/w900_1260`) as an **AnalysisResult** + `report_markdown`, `explanations`, `team_model`, `run_rows`, `files` |
 | `GET /api/demo/files/{name}` | — | the exact sample file the frontend reads today (whitelist: `api.demo.files`) |
+| `GET /api/demo/alerts` | — | the demo alerts as **this visitor** sees them (as shipped, plus their own approve / reject) |
 | `GET /api/demo/evidence/{event_id}.jpg` | — | demo evidence image |
 | `POST /api/analyses` | `multipart/form-data`: `video` (MP4/MOV, required), `known_source` (`true`/`false`/`auto`, optional), `pitch_points` (JSON `[[x,y]×4]` or `[{x,y}×4]`, optional) | `201` **AnalysisStatus** (`queued`, `needs_confirmation` or `needs_corners`) |
 | `POST /api/analyses/{id}/pitch` | `{"confirmed": true}` or `{"pitch_points": [[x,y]×4]}` | AnalysisStatus (`queued`) |
@@ -189,9 +194,15 @@ sample MatchState by the tactics engine (same 9 candidate ids) with the stored v
 
 ## Alerts
 
-Approve / reject append to `outputs/alerts.jsonl` through `agent.alerts.AlertStore` (last line per
-id wins, history never rewritten). Deciding twice → `409`; unknown id → `404`. The demo alert lives
-in `samples/`; its first decision copies it into the store first, then decides it.
+- **Uploaded analyses**: approve / reject append to `outputs/alerts.jsonl` through
+  `agent.alerts.AlertStore` (last line per id wins, history never rewritten). The decision is the
+  same for everyone who opens that analysis. Deciding twice → `409`; unknown id → `404`.
+- **The demo alert** (`samples/`, shared by every visitor): the decision is **per visitor**
+  (`api/visitors.py`): kept in memory under the visitor cookie, never written to the shared store,
+  never shown to anyone else. `GET /api/demo`, `GET /api/demo/alerts` and the demo chat show each
+  visitor their own decision. At most `api.visitors.max_visitors` (10,000) visitors are remembered
+  (least recently active forgotten first); a server restart forgets all of them, so the demo alert is
+  pending again for everyone. Deciding twice (same visitor) → `409`.
 
 ## Chat (`POST /api/chat`)
 
@@ -213,13 +224,24 @@ Caps (all in `config.yaml`, changeable without code; restart the server):
 | Cap | Setting | When hit |
 |---|---|---|
 | tokens per question (all rounds) | `api.chat.max_tokens_per_request` (12,000), `max_tool_rounds` (4) | polite "needs more look-ups than one answer is allowed; try a narrower question" |
-| questions per visitor per UTC day | `api.chat.max_questions_per_visitor_per_day` (20); visitor = `X-Visitor-Id` header, else client IP, stored hashed | `429` "You've reached today's limit of 20 questions" |
+| questions per visitor per UTC day | `api.chat.max_questions_per_visitor_per_day` (20); visitor = `X-Visitor-Id` header, else the visitor cookie the browser sent back, else client IP (a client without cookies is counted by IP), stored hashed | `429` "You've reached today's limit of 20 questions" |
 | Bedrock calls / cost per UTC day, whole API (chat + analyses) | `api.bedrock_daily.max_calls` (300), `max_cost_usd` (1.00), persisted in `outputs/api/usage.json` | `429` "daily limit for this demo, come back tomorrow"; analyses fall back to the rules arm |
 
 Bedrock unreachable (no credentials, network, throttling) → `503` "The analyst (Amazon Bedrock)
 can't be reached right now: …", and the question is given back to the visitor's allowance. No
 Bedrock configured → `503` "needs Amazon Bedrock, which is not configured on this server". The LLM
 client is injected (`create_app(llm_factory=...)`); tests use a scripted fake, never the network.
+
+## Frontend (`web/`)
+
+Build the site with `VITE_API_URL=/` (or `same-origin`) and this API serves it at `/` and `/app`
+from `web/dist` (one process); empty `VITE_API_URL` = the static demo build, not connected
+(`web/README.md`). Connected, the desk reads the demo from `/api/demo/files/*` and
+`/api/demo/alerts`, the upload flow follows the pitch step above (confirm screen on
+`pitch.preview_url`, 4-point screen on `/frame` preloaded with `corners` / `suggested_corners`), and
+approve / reject / chat go through the endpoints above. `scripts/serve_no_bedrock.py` runs the same
+app with Bedrock switched off (no AWS call; rules arm, template texts, chat 503) for the browser
+check `web/scripts/e2e-integrate.mjs`.
 
 ## Tested here, not tested here
 

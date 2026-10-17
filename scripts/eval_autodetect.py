@@ -236,7 +236,7 @@ def teamtrack_items(cfg: dict[str, Any], frames_per_clip: int, limit: int | None
             try:
                 frame = src.read(t)
             except Exception as exc:  # unreadable clip: reported, not fatal
-                print(f"  {c.name} t={t:.1f}: cannot read ({exc})", file=sys.stderr)
+                print(f"  {c.stem} t={t:.1f}: cannot read ({exc})", file=sys.stderr)
                 continue
             players = None
             if gt_df is not None:
@@ -244,7 +244,7 @@ def teamtrack_items(cfg: dict[str, Any], frames_per_clip: int, limit: int | None
                 rows = gt_df[(gt_df["frame"] == fi) & (gt_df["team"] != "BALL")]
                 if len(rows):
                     players = foot_points(rows, "centre")
-            yield Item(c.name, round(t, 2), frame, geo.for_frame(frame).mapper, players)
+            yield Item(c.stem, round(t, 2), frame, geo.for_frame(frame).mapper, players)
 
 
 def synthetic_items(n: int, seed: int = 42, size: tuple[int, int] = (1920, 1080)

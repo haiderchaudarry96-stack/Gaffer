@@ -25,6 +25,37 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-17] Pitch auto-detect put one goal line on the edge of the artificial turf (all 180 drone test frames wrong, accepted at 0.91)
+**Stage:** homography (OpenCV pitch auto-detect for uploads, `perception/pitch.py: detect_pitch_corners`)
+**Severity:** wrong output, accepted with high confidence
+**Input:** `py scripts\eval_autodetect.py` on the laptop: all 60 TeamTrack drone clips (0–1800 s), 3 frames each, reference = the 31-point calibration; "correct" = every corner within 1 m. First real-footage run of the auto-detect (it had only been built and tested on generated frames).
+**What happened:** **0 / 180 correct, all 180 accepted** (confidence 0.81–0.91). Left, top and bottom edges were right; the right edge sat on the edge of the artificial turf 6–7 m behind the goal line (max corner error median 6.75 m, worst 14.67 m when the grass ran to the frame border; player positions off by 2.67 m median).
+**Why:** each edge was snapped to the *outermost* straight painted-looking line with ≥ 80 % of the best support. Behind one goal line the turf edge is just as straight and bright, so it won. The confidence missed it because the markings check only scored the median distance of the markings it *did* find (0.09 m, same as the true corners); the 19 % of marking samples with no painted line within 2 m only lowered the score linearly.
+**Screenshot / output:** outputs/failures/2026-10-17_autodetect_turf_edge_before_after.jpg (top: before, bottom: after); the 180 "before" overlays are in the gitignored `outputs/_peek/autodetect_before/`.
+**Fix or mitigation:** fixed 17 Oct. Each edge now keeps up to 3 painted-line candidates (plus the grass edge); every combination is projected through its 4-corner homography and the one whose IFAB markings (halfway line, boxes, circle) land on painted lines wins (fewest markings without paint nearby, then smallest median). Search widened from 12 % to 20 % of the pitch depth. Confidence: the markings part is now 0 when ≥ 20 % of marking samples find no paint (`calibration.auto_detect.confidence.max_markings_not_found`). New test `test_autodetect_ignores_a_straight_line_outside_the_goal_line` (generated pitch with a decoy line 6.5 m behind the goal line: old code 62 px off, new code < 4 px).
+**Measured impact:** 180 frames, same clips: **correct 0 / 180 → 180 / 180** (all accepted, confidence 0.94–0.99); max corner error median **6.75 m → 0.19 m** (p90 0.21, worst 0.27 m); player positions vs the 31-point calibration median **2.67 m → 0.07 m** (worst 0.24 m); tilted and cropped frames still refused. Detection time ~0.34 s → ~0.9 s per frame (VM; once per upload). **Caveat:** the fix was designed after seeing these failures and measured on the same 60 clips of one pitch, so this is not a held-out number; a different ground (other surroundings, worn lines, a camera that is not straight above) may still fail, which is why the coach always confirms the outline.
+
+
+### [2026-10-17] Generated clip with worn markings: White's shirts mostly not given a team, so no White shape and no candidates
+**Stage:** team colour (upload through the web app, Phase 4 integration check)
+**Severity:** wrong output (on generated footage)
+**Input:** generated top-down clip, 960 × 600, 120 s, 8 fps (`tests/videogen.py` frames with the painted lines faded to 20 %, White switching 4-4-2 → 3-5-2 at 0:50); OpenCV pitch auto-detect was unsure (correctly: faint lines), the coach marked the 4 corners in the browser.
+**What happened:** the analysis finished, but of 6,218 player detections only 1,463 were labelled home (White), 2,666 away, 1,021 referee and 1,068 unknown: White never reached 8 labelled outfield players often enough for a shape, the engine produced 0 candidates and the desk showed "No shape changes found" with most White players as hollow (unassigned) rings. For comparison, the 3-min generated clip with full-strength markings uploaded in the same check (switch at 1:15): home 4,221 / away 4,169 of 9,617 detections, 3 candidates, the change confirmed.
+**Why (best guess):** the team model is fitted per upload; with the faded paint blended into the grass, one team's colour gate came out at 5.0 (7.4 on the clean clip), so many torsos fell outside it and went to "other" (referee / unknown). Generated footage, so it says little about real worn pitches, but it is the honest outcome of that upload.
+**Screenshot / output:** web/screenshots/integrate/14-needs-corners-result-desk.png
+**Fix or mitigation:** none (perception not tuned in the integration session). The UI states plainly that no changes were found and shows unassigned players as rings, never guessed.
+**Measured impact:** share of all detections labelled home 44 % (clean clip) vs 24 % (worn markings); candidates 3 vs 0.
+
+### [2026-10-17] Web app rejected every real upload result: agent traces now contain "explanation" steps
+**Stage:** web app (data validation), found by the Phase 4 end-to-end check
+**Severity:** crash (of the result view: "The analysis did not start or finish")
+**Input:** the first generated upload analysed by the API and loaded by the connected frontend.
+**What happened:** `GET /api/analyses/{id}/result` returned 200, but `validateTraceStep` threw on `kind: "explanation"`, so the desk never showed the result. The demo trace (`samples/`) predates build step 7 and has no such step, so the frontend's own tests could not catch it.
+**Why (best guess):** the frontend was written against the step-6 trace; step 7 added the checked-explanation step to the trace after the decision.
+**Screenshot / output:** none (caught in the walkthrough log); fixed result: web/screenshots/integrate/08-upload-result-desk.png
+**Fix or mitigation:** fixed (branch `phase4-integrate`): `explanation` is an accepted, untyped trace kind; a test covers it.
+**Measured impact:** upload results shown: 0 / 1 → 2 / 2 in the walkthrough.
+
 ### [2026-10-17] Coach report: Nova's version does not pass the grounding check; the code template is published
 **Stage:** agent (coach report, `agent/report.py`, build step 7)
 **Severity:** degraded (the LLM's part of the report; the published report is the template)

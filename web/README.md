@@ -19,8 +19,46 @@ python3 scripts/crop-evidence.py   # recut the before/after slider images from t
 
 `/app` URL parameters (demos and screenshots): `?t=<match seconds>&live=1&drawer=1&paused=1&upload=1`.
 
-Connect a backend with `VITE_API_URL` (e.g. `VITE_API_URL=http://localhost:8000 npm run dev`). Without
-it the build is a static demo: upload and chat say plainly that the server is not connected.
+### Connecting the backend: `VITE_API_URL`
+
+| `VITE_API_URL` | Meaning | Use |
+|---|---|---|
+| empty / unset | **not connected**: static demo build; upload and chat say plainly that the server is not connected; demo data from the bundled `public/sample/` | static hosting of the demo |
+| `/` (or `same-origin`) | **the API is on the server that serves this site**: relative URLs (`/api/...`) | the combined app: one `uvicorn` serving `web/dist` and the API |
+| `http://localhost:8000` (any URL) | the API on another origin (CORS: `config.yaml` `api.cors_origins`, credentials allowed) | development: Vite on :5173, uvicorn on :8000 |
+
+```bash
+# combined app (one server): build once, then the API serves the site at /
+VITE_API_URL=/ npm run build                      # PowerShell: $env:VITE_API_URL="/"; npm run build
+cd .. && uvicorn gaffer.api.main:app              # http://localhost:8000/ and /app
+
+# development: hot reload against a local API
+VITE_API_URL=http://localhost:8000 npm run dev    # http://localhost:5173
+```
+
+The value is baked in at build time (Vite). **Connected** (any non-empty value):
+
+- **Demo match** from the API: the files from `GET /api/demo/files/<name>` (the same files as
+  `samples/w900_1260/`, nothing bundled is read) and the alert from `GET /api/demo/alerts`.
+- **Alerts**: Approve / Reject call `POST /api/alerts/{id}/approve|reject`. On the demo the decision
+  is **this visitor's only** (an anonymous cookie; other visitors still see the alert waiting; a
+  server restart forgets it); on an uploaded analysis it is saved on the server for everyone
+  (`outputs/alerts.jsonl`). No Undo when connected (the server records a decision once).
+- **Upload**: choose a video → **Upload** → the server's pitch step:
+  `needs_confirmation` → **"Is this your pitch?"** on the outline OpenCV found
+  (`pitch.preview_url`): *Yes, looks right* → `POST /api/analyses/{id}/pitch {confirmed: true}`;
+  *No, let me adjust* → the guided 4-point screen on the server's reference frame
+  (`GET /api/analyses/{id}/frame`), preloaded with `pitch.corners` (draggable) →
+  `POST /pitch {pitch_points}`. `needs_corners` → the same 4-point screen, preloaded with
+  `pitch.suggested_corners` when OpenCV has a guess (Reset clears it). A known TeamTrack drone clip
+  skips the pitch step. Then progress (polled every 2 s) → the result replaces the demo (pitch,
+  timeline, alert card, trace, report, chat). A video the browser cannot decode can still be uploaded
+  (the server reads it with OpenCV); it just does not play next to the analysis.
+- **Chat**: `POST /api/chat` with the visitor cookie (daily question cap per visitor).
+
+End-to-end check (Playwright + the pre-installed Chromium, screenshots in `screenshots/integrate/`):
+`scripts/e2e-integrate.mjs` (usage in its header; `../scripts/serve_no_bedrock.py` runs the same app
+with Bedrock switched off, so no AWS call is made).
 
 ## Data
 
@@ -118,30 +156,35 @@ local video file, which stays in the browser.
     event's decision). The LLM call count, cost, rules verdict and the honest note sit in a
     collapsed "Technical details" toggle (text unchanged).
 
-## Backend API (contract for the FastAPI backend)
+## Backend API (as used by the frontend)
 
-All JSON; base URL = `VITE_API_URL`. Errors: a non-2xx status with `{"detail": "<message>"}`
-(FastAPI's default); the UI shows the detail. Types live in `src/data/analysis.ts`,
-`src/data/chat.ts` and `src/data/types.ts` (MatchState, TacticalTimeline, Alert, trace steps as in
-`docs/DATA_CONTRACT.md` and `docs/AGENT_DESIGN.md` §7). Tests: `src/data/api.test.ts` (mocked fetch).
+The full reference is `../docs/API.md`. All JSON; base URL from `VITE_API_URL` (above). Errors: a
+non-2xx status with `{"detail": "<message>"}` (FastAPI's default); the UI shows the detail. Types
+live in `src/data/analysis.ts`, `src/data/chat.ts` and `src/data/types.ts` (MatchState,
+TacticalTimeline, Alert, trace steps as in `docs/DATA_CONTRACT.md` and `docs/AGENT_DESIGN.md` §7).
+Tests: `src/data/api.test.ts` (mocked fetch).
 
 | Method and path | Request | Response |
 |---|---|---|
-| `POST /api/analyses` | `multipart/form-data`, field `video` (MP4/MOV) | `201` AnalysisStatus (`status: "uploaded"`, `stage: "uploading"`) |
-| `POST /api/analyses/{id}/start` | `{"points": [{x,y}×4], "frame": {"width","height","t_s"}, "straight_down": bool}`: pitch top-left, top-right, bottom-right, bottom-left in video pixels (origin top-left) | AnalysisStatus |
+| `GET /api/demo/files/{name}`, `GET /api/demo/alerts` | — | a demo file; the demo alerts with this visitor's decisions |
+| `POST /api/analyses` | `multipart/form-data`, field `video` (MP4/MOV) | `201` AnalysisStatus (`queued`, `needs_confirmation` or `needs_corners`) |
+| `POST /api/analyses/{id}/pitch` | `{"confirmed": true}` or `{"pitch_points": [[x, y]×4]}` (top-left, top-right, bottom-right, bottom-left, video pixels of the server's reference frame) | AnalysisStatus (`queued`) |
+| `GET /api/analyses/{id}/frame`, `.../pitch-preview` | — | JPEG: the reference frame; the frame with the outline |
+| `POST /api/analyses/{id}/start` | `{"points": [{x,y}×4], "frame": {"width","height","t_s"}, "straight_down": bool}` (kept; the connected UI uses `/pitch`) | AnalysisStatus |
 | `GET /api/analyses/{id}` | — | AnalysisStatus |
 | `GET /api/analyses/{id}/result` | — (only when `status = "done"`) | AnalysisResult |
+| `POST /api/alerts/{id}/approve`, `.../reject` | optional `{"note"}` | the Alert with its new status |
 | `POST /api/chat` | `{"match_id", "question", "history": [{"role": "user"\|"assistant", "text"}]}` | `{"answer", "citations": ["R2", "evt_003", …], "trace_id"}` |
 
-- **AnalysisStatus**: `{"id", "status": "uploaded"|"queued"|"running"|"done"|"failed", "stage":
-  "uploading"|"detecting"|"teams"|"agent"|"done", "progress": 0..1 (overall), "eta_s": number|null,
-  "error": string|null}`. The UI polls every 2 s and labels the stages Uploading, Detecting players
-  (OpenCV), Teams and formations, Agent checking changes, Done.
+- **AnalysisStatus**: `{"id", "status": "uploaded"|"needs_confirmation"|"needs_corners"|"queued"|
+  "running"|"done"|"failed", "stage": "uploading"|"detecting"|"teams"|"agent"|"done", "progress":
+  0..1 (overall), "eta_s": number|null, "error": string|null, "pitch": {state, corners,
+  suggested_corners, preview_url, message}|null, "video": {width, height, duration_s, …}}`. The UI
+  polls every 2 s and labels the stages Uploading, Detecting players (OpenCV), Teams and formations,
+  Agent checking changes, Done (a `queued` analysis shows "waiting for the analyser").
 - **AnalysisResult**: `{"id", "label", "match_state": MatchState, "timeline": TacticalTimeline,
   "alerts": [Alert], "trace": [trace step], "report": CoachReport|null}`. Evidence images in alerts
   should be absolute URLs the backend serves.
-- `POST /api/analyses/{id}/start` is a fourth endpoint next to the three requested: upload and the
-  pitch points are separate steps, so the request that starts the work carries the 4 points.
 - The time estimate in the UI uses the measured 1.2 s of processing per second of drone video
   (laptop CPU), plus agent checks; the server's `eta_s` is shown when it sends one.
 

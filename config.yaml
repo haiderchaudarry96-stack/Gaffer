@@ -250,9 +250,11 @@ calibration:
           fisheye_f_px: 2000
           fisheye_max_rms_px: 50  # cv2.fisheye.calibrate results worse than this are refitted
   # ---- Phase 4: uploads that are not TeamTrack clips (perception/pitch.py, api/calib.py).
-  # New sub-blocks only; nothing above changes. Accuracy on real footage: to be measured with
-  # `py scripts\eval_autodetect.py` (laptop, TeamTrack clips). Thresholds below are starting
-  # values set on generated frames, not tuned on real video.
+  # New sub-blocks only; nothing above changes. Accuracy on real footage: measured with
+  # `py scripts\eval_autodetect.py` (laptop, TeamTrack clips). Thresholds were set on generated
+  # frames; on 17 Oct the first real run (0 / 180 correct: turf edge taken for a goal line) led
+  # to the candidate-edge choice, inward_frac 0.20 and max_markings_not_found (FAILURE_LOG
+  # 2026-10-17): designed on the same TeamTrack clips it is measured on, so not held out.
   four_corner:                    # the coach's (or confirmed auto-detected) 4 pitch corners
     max_outside_frac: 0.25        # a point may lie this far outside the frame (share of its size)
     min_area_frac: 0.05           # the quad must cover >= 5 % of the frame
@@ -269,18 +271,25 @@ calibration:
     approx_eps: [0.005, 0.08]     # cv2.approxPolyDP epsilon range (share of the hull perimeter)
     line_mask: {kernel_px: 9, threshold: 25, max_saturation: 90, min_component_px: 30}
     snap:                         # move each edge to the painted boundary line where visible
-      inward_frac: 0.12           # search up to 12 % of the quad's depth inwards (run-off grass)
+      inward_frac: 0.20           # search up to 20 % of the quad's depth inwards (run-off grass;
+                                  # was 12 %: missed goal lines behind wide run-off, 17 Oct)
       outward_frac: 0.02          # and 2 % outwards
       samples: 80                 # points sampled along an edge (its middle 80 %)
       band_px: 3                  # cv2.fitLine on line pixels within this of the best line
-      min_support: 0.35           # share of an edge's samples on a painted line to accept a snap
-      keep_outermost: 0.8         # prefer the outermost line with >= 80 % of the best support
+      min_support: 0.35           # share of an edge's samples on a painted line to be a candidate
+      max_candidates: 3           # painted-line candidates kept per edge (+ the grass edge); the
+                                  # combination whose markings line up best wins (17 Oct: the
+                                  # outermost line was often the turf edge, not the goal line)
+      candidate_sep_frac: 0.02    # candidates closer than this share of the depth are one line
+      max_shift_frac: 0.25        # a corner may move at most this share of the quad's size
     confidence:                   # each part 0..1; confidence = geometric mean of the parts
       min_area_frac: 0.15         # quad area / frame area: 0 at this ...
       good_area_frac: 0.40        # ... 1 at this
       aspect_tolerance: 0.35      # |log(quad aspect / (length / width))| at which the part is 0
       good_line_support: 0.6      # mean edge support on painted lines that counts as 1
       max_line_error_m: 1.5       # projected markings vs painted lines (median): 0 at this
+      max_markings_not_found: 0.20  # share of marking samples with no painted line within 2 m:
+                                  # 0 at this (a wrong outline leaves whole lines unmatched)
       max_line_density: 0.08      # line-mask pixels inside the quad above this = clutter, not
                                   # painted lines (markings part 0; a real pitch is ~1-3 %)
       corner_margin_px: 4         # a corner this close to the frame border = pitch cut off
@@ -562,6 +571,11 @@ api:
       run_rows: report_llm.json
       evidence: [evt_003.jpg]
     view: top
+  visitors:                       # anonymous visitor id (random, cookie; no personal data)
+    cookie: gaffer_visitor
+    max_age_days: 365
+    max_visitors: 10000           # demo approve / reject kept in memory per visitor (oldest
+                                  # forgotten first; a restart forgets all); never global
   uploads:
     max_bytes: 524288000          # 500 MB (a 6 min 4K drone clip is ~130 MB)
     max_duration_s: 360           # 6 min: ~7 min of OpenCV on the laptop CPU + agent checks

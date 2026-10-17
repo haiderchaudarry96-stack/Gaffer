@@ -225,6 +225,13 @@ def line_mask(frame: np.ndarray, kernel_px: int, threshold: int, max_saturation:
     return mask
 
 
+def line_distance_map(mask: np.ndarray) -> np.ndarray:
+    """Distance (px) from every pixel to the nearest line centre (`cv2.distanceTransform` on
+    `line_centres`): the map `line_alignment_error` reads."""
+    centre = line_centres(mask)
+    return cv2.distanceTransform((centre == 0).astype(np.uint8), cv2.DIST_L2, 5)
+
+
 def line_centres(mask: np.ndarray) -> np.ndarray:
     """One-pixel centreline of the line mask (`cv2.ximgproc.thinning`, Zhang-Suen), so that
     alignment errors are measured to the middle of a painted line, not its edge."""
@@ -497,19 +504,20 @@ def leave_one_out(names: list[str], img: np.ndarray, world: np.ndarray,
 
 
 def line_alignment_error(mapper: PitchMapper, mask: np.ndarray, model: PitchModel,
-                         step_m: float, max_search_m: float, include: Iterable[str] | None = None
-                         ) -> dict[str, Any]:
+                         step_m: float, max_search_m: float, include: Iterable[str] | None = None,
+                         dist: np.ndarray | None = None) -> dict[str, Any]:
     """How far the projected pitch lines sit from the painted lines, in metres.
 
     Model lines are sampled every `step_m`, projected into the image, and the distance to the
     nearest line-centre pixel (`line_centres`) is read from `cv2.distanceTransform`. Pixels are
     converted to metres with the local scale perpendicular to the line. Samples with no painted
     line within `max_search_m` (occluded, out of view, faded) are counted as `not_found`
-    rather than errors.
+    rather than errors. `dist` (from `line_distance_map(mask)`) can be passed in when many
+    candidate mappers are checked against the same mask.
     """
     h, w = mask.shape
-    centre = line_centres(mask)
-    dist = cv2.distanceTransform((centre == 0).astype(np.uint8), cv2.DIST_L2, 5)
+    if dist is None:
+        dist = line_distance_map(mask)
     errs: list[float] = []
     per_line: dict[str, float] = {}
     total = not_found = 0
@@ -849,23 +857,29 @@ def _line_from(p: np.ndarray, q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return p, d / (np.linalg.norm(d) + 1e-12)
 
 
-def _snap_edges(quad: np.ndarray, lines: np.ndarray, s: dict[str, Any]
-                ) -> tuple[np.ndarray, list[float], int]:
-    """Move each quad edge onto the painted boundary line where one is visible.
+def _edge_candidates(quad: np.ndarray, lines: np.ndarray, s: dict[str, Any]
+                     ) -> list[list[tuple[tuple[np.ndarray, np.ndarray], float]]]:
+    """Candidate positions of each quad edge on a painted line.
 
     Per edge, a 2D search over the offsets of its two end points along the inward normal
     (from `outward_frac` outside to `inward_frac` inside) scores the share of sampled points
-    that fall on the (slightly dilated) line mask; the outermost offset pair with at least
-    `keep_outermost` x the best support wins (the boundary is the outermost painted line), then
-    `cv2.fitLine` on the line pixels near it refines it. Adjacent fitted lines are intersected
-    into the new corners. Returns (corners, support per edge, edges snapped)."""
+    that fall on the (slightly dilated) line mask. The best offset pairs with at least
+    `min_support` that lie more than `candidate_sep_frac` of the quad's depth apart become
+    candidates (up to `max_candidates`), each refined with `cv2.fitLine` on the line pixels
+    near it. The grass edge itself is always the last candidate (no painted line).
+
+    Several candidates matter: next to the boundary line there is often another straight
+    feature (the edge of the artificial turf, a fence base, a run-off line) with as much
+    support. Which one is the pitch boundary is decided by the markings inside the pitch
+    (`_choose_edges`), not by the edge alone. Returns, per edge, [((point, point), support)].
+    """
     h, w = lines.shape
     hit = cv2.dilate(lines, np.ones((3, 3), np.uint8)) > 0
     centre = quad.mean(axis=0)
     t = np.linspace(0.1, 0.9, int(s["samples"]))
-    fitted, support, snapped = [], [], 0
     ys_all, xs_all = np.nonzero(lines)
     pix = np.stack([xs_all, ys_all], axis=1).astype(np.float64)
+    out: list[list[tuple[tuple[np.ndarray, np.ndarray], float]]] = []
     for i in range(4):
         p, q = quad[i], quad[(i + 1) % 4]
         o, d = _line_from(p, q)
@@ -885,42 +899,73 @@ def _snap_edges(quad: np.ndarray, lines: np.ndarray, s: dict[str, Any]
         inside = (u >= 0) & (u < w) & (v >= 0) & (v < h)
         hits = np.zeros(u.shape, bool)
         hits[inside] = hit[v[inside], u[inside]]
-        score = hits.mean(axis=-1)
-        best = float(score.max())
-        line_pq = (p, q)
-        if best >= float(s["min_support"]):
-            good = score >= float(s["keep_outermost"]) * best
-            # outermost = smallest mean offset along the inward normal
-            mean_off = (a + b) / 2
-            j = np.unravel_index(np.argmin(np.where(good, mean_off, np.inf)), score.shape)
-            p2, q2 = p + a[j] * n, q + b[j] * n
+        score = hits.mean(axis=-1).ravel()
+        mean_off = ((a + b) / 2).ravel()
+        sep = float(s["candidate_sep_frac"]) * depth
+        cands: list[tuple[tuple[np.ndarray, np.ndarray], float]] = []
+        taken: list[float] = []
+        for j in np.argsort(-score, kind="stable"):
+            if score[j] < float(s["min_support"]) or len(cands) >= int(s["max_candidates"]):
+                break
+            if any(abs(mean_off[j] - m) < sep for m in taken):
+                continue
+            taken.append(float(mean_off[j]))
+            ja, jb = np.unravel_index(j, a.shape)
+            p2, q2 = p + a[ja, jb] * n, q + b[ja, jb] * n
             o2, d2 = _line_from(p2, q2)
             rel = pix - o2
             along = rel @ d2
             dist = np.abs(rel @ np.array([-d2[1], d2[0]]))
-            L = np.linalg.norm(q2 - p2)
-            near = (dist <= float(s["band_px"])) & (along >= 0.05 * L) & (along <= 0.95 * L)
+            ln = np.linalg.norm(q2 - p2)
+            near = (dist <= float(s["band_px"])) & (along >= 0.05 * ln) & (along <= 0.95 * ln)
             if near.sum() >= 10:
                 vx, vy, x0, y0 = cv2.fitLine(pix[near].astype(np.float32), cv2.DIST_HUBER,
                                              0, 0.01, 0.01).ravel()
                 o2, d2 = np.array([x0, y0], float), np.array([vx, vy], float)
-            line_pq = (o2, o2 + d2)
-            support.append(best)
-            snapped += 1
-        else:
-            support.append(best)
-        fitted.append(line_pq)
+            cands.append(((o2, o2 + d2), float(score[j])))
+        cands.append(((p, q), 0.0))  # the grass edge: no painted line found or chosen
+        out.append(cands)
+    return out
+
+
+def _corners_from_edges(edges: list[tuple[np.ndarray, np.ndarray]], quad: np.ndarray
+                        ) -> np.ndarray:
+    """Corners as intersections of adjacent edge lines (corner i = edge i-1 x edge i)."""
     corners = []
     for i in range(4):
-        (p1, q1), (p2, q2) = fitted[(i - 1) % 4], fitted[i]
+        (p1, q1), (p2, q2) = edges[(i - 1) % 4], edges[i]
         x = _intersect((p1, q1 - p1), (p2, q2 - p2))
         corners.append(quad[i] if x is None else x)
-    out = np.array(corners, dtype=float)
-    # a snap that runs away (parallel lines, clutter) falls back to the grass quad
-    if (not np.isfinite(out).all()
-            or np.abs(out - quad).max() > 0.25 * max(np.ptp(quad[:, 0]), np.ptp(quad[:, 1]))):
-        return quad, support, 0
-    return out, support, snapped
+    return np.array(corners, dtype=float)
+
+
+def _choose_edges(quad: np.ndarray,
+                  cands: list[list[tuple[tuple[np.ndarray, np.ndarray], float]]],
+                  check: Any, max_shift_frac: float) -> tuple[np.ndarray, int, dict[str, Any]]:
+    """Try every combination of edge candidates and keep the one whose projected pitch
+    markings land on painted lines best: fewest marking samples with no painted line nearby
+    (`not_found_fraction`), then the smallest median distance. `check(corners)` returns
+    `line_alignment_error`'s result or None (impossible quad). Combinations that move a corner
+    more than `max_shift_frac` of the quad's size (runaway snaps) are skipped. Returns the
+    corners, the number of edges on a painted line, and the winning check."""
+    import itertools
+
+    size = max(np.ptp(quad[:, 0]), np.ptp(quad[:, 1]))
+    best: tuple[float, float, int] | None = None
+    best_out: tuple[np.ndarray, int, dict[str, Any]] = (quad, 0, {})
+    for combo in itertools.product(*[range(len(c)) for c in cands]):
+        edges = [cands[i][j][0] for i, j in enumerate(combo)]
+        corners = _corners_from_edges(edges, quad)
+        if not np.isfinite(corners).all() or np.abs(corners - quad).max() > max_shift_frac * size:
+            continue
+        res = check(order_corners(corners))
+        if res is None or not np.isfinite(res["median_m"]):
+            continue
+        snapped = sum(1 for i, j in enumerate(combo) if cands[i][j][1] > 0)
+        key = (float(res["not_found_fraction"]), float(res["median_m"]), -snapped)
+        if best is None or key < best:
+            best, best_out = key, (order_corners(corners), snapped, res)
+    return best_out
 
 
 def _edge_support(corners: np.ndarray, lines: np.ndarray, samples: int) -> list[float]:
@@ -986,7 +1031,20 @@ def detect_pitch_corners(frame: np.ndarray, cfg: dict[str, Any]) -> CornerDetect
     lm = ad["line_mask"]
     lines = line_mask(small, int(lm["kernel_px"]), int(lm["threshold"]),
                       int(lm["max_saturation"]), int(lm["min_component_px"]))
-    corners, _, snapped = _snap_edges(quad, lines, ad["snap"])
+    model = PitchModel(L, W, Markings.from_config(cfg))
+    dist = line_distance_map(lines)
+    four_loose = {**four, "min_area_frac": 0.0, "min_opposite_edge_ratio": 0.0}
+
+    def check(c: np.ndarray) -> dict[str, Any] | None:
+        try:
+            fc_ = four_corner_homography(c, (w, h), L, W, four_loose)
+        except CalibrationError:
+            return None
+        return line_alignment_error(fc_.mapper(), lines, model, 1.0, 2.0, dist=dist)
+
+    cands = _edge_candidates(quad, lines, ad["snap"])
+    corners, snapped, _ = _choose_edges(quad, cands, check,
+                                        float(ad["snap"]["max_shift_frac"]))
     corners = order_corners(corners)
     support = _edge_support(corners, lines, int(ad["snap"]["samples"]))
 
@@ -1016,13 +1074,14 @@ def detect_pitch_corners(frame: np.ndarray, cfg: dict[str, Any]) -> CornerDetect
     line_err = None
     hard = False
     try:
-        fc = four_corner_homography(corners, (w, h), L, W, {**four, "min_area_frac": 0.0,
-                                                            "min_opposite_edge_ratio": 0.0})
-        model = PitchModel(L, W, Markings.from_config(cfg))
-        le = line_alignment_error(fc.mapper(), lines, model, 1.0, 2.0)
-        found = 1.0 - float(le["not_found_fraction"])
+        fc = four_corner_homography(corners, (w, h), L, W, four_loose)
+        le = line_alignment_error(fc.mapper(), lines, model, 1.0, 2.0, dist=dist)
+        nf = float(le["not_found_fraction"])
         med = float(le["median_m"]) if np.isfinite(le["median_m"]) else float("inf")
         line_err = None if not np.isfinite(med) else round(med, 3)
+        # markings with no painted line near them (> 2 m off) are what a wrong outline looks
+        # like: the matched ones still sit close, so the median alone stays small
+        found = float(np.clip(1 - nf / float(cc["max_markings_not_found"]), 0, 1))
         parts["markings"] = float(np.clip(1 - med / float(cc["max_line_error_m"]), 0, 1)) * found
         quad_mask = np.zeros_like(lines)
         cv2.fillConvexPoly(quad_mask, np.round(corners).astype(np.int32), 255)
@@ -1032,7 +1091,7 @@ def detect_pitch_corners(frame: np.ndarray, cfg: dict[str, Any]) -> CornerDetect
             problems.append(f"{density:.0%} of the area looks like painted lines: too cluttered "
                             "to find the pitch markings")
         elif parts["markings"] < 0.5:
-            problems.append("the pitch markings do not line up with this outline")
+            problems.append(f"{nf:.0%} of the pitch markings do not line up with this outline")
     except CalibrationError as exc:
         hard = True
         problems.append(str(exc))

@@ -164,7 +164,7 @@ export function validateTraceStep(raw: unknown, path = 'trace'): TraceStep {
   const s = obj(raw, path)
   str(s.ts, `${path}.ts`)
   str(s.match_id, `${path}.match_id`)
-  const kind = oneOf(s.kind, ['card', 'tool_call', 'guard_block', 'decision', 'fallback', 'match_summary'], `${path}.kind`)
+  const kind = oneOf(s.kind, ['card', 'tool_call', 'guard_block', 'decision', 'fallback', 'explanation', 'match_summary'], `${path}.kind`)
   if (kind !== 'match_summary') str(s.event_id, `${path}.event_id`)
   if (kind === 'card') {
     str(s.ref, `${path}.ref`)

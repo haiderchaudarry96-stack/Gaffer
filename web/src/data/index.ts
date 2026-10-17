@@ -4,7 +4,8 @@
  * backend) can supply the bytes.
  */
 import { DEFAULT_MATCH, type MatchEntry } from './matches'
-import { httpReader, readJson, sampleUrl, type ReadText } from './source'
+import { apiGet, apiPost } from './api'
+import { demoFromApi, httpReader, readJson, sampleUrl, type ReadText } from './source'
 import { buildTimeline } from './timeline'
 import type {
   AgentRunRow,
@@ -18,6 +19,7 @@ import type {
   TraceStep,
 } from './types'
 import {
+  arr,
   DataError,
   parseJsonl,
   validateAlert,
@@ -42,10 +44,18 @@ export async function loadTeamModel(match: MatchEntry = DEFAULT_MATCH, read: Rea
   return validateTeamModel(await readJson(read, path(match, match.files.teamModel)))
 }
 
-/** Alerts, last line per alert_id wins (append-only store, AGENT_DESIGN §7). */
+/**
+ * Alerts, last line per alert_id wins (append-only store, AGENT_DESIGN §7). Connected to the
+ * backend, the demo alerts come from GET /api/demo/alerts: as shipped, plus this visitor's own
+ * approve / reject (never another visitor's).
+ */
 export async function loadAlerts(match: MatchEntry = DEFAULT_MATCH, read: ReadText = httpReader): Promise<Alert[]> {
   const name = path(match, match.files.alerts)
-  const rows = parseJsonl(await read(name), name).map((r, i) => validateAlert(r, `${name}[${i}]`))
+  const raw: unknown[] =
+    read === httpReader && demoFromApi()
+      ? arr(await apiGet('/api/demo/alerts', 'Demo alerts'), 'demo alerts')
+      : parseJsonl(await read(name), name)
+  const rows = raw.map((r, i) => validateAlert(r, `${name}[${i}]`))
   const latest = new Map<string, Alert>()
   for (const a of rows) latest.set(a.alert_id, a)
   return [...latest.values()].sort((a, b) => a.match_time_s - b.match_time_s)
@@ -91,6 +101,14 @@ export function evidenceImageUrl(alert: Alert, match: MatchEntry = DEFAULT_MATCH
   if (/^https?:\/\//.test(alert.evidence_image)) return alert.evidence_image
   const base = alert.evidence_image.split('/').at(-1) ?? ''
   return match.assets.includes(base) ? sampleUrl(path(match, base)) : null
+}
+
+/** The coach's decision on an alert, sent to the backend (POST /api/alerts/{id}/approve|reject).
+ * The demo alert is decided for this visitor only; an uploaded analysis's alert for everyone. */
+export async function decideAlert(alertId: string, approve: boolean, note?: string): Promise<Alert> {
+  const verb = approve ? 'approve' : 'reject'
+  const raw = await apiPost(`/api/alerts/${encodeURIComponent(alertId)}/${verb}`, note ? { note } : {}, approve ? 'Approve' : 'Reject')
+  return validateAlert(raw, 'alert')
 }
 
 /** Trace steps of one candidate, in order. */

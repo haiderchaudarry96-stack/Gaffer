@@ -94,6 +94,24 @@ def test_autodetect_finds_the_corners_of_a_top_down_view(cfg, corners) -> None:
     assert d.line_error_m is not None and d.line_error_m < 0.3
 
 
+def test_autodetect_ignores_a_straight_line_outside_the_goal_line(cfg) -> None:
+    """Real drone footage (TeamTrack, 17 Oct): the edge of the artificial turf 6-7 m behind one
+    goal line is as straight and bright as the goal line itself. The outermost line used to
+    win (all 180 test frames wrong by 6.8-14.7 m); the markings inside the pitch now decide."""
+    import cv2
+
+    img = render_pitch_view(SIZE, STRAIGHT, runoff_m=9.0)
+    targets = np.array([[0.0, W], [L, W], [L, 0.0], [0.0, 0.0]], np.float32)
+    H = cv2.getPerspectiveTransform(targets, np.array(STRAIGHT, np.float32))
+    ends = cv2.perspectiveTransform(np.array([[[L + 6.5, -9.0]], [[L + 6.5, W + 9.0]]],
+                                             np.float32), H).reshape(2, 2)
+    cv2.line(img, tuple(int(v) for v in ends[0]), tuple(int(v) for v in ends[1]),
+             (235, 240, 238), 2, cv2.LINE_AA)
+    d = detect_pitch_corners(img, cfg)
+    assert d.found and d.accepted, d.summary()
+    assert np.abs(d.corners - order_corners(STRAIGHT)).max() < 4.0, d.summary()
+
+
 def test_autodetect_refuses_a_tilted_view(cfg) -> None:
     img = render_pitch_view(SIZE, [[380, 250], [900, 250], [1250, 700], [30, 700]])
     d = detect_pitch_corners(img, cfg)

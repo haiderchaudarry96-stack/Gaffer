@@ -3,16 +3,19 @@ import { ArrowLeft, ArrowRight, Check, CloudOff, FileVideo, Loader2, Upload } fr
 import Dialog from '../app/Dialog'
 import { Button } from '../ui/Button'
 import PitchPoints from './PitchPoints'
-import { formatBytes, formatDuration, isAcceptedVideo, readVideo, type LocalVideoInfo } from './readVideo'
+import { formatBytes, formatDuration, isAcceptedVideo, readVideo, unreadableVideo, type LocalVideoInfo } from './readVideo'
 import { apiConfigured } from '../../data/api'
 import {
+  analysisFrameUrl,
+  confirmPitch,
   estimateProcessingSeconds,
   getAnalysisStatus,
   loadAnalysisResult,
+  needsPitchStep,
   SECONDS_PER_VIDEO_SECOND,
+  setPitchPoints,
   STAGE_LABELS,
   STAGES,
-  startAnalysis,
   uploadVideo,
   type AnalysisResult,
   type AnalysisStatus,
@@ -21,17 +24,26 @@ import {
 
 type Step =
   | { kind: 'choose' }
+  /** not connected: the 4 points on the frame the browser read (nothing leaves the browser) */
   | { kind: 'place' }
   | { kind: 'not-connected' }
+  /** connected: OpenCV found the pitch; the coach confirms the outline or adjusts it */
+  | { kind: 'confirm'; status: AnalysisStatus }
+  /** connected: the 4 points on the server's reference frame (adjust, or OpenCV was not sure) */
+  | { kind: 'mark'; status: AnalysisStatus; adjusting: boolean }
   | { kind: 'progress'; status: AnalysisStatus | null; upload: number }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; back: Step | null }
 
 const POLL_MS = 2000
+const toPoints = (c: [number, number][] | null | undefined): PixelPoint[] => (c ?? []).map(([x, y]) => ({ x, y }))
 
 /**
- * Upload for analysis: choose a video -> show us where the pitch is -> analyse.
- * Talks to the backend only through src/data/analysis.ts. Without VITE_API_URL it says the
- * server is not connected and offers the analysed demo match: no fake progress, no fake results.
+ * Upload for analysis.
+ * Connected (VITE_API_URL set): choose a video -> upload -> the server's pitch step
+ * (needs_confirmation: "Is this your pitch?" on OpenCV's outline; needs_corners: the guided
+ * 4-point screen, preloaded with OpenCV's best guess) -> progress -> the result replaces the demo.
+ * Not connected: choose -> 4 points on the browser's frame -> "not connected", and the analysed
+ * demo match instead. No fake progress, no fake results.
  */
 export default function UploadPanel({
   open,
@@ -45,6 +57,7 @@ export default function UploadPanel({
   onUseDemo: (video: LocalVideoInfo) => void
   onResult: (result: AnalysisResult, video: LocalVideoInfo) => void
 }) {
+  const connected = apiConfigured()
   const [step, setStep] = useState<Step>({ kind: 'choose' })
   const [video, setVideo] = useState<LocalVideoInfo | null>(null)
   const [reading, setReading] = useState(false)
@@ -52,6 +65,7 @@ export default function UploadPanel({
   const [points, setPoints] = useState<PixelPoint[]>([])
   const [straightDown, setStraightDown] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const alive = useRef(true)
 
@@ -71,7 +85,15 @@ export default function UploadPanel({
     }
     setReading(true)
     try {
-      const info = await readVideo(file)
+      let info: LocalVideoInfo
+      try {
+        info = await readVideo(file)
+      } catch (e) {
+        // connected, the server reads the video with OpenCV: a browser that cannot preview it
+        // (codec) is no reason to refuse the upload
+        if (!connected) throw e
+        info = unreadableVideo(file)
+      }
       if (video) URL.revokeObjectURL(video.url)
       setVideo(info)
       setPoints([])
@@ -83,33 +105,67 @@ export default function UploadPanel({
     }
   }
 
-  const start = async () => {
-    if (!video || points.length !== 4) return
-    if (!apiConfigured()) {
-      setStep({ kind: 'not-connected' })
-      return
+  const fail = (e: unknown, back: Step | null) => {
+    if (alive.current) setStep({ kind: 'error', message: e instanceof Error ? e.message : String(e), back })
+  }
+
+  /** poll until done or failed, then hand the result to the desk */
+  const follow = async (first: AnalysisStatus) => {
+    if (!video) return
+    let status = first
+    while (alive.current && status.status !== 'done' && status.status !== 'failed') {
+      setStep({ kind: 'progress', status, upload: 1 })
+      await new Promise((r) => setTimeout(r, POLL_MS))
+      status = await getAnalysisStatus(first.id)
     }
+    if (!alive.current) return
+    if (status.status === 'failed') throw new Error(status.error ?? 'The analysis failed on the server.')
+    setStep({ kind: 'progress', status, upload: 1 })
+    onResult(await loadAnalysisResult(first.id), video)
+  }
+
+  /** where the server's answer to an upload leads */
+  const route = async (status: AnalysisStatus) => {
+    if (status.status === 'needs_confirmation') {
+      setPoints(toPoints(status.pitch?.corners))
+      setStep({ kind: 'confirm', status })
+    } else if (status.status === 'needs_corners') {
+      setPoints(toPoints(status.pitch?.suggested_corners))
+      setStraightDown(false)
+      setStep({ kind: 'mark', status, adjusting: false })
+    } else {
+      await follow(status)
+    }
+  }
+
+  /** connected: upload first, the server decides the pitch step */
+  const upload = async () => {
+    if (!video) return
     setStep({ kind: 'progress', status: null, upload: 0 })
     try {
       const created = await uploadVideo(video.file, (f) => alive.current && setStep({ kind: 'progress', status: null, upload: f }))
-      let status = await startAnalysis(created.id, {
-        points: points as [PixelPoint, PixelPoint, PixelPoint, PixelPoint],
-        frame: { width: video.width, height: video.height, t_s: video.frameT },
-        straight_down: straightDown,
-      })
-      while (alive.current && status.status !== 'done' && status.status !== 'failed') {
-        setStep({ kind: 'progress', status, upload: 1 })
-        await new Promise((r) => setTimeout(r, POLL_MS))
-        status = await getAnalysisStatus(created.id)
-      }
-      if (!alive.current) return
-      if (status.status === 'failed') throw new Error(status.error ?? 'The analysis failed on the server.')
-      setStep({ kind: 'progress', status, upload: 1 })
-      const result = await loadAnalysisResult(created.id)
-      onResult(result, video)
+      await route(created)
     } catch (e) {
-      if (alive.current) setStep({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
+      fail(e, { kind: 'choose' })
     }
+  }
+
+  const send = async (call: () => Promise<AnalysisStatus>, back: Step) => {
+    setBusy(true)
+    try {
+      const status = await call()
+      setBusy(false)
+      if (needsPitchStep(status)) await route(status)
+      else await follow(status)
+    } catch (e) {
+      setBusy(false)
+      fail(e, back)
+    }
+  }
+
+  /** not connected: the 4 points stay in the browser; say so plainly */
+  const startOffline = () => {
+    if (video && points.length === 4) setStep({ kind: 'not-connected' })
   }
 
   const onDrop = (e: DragEvent) => {
@@ -119,23 +175,28 @@ export default function UploadPanel({
   }
 
   const est = video ? estimateProcessingSeconds(video.duration) : 0
-  const title = step.kind === 'place' ? 'Show us where the pitch is' : step.kind === 'not-connected' ? 'Not connected' : 'Upload for analysis'
+  const title =
+    step.kind === 'confirm'
+      ? 'Is this your pitch?'
+      : step.kind === 'place' || step.kind === 'mark'
+        ? 'Show us where the pitch is'
+        : step.kind === 'not-connected'
+          ? 'Not connected'
+          : 'Upload for analysis'
+  const at = step.kind === 'choose' ? 0 : step.kind === 'place' || step.kind === 'confirm' || step.kind === 'mark' ? 1 : 2
 
   return (
     <Dialog open={open} onClose={onClose} title={title} wide>
       <div className="p-5 sm:p-6">
         <ol className="mb-6 flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Steps">
-          {['Choose a video', 'Show us where the pitch is', 'Analyse'].map((label, i) => {
-            const at = step.kind === 'choose' ? 0 : step.kind === 'place' ? 1 : 2
-            return (
-              <li key={label} className={`flex items-center gap-2 ${i === at ? 'font-semibold text-text' : 'text-muted'}`} aria-current={i === at ? 'step' : undefined}>
-                <span className={`grid size-6 place-items-center rounded-full text-xs ${i < at ? 'bg-accent text-on-accent' : i === at ? 'border-2 border-text' : 'border border-line'}`}>
-                  {i < at ? <Check className="size-3.5" aria-hidden="true" /> : i + 1}
-                </span>
-                {label}
-              </li>
-            )
-          })}
+          {['Choose a video', 'Show us where the pitch is', 'Analyse'].map((label, i) => (
+            <li key={label} className={`flex items-center gap-2 ${i === at ? 'font-semibold text-text' : 'text-muted'}`} aria-current={i === at ? 'step' : undefined}>
+              <span className={`grid size-6 place-items-center rounded-full text-xs ${i < at ? 'bg-accent text-on-accent' : i === at ? 'border-2 border-text' : 'border border-line'}`}>
+                {i < at ? <Check className="size-3.5" aria-hidden="true" /> : i + 1}
+              </span>
+              {label}
+            </li>
+          ))}
         </ol>
 
         {step.kind === 'choose' && (
@@ -178,17 +239,25 @@ export default function UploadPanel({
             )}
             {video && (
               <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-line bg-surface p-4">
-                <img src={video.frameUrl} alt="" className="h-16 w-28 rounded-lg object-cover" />
+                {video.frameUrl ? (
+                  <img src={video.frameUrl} alt="" className="h-16 w-28 rounded-lg object-cover" />
+                ) : (
+                  <span className="grid h-16 w-28 place-items-center rounded-lg bg-surface-2" aria-hidden="true">
+                    <FileVideo className="size-6 text-muted" />
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 font-medium break-all text-text">
                     <FileVideo className="size-4 shrink-0 text-muted" aria-hidden="true" /> {video.file.name}
                   </p>
                   <p className="mt-1 font-mono text-sm text-muted">
-                    {formatBytes(video.file.size)} · {formatDuration(video.duration)} · {video.width}×{video.height}
+                    {formatBytes(video.file.size)}
+                    {video.previewable ? ` · ${formatDuration(video.duration)} · ${video.width}×${video.height}` : ''}
                   </p>
+                  {!video.previewable && <p className="mt-1 text-xs text-muted">This browser can’t preview it; Gaffer’s server reads it with OpenCV.</p>}
                 </div>
-                <Button onClick={() => setStep({ kind: 'place' })}>
-                  Next <ArrowRight className="size-4" aria-hidden="true" />
+                <Button onClick={() => (connected ? void upload() : setStep({ kind: 'place' }))}>
+                  {connected ? 'Upload' : 'Next'} <ArrowRight className="size-4" aria-hidden="true" />
                 </Button>
               </div>
             )}
@@ -215,8 +284,78 @@ export default function UploadPanel({
               </Button>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-muted">About {formatDuration(est)} of processing, plus agent checks</span>
-                <Button onClick={() => void start()} disabled={points.length !== 4}>
+                <Button onClick={startOffline} disabled={points.length !== 4}>
                   Start analysis
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step.kind === 'confirm' && video && (
+          <div className="space-y-5">
+            <p className="text-lg text-text">We found the pitch. Check that the green outline sits on the pitch’s boundary lines.</p>
+            {step.status.pitch?.preview_url ? (
+              <img
+                src={step.status.pitch.preview_url}
+                alt={`First frame of ${video.file.name} with the pitch outline Gaffer found, corners numbered 1 to 4`}
+                className="mx-auto max-h-[52vh] w-auto max-w-full rounded-xl border border-line"
+                data-testid="pitch-preview"
+              />
+            ) : (
+              <p className="text-muted">The outline image is missing.</p>
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setPoints(toPoints(step.status.pitch?.corners))
+                  setStraightDown(false)
+                  setStep({ kind: 'mark', status: step.status, adjusting: true })
+                }}
+              >
+                No, let me adjust
+              </Button>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted">About {formatDuration(estimateProcessingSeconds(step.status.video?.duration_s ?? video.duration))} of processing, plus agent checks</span>
+                <Button disabled={busy} onClick={() => void send(() => confirmPitch(step.status.id), step)}>
+                  {busy ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />} Yes, looks right
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step.kind === 'mark' && video && step.status.video && (
+          <div className="space-y-5">
+            <p className="text-sm text-muted" role="status">
+              {step.adjusting
+                ? 'Our outline is loaded: drag the numbered points onto the pitch corners.'
+                : step.status.pitch?.suggested_corners
+                  ? 'We weren’t sure where the pitch is. Our best guess is loaded: drag the points onto the pitch corners.'
+                  : 'We couldn’t find the pitch on our own. Click its 4 corners in order.'}
+            </p>
+            <PitchPoints
+              frameUrl={analysisFrameUrl(step.status.id)}
+              fileName={video.file.name}
+              width={step.status.video.width}
+              height={step.status.video.height}
+              points={points}
+              straightDown={straightDown}
+              onChange={(p, s) => {
+                setPoints(p)
+                setStraightDown(s)
+              }}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              <Button variant="ghost" disabled={busy} onClick={() => (step.adjusting ? setStep({ kind: 'confirm', status: step.status }) : setStep({ kind: 'choose' }))}>
+                <ArrowLeft className="size-4" aria-hidden="true" /> Back
+              </Button>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted">About {formatDuration(estimateProcessingSeconds(step.status.video.duration_s))} of processing, plus agent checks</span>
+                <Button disabled={points.length !== 4 || busy} onClick={() => void send(() => setPitchPoints(step.status.id, points), step)}>
+                  {busy && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />} Start analysis
                 </Button>
               </div>
             </div>
@@ -245,51 +384,59 @@ export default function UploadPanel({
           </div>
         )}
 
-        {step.kind === 'progress' && video && (
-          <div className="space-y-5">
-            <ol className="space-y-3" aria-label="Analysis progress">
-              {STAGES.map((s) => {
-                const current = step.status?.stage ?? 'uploading'
-                const ci = STAGES.indexOf(current)
-                const si = STAGES.indexOf(s)
-                const done = si < ci || (s === 'done' && step.status?.status === 'done')
-                const active = si === ci && !done
-                return (
-                  <li key={s} className={`flex items-center gap-3 ${active ? 'font-semibold text-text' : done ? 'text-text' : 'text-muted'}`}>
-                    <span className={`grid size-7 place-items-center rounded-full ${done ? 'bg-accent text-on-accent' : active ? 'border-2 border-accent-ink' : 'border border-line'}`}>
-                      {done ? <Check className="size-4" aria-hidden="true" /> : active ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-                    </span>
-                    {STAGE_LABELS[s]}
-                    {active && s === 'uploading' && <span className="ml-auto font-mono text-sm">{Math.round(step.upload * 100)} %</span>}
-                  </li>
-                )
-              })}
-            </ol>
-            {step.status && (
-              <div aria-live="polite">
-                <div className="h-2 overflow-hidden rounded-full bg-surface-2">
-                  <div className="h-full origin-left rounded-full bg-accent transition-transform duration-500" style={{ transform: `scaleX(${step.status.progress})` }} />
-                </div>
-                <p className="mt-2 font-mono text-sm text-text">{Math.round(step.status.progress * 100)} %</p>
-              </div>
-            )}
-            <p className="text-sm text-muted">
-              Estimate: about {SECONDS_PER_VIDEO_SECOND} s of processing per second of video ({formatDuration(est)} for this file), plus agent
-              checks{step.status?.eta_s != null ? `; the server says about ${formatDuration(step.status.eta_s)} left` : ''}.
-            </p>
-          </div>
-        )}
+        {step.kind === 'progress' && video && <Progress step={step} est={estimateProcessingSeconds(step.status?.video?.duration_s ?? video.duration)} />}
 
         {step.kind === 'error' && (
           <div className="space-y-4" role="alert">
-            <p className="font-display text-xl font-semibold text-text">The analysis did not finish</p>
+            <p className="font-display text-xl font-semibold text-text">The analysis did not start or finish</p>
             <p className="text-muted">{step.message}</p>
-            <Button variant="ghost" onClick={() => setStep({ kind: 'place' })}>
+            <Button variant="ghost" onClick={() => setStep(step.back ?? { kind: 'choose' })}>
               <ArrowLeft className="size-4" aria-hidden="true" /> Back
             </Button>
           </div>
         )}
       </div>
     </Dialog>
+  )
+}
+
+function Progress({ step, est }: { step: Extract<Step, { kind: 'progress' }>; est: number }) {
+  const st = step.status
+  // queued: the upload is done and the analyser has not picked it up yet
+  const current = st?.status === 'queued' ? 'detecting' : (st?.stage ?? 'uploading')
+  const ci = STAGES.indexOf(current)
+  return (
+    <div className="space-y-5">
+      <ol className="space-y-3" aria-label="Analysis progress">
+        {STAGES.map((s) => {
+          const si = STAGES.indexOf(s)
+          const done = si < ci || (s === 'done' && st?.status === 'done')
+          const active = si === ci && !done
+          return (
+            <li key={s} className={`flex items-center gap-3 ${active ? 'font-semibold text-text' : done ? 'text-text' : 'text-muted'}`}>
+              <span className={`grid size-7 place-items-center rounded-full ${done ? 'bg-accent text-on-accent' : active ? 'border-2 border-accent-ink' : 'border border-line'}`}>
+                {done ? <Check className="size-4" aria-hidden="true" /> : active ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
+              </span>
+              {STAGE_LABELS[s]}
+              {active && s === 'uploading' && <span className="ml-auto font-mono text-sm">{Math.round(step.upload * 100)} %</span>}
+              {active && st?.status === 'queued' && <span className="ml-auto text-sm font-normal text-muted">waiting for the analyser…</span>}
+            </li>
+          )
+        })}
+      </ol>
+      {st && (
+        <div aria-live="polite">
+          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+            <div className="h-full origin-left rounded-full bg-accent transition-transform duration-500" style={{ transform: `scaleX(${st.progress})` }} />
+          </div>
+          <p className="mt-2 font-mono text-sm text-text">{Math.round(st.progress * 100)} %</p>
+        </div>
+      )}
+      <p className="text-sm text-muted">
+        Estimate: about {SECONDS_PER_VIDEO_SECOND} s of processing per second of video
+        {est > 0 ? ` (${formatDuration(est)} for this file)` : ''}, plus agent checks
+        {st?.eta_s != null ? `; the server says about ${formatDuration(st.eta_s)} left` : ''}.
+      </p>
+    </div>
   )
 }

@@ -13,7 +13,8 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 SRC = HERE.parent.parent / "samples" / "w900_1260" / "evt_003.jpg"
 OUT = HERE.parent / "public" / "product"
-TOP, BOTTOM = 958, 1341  # 958: below the two-line caption burned into each panel (its facts are in the small print)
+# 958: below the two-line caption burned into each panel (its facts are in the small print)
+TOP, BOTTOM = 958, 1341
 PANELS = {"evt003-before.jpg": (0, 636), "evt003-after.jpg": (644, 1280)}
 
 OUT.mkdir(parents=True, exist_ok=True)

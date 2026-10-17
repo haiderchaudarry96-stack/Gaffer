@@ -3,8 +3,10 @@ frontend already reads (web/README.md "Backend API"; `src/data/types.ts`).
 
 `AnalysisResult = {id, label, match_state, timeline, alerts, trace, report}` plus extras the
 desk can use: `explanations`, `team_model`, `run_rows`, `report_markdown`. Evidence images are
-absolute URLs served by the API. Alerts show their latest state from the shared alert store
-(`outputs/alerts.jsonl`, append-only, last line per id wins), so a coach's approval shows up.
+absolute URLs served by the API. Alerts of uploaded analyses show their latest state from the
+shared alert store (`outputs/alerts.jsonl`, append-only, last line per id wins), so a coach's
+approval shows up. The demo's alert is shared by every visitor: it is returned as shipped
+(pending) and `api/visitors.py` lays each visitor's own decision over it.
 """
 
 from __future__ import annotations
@@ -28,20 +30,6 @@ def latest_alerts(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for r in rows:
         out[r["alert_id"]] = r
-    return out
-
-
-def with_store_state(alerts: dict[str, dict[str, Any]], store: AlertStore
-                     ) -> dict[str, dict[str, Any]]:
-    """The coach's decision from the shared store wins; creation time stays the original."""
-    live = store.all()
-    out = {}
-    for aid, a in alerts.items():
-        s = live.get(aid)
-        if s is not None:
-            a = {**a, "status": s.status, "decided_utc": s.decided_utc,
-                 "coach_note": s.coach_note}
-        out[aid] = a
     return out
 
 
@@ -135,10 +123,12 @@ class Demo:
                                           evidence_image=img, trace_id=r["trace_id"])
         return json.loads(tl.to_json())
 
-    def alerts(self, store: AlertStore, base_url: str) -> list[dict[str, Any]]:
+    def alerts(self, base_url: str) -> list[dict[str, Any]]:
+        """The demo alerts as shipped in `samples/` (never the shared store: a visitor's own
+        decision is laid over them by `api/visitors.py`)."""
         rows = latest_alerts(read_jsonl(self._text("alerts")))
         out = []
-        for a in with_store_state(rows, store).values():
+        for a in rows.values():
             if a.get("evidence_image"):
                 a = {**a, "evidence_image": evidence_url(base_url, "/api/demo", a["event_id"])}
             out.append(a)
@@ -148,13 +138,14 @@ class Demo:
         a = latest_alerts(read_jsonl(self._text("alerts"))).get(aid)
         return None if a is None else Alert.model_validate(a)
 
-    def bundle(self, store: AlertStore, base_url: str) -> dict[str, Any]:
+    def bundle(self, base_url: str, alerts: list[dict[str, Any]]) -> dict[str, Any]:
+        """The whole demo; `alerts` = `alerts()` as this visitor sees them."""
         files = {k: f"{base_url.rstrip('/')}/api/demo/files/{v}" for k, v in self.names.items()}
         files["evidence"] = [f"{base_url.rstrip('/')}/api/demo/files/{n}" for n in self.evidence]
         return {"id": self.id, "label": self.label, "kind": "demo",
                 "match_state": self._json("match_state"),
                 "timeline": self.timeline(base_url),
-                "alerts": self.alerts(store, base_url),
+                "alerts": alerts,
                 "trace": read_jsonl(self._text("trace")),
                 "report": self._json("report"),
                 "report_markdown": self._text("report_markdown"),
