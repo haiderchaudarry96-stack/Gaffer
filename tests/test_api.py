@@ -35,11 +35,12 @@ DEMO_ALERT = "alr_teamtrack_top_w900_1260_evt_003"
 
 @pytest.fixture(autouse=True)
 def _no_network(monkeypatch):
-    """No test here may open a network connection (AF_UNIX sockets stay allowed)."""
+    """No test here may open a network connection (AF_UNIX sockets and loopback stay allowed)."""
     real = socket.socket.connect
 
     def guard(self, address):
-        if self.family == socket.AF_UNIX:
+        host = address[0] if isinstance(address, tuple) else address
+        if self.family == getattr(socket, "AF_UNIX", None) or host in ("127.0.0.1", "::1", "localhost"):
             return real(self, address)
         raise RuntimeError(f"network access is disabled in tests ({address})")
 

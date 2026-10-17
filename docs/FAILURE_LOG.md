@@ -25,6 +25,17 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-17] Pitch auto-detect put one goal line on the edge of the artificial turf (all 180 drone test frames wrong, accepted at 0.91)
+**Stage:** homography (OpenCV pitch auto-detect for uploads, `perception/pitch.py: detect_pitch_corners`)
+**Severity:** wrong output, accepted with high confidence
+**Input:** `py scripts\eval_autodetect.py` on the laptop: all 60 TeamTrack drone clips (0–1800 s), 3 frames each, reference = the 31-point calibration; "correct" = every corner within 1 m. First real-footage run of the auto-detect (it had only been built and tested on generated frames).
+**What happened:** **0 / 180 correct, all 180 accepted** (confidence 0.81–0.91). Left, top and bottom edges were right; the right edge sat on the edge of the artificial turf 6–7 m behind the goal line (max corner error median 6.75 m, worst 14.67 m when the grass ran to the frame border; player positions off by 2.67 m median).
+**Why:** each edge was snapped to the *outermost* straight painted-looking line with ≥ 80 % of the best support. Behind one goal line the turf edge is just as straight and bright, so it won. The confidence missed it because the markings check only scored the median distance of the markings it *did* find (0.09 m, same as the true corners); the 19 % of marking samples with no painted line within 2 m only lowered the score linearly.
+**Screenshot / output:** outputs/failures/2026-10-17_autodetect_turf_edge_before_after.jpg (top: before, bottom: after); the 180 "before" overlays are in the gitignored `outputs/_peek/autodetect_before/`.
+**Fix or mitigation:** fixed 17 Oct. Each edge now keeps up to 3 painted-line candidates (plus the grass edge); every combination is projected through its 4-corner homography and the one whose IFAB markings (halfway line, boxes, circle) land on painted lines wins (fewest markings without paint nearby, then smallest median). Search widened from 12 % to 20 % of the pitch depth. Confidence: the markings part is now 0 when ≥ 20 % of marking samples find no paint (`calibration.auto_detect.confidence.max_markings_not_found`). New test `test_autodetect_ignores_a_straight_line_outside_the_goal_line` (generated pitch with a decoy line 6.5 m behind the goal line: old code 62 px off, new code < 4 px).
+**Measured impact:** 180 frames, same clips: **correct 0 / 180 → 180 / 180** (all accepted, confidence 0.94–0.99); max corner error median **6.75 m → 0.19 m** (p90 0.21, worst 0.27 m); player positions vs the 31-point calibration median **2.67 m → 0.07 m** (worst 0.24 m); tilted and cropped frames still refused. Detection time ~0.34 s → ~0.9 s per frame (VM; once per upload). **Caveat:** the fix was designed after seeing these failures and measured on the same 60 clips of one pitch, so this is not a held-out number; a different ground (other surroundings, worn lines, a camera that is not straight above) may still fail, which is why the coach always confirms the outline.
+
+
 ### [2026-10-17] Generated clip with worn markings: White's shirts mostly not given a team, so no White shape and no candidates
 **Stage:** team colour (upload through the web app, Phase 4 integration check)
 **Severity:** wrong output (on generated footage)
