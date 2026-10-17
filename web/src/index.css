@@ -1,0 +1,194 @@
+@import 'tailwindcss';
+
+/* Design tokens: docs/UI_DESIGN.md §2 (dark-first). */
+:root {
+  --bg: #070d0a;
+  --surface: #0f1914;
+  --surface-2: #16231c;
+  --line: #22332a;
+  --text: #eef4f0;
+  --muted: #8fa398;
+  --accent: #c8f542;
+  --team-a: #ff5b4f;
+  --team-b: #44c8ff;
+  --warn: #ffb020;
+  --danger: #ff4d6d;
+  /* accent used as TEXT (lime is fine on dark; darker ink on light) */
+  --accent-ink: #c8f542;
+  --on-accent: #070d0a;
+  /* 2D pitch (PitchCanvas reads these where the canvas sits) */
+  --pitch-grass: var(--surface);
+  --pitch-stripe: var(--surface-2);
+  --pitch-line: rgba(238, 244, 240, 0.3);
+  --pitch-home: var(--team-a);
+  --pitch-away: var(--team-b);
+  --pitch-official: var(--muted);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius-card: 18px;
+
+  color-scheme: dark;
+}
+
+/*
+ * Light token set (README: decision 2 of the second pass). The landing page is dark only in the
+ * hero; everything below sits inside .theme-light. All text pairs are WCAG AA (>= 4.5:1);
+ * team colours are used for dots only (>= 3:1 for graphics).
+ */
+.theme-light {
+  --bg: #f3f5ef;
+  --surface: #ffffff;
+  --surface-2: #e7ece4;
+  --line: #cdd6cc;
+  --text: #0b1510;
+  --muted: #4a5c52;
+  --accent-ink: #4a6b00;
+  /* team colours on light: coral and sky blue, >= 3:1 on white for dots and legends (never text) */
+  --team-a: #f2483b;
+  --team-b: #0a8fd4;
+  --warn: #9a5b00;
+  --danger: #c2183f;
+  /* light pitch: white grass, pale-green mowing stripes, thin grey lines, dark grey officials */
+  --pitch-grass: #ffffff;
+  --pitch-stripe: #eaf4e4;
+  --pitch-line: #b5bfb6;
+  --pitch-official: #4b5563;
+  /* custom properties resolve where they are declared: restate the aliases for the light set */
+  --pitch-home: #f2483b;
+  --pitch-away: #0a8fd4;
+  color-scheme: light;
+  color: var(--text);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-team-a: var(--team-a);
+  --color-team-b: var(--team-b);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
+
+  --font-display: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+
+  --radius-card: 18px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* The page colour is the html background only: the body stays transparent so the landing page's
+   fixed dark-to-light backdrop (a negative z-index layer) is not painted over. */
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Visible focus everywhere (keyboard only). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Subtle pitch-line pattern + grain for section backgrounds. */
+.pitch-pattern {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+.glow-accent-strong {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent), 0 0 40px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.glow-accent {
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Skeleton shimmer for loading states. */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Mascot eye blink: a quick close every ~6 s (no animation with reduced motion). */
+.mascot-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mascot-blink 6s infinite;
+}
+@keyframes mascot-blink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascot-eyes {
+    animation: none;
+  }
+}
