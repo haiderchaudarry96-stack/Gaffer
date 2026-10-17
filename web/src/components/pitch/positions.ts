@@ -1,12 +1,13 @@
 /**
  * Player positions at any time t, interpolated between the 2 fps MatchState frames by track id.
- * Unknown-team players are skipped (DATA_CONTRACT: "ignored by consumers, never guessed").
+ * Unknown-team players are kept as "unassigned" (drawn as hollow rings, never given a team and
+ * never counted for a team: DATA_CONTRACT "ignored by consumers, never guessed").
  */
 import type { Frame, MatchState, PlayerTeam } from '../../data'
 
 export interface Dot {
   id: number
-  team: Exclude<PlayerTeam, 'unknown'>
+  team: PlayerTeam
   goalkeeper: boolean
   x: number
   y: number
@@ -25,7 +26,7 @@ export class PositionIndex {
   constructor(match: MatchState) {
     this.frames = match.frames.map((f) => ({
       t: f.t,
-      byId: new Map(f.players.filter((p) => p.team !== 'unknown').map((p) => [p.track_id, p])),
+      byId: new Map(f.players.map((p) => [p.track_id, p])),
     }))
     this.start = match.frames[0]?.t ?? 0
     this.end = match.frames.at(-1)?.t ?? 0
@@ -58,7 +59,7 @@ export class PositionIndex {
       const q = b.byId.get(id)
       const x = q ? p.x + (q.x - p.x) * k : p.x
       const y = q ? p.y + (q.y - p.y) * k : p.y
-      out.push({ id, team: p.team as Dot['team'], goalkeeper: p.role === 'goalkeeper', x, y })
+      out.push({ id, team: p.team, goalkeeper: p.role === 'goalkeeper', x, y })
     }
     return out
   }

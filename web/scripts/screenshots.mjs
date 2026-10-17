@@ -1,3 +1,4 @@
+/* global window, document */
 // Takes the Phase 4 checkpoint screenshots with the pre-installed Chromium (no browser download).
 // Usage: npm run build && npm run screenshots   (serves dist/ with `vite preview` on a free port)
 // Env: CHROMIUM_PATH (default /opt/pw-browsers/chromium-1194/chrome-linux/chrome), BASE_URL (skip the preview server).

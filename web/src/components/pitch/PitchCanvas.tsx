@@ -131,7 +131,7 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', tra
           ] as const) {
             index.at(t - dt, trailDots)
             for (const d of trailDots) {
-              if (d.team === 'referee') continue
+              if (d.team === 'referee' || d.team === 'unknown') continue
               ctx.globalAlpha = alpha
               ctx.fillStyle = colours[d.team]
               ctx.beginPath()
@@ -143,6 +143,15 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', tra
         }
         index.at(t, dots)
         for (const d of dots) {
+          if (d.team === 'unknown') {
+            // seen by OpenCV, team not decided yet: a hollow ring, no team colour
+            ctx.strokeStyle = colours.referee
+            ctx.lineWidth = 1.25
+            ctx.beginPath()
+            ctx.arc(px(d), py(d), r * 0.8, 0, Math.PI * 2)
+            ctx.stroke()
+            continue
+          }
           const c = colours[d.team]
           ctx.fillStyle = c
           ctx.beginPath()

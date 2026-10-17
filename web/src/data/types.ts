@@ -238,14 +238,31 @@ export interface ReportSegment {
   [teamName: string]: SegmentTeam | string
 }
 
+export interface ReportWindow {
+  window: string
+  formation: string
+  line_m: number | null
+  depth_m: number | null
+  width_m: number | null
+  own_box_pct: number | null
+}
+
 export interface ReportEvent {
   id: string
   team: string
   change: string
   onset: string
+  lines?: string
   decision?: 'confirmed' | 'rejected' | 'uncertain'
   reason?: string
   explanation?: string
+  new_shape_pct?: number
+  clear_readings_after?: number
+  fps?: number
+  /** typical windows drawn in the evidence panels (confirmed events) */
+  before?: ReportWindow
+  after?: ReportWindow
+  alert?: { id: string; status: string; evidence_image: string }
 }
 
 export interface CoachReport {
