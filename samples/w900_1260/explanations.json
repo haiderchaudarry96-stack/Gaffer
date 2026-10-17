@@ -1,0 +1,1375 @@
+{
+  "summary": {
+    "candidates": 14,
+    "decisions_identical_to_step6": true,
+    "fingerprint": "ca4ff9bbf7b01c6c",
+    "before_auto_flagged": 12,
+    "after_sources": {
+      "agent": 13,
+      "template": 1
+    },
+    "nova_texts_flagged": 1,
+    "nova_unreachable": 0
+  },
+  "llm": {
+    "calls": 15,
+    "cost_usd": 0.00488,
+    "tokens_in": 10574,
+    "tokens_out": 684
+  },
+  "candidates": [
+    {
+      "set": "eval2",
+      "event_id": "evt_001",
+      "team": "Blue",
+      "change": "3-4-3 -> 4-4-2",
+      "clock": "22:25",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "persistence"
+        ],
+        "missing": []
+      },
+      "cause": "persistence",
+      "reason_stored": "new shape held in only 27% of 11 confident windows after detection",
+      "reason_now": "new shape held in only 27% of 11 confident windows after detection",
+      "before": "Persistence check failed: formation fluctuated between 3-4-3 and 4-4-2 within the window, not held for 20s as claimed [R2]",
+      "before_flags": [
+        "number 20 s is not in the results"
+      ],
+      "after": "The Blue team tried to shift from 3-4-3 to 4-4-2 at 22:25, but the change was rejected because the new shape only held in 27% of 11 clear readings after detection [R0].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "Blue's 4-4-2 did not last: after 22:25 it showed in only 27% of 11 clear formation readings over the next 60 s (second look with OpenCV at 4 fps) [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 708,
+        "out": 55,
+        "latency_ms": 2710
+      },
+      "cost_usd": 0.00035,
+      "facts": {
+        "event": {
+          "id": "evt_001",
+          "team": "Blue",
+          "from": "3-4-3",
+          "to": "4-4-2",
+          "lines": "back line 3->4, front line 3->2",
+          "onset": "22:25",
+          "detected": "23:00"
+        },
+        "decision": "rejected",
+        "cause": "persistence",
+        "code_reason": "new shape held in only 27% of 11 confident windows after detection",
+        "rule": "rejected when the new shape is in 40% or less of the clear readings in the 60 s after detection",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 27,
+            "clear_readings_after": 11,
+            "coverage_before_pct": 100,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "21:40-24:00",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 96,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 1.6,
+            "zoom_change_pct": 0.1
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 27,
+            "clear_readings_after": 11,
+            "coverage_before_pct": 97,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60,
+            "window": "21:40-24:00",
+            "fps": 6.0
+          }
+        }
+      }
+    },
+    {
+      "set": "eval2",
+      "event_id": "evt_002",
+      "team": "White",
+      "change": "4-4-2 -> 3-4-3",
+      "clock": "22:25",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "revert"
+        ],
+        "missing": []
+      },
+      "cause": "revert",
+      "reason_stored": "reverted to the old shape 55 s after detection",
+      "reason_now": "reverted to the old shape 55 s after detection",
+      "before": "Re-analysis shows formation fluctuated between 3-4-3 and 4-4-2; candidate change not sustained [R2]",
+      "before_flags": [
+        "does not name the cause (revert)"
+      ],
+      "after": "White went back to their old shape at 23:55 because they were in the old shape again 55 s after the change was detected [R0][R2].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "White went back to 4-4-2 at 23:55, 55 s after the switch to 3-4-3 was detected, so the change did not last (second look with OpenCV at 4 fps) [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 729,
+        "out": 38,
+        "latency_ms": 1191
+      },
+      "cost_usd": 0.000314,
+      "facts": {
+        "event": {
+          "id": "evt_002",
+          "team": "White",
+          "from": "4-4-2",
+          "to": "3-4-3",
+          "lines": "back line 4->3, front line 2->3",
+          "onset": "22:25",
+          "detected": "23:00"
+        },
+        "decision": "rejected",
+        "cause": "revert",
+        "code_reason": "reverted to the old shape 55 s after detection",
+        "rule": "rejected when the team goes back to the old shape within 60 s of detection",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 15,
+            "clear_readings_after": 13,
+            "went_back_s_after_detection": 55,
+            "went_back_at": "23:55",
+            "coverage_before_pct": 93,
+            "coverage_after_pct": 97,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "21:40-24:00",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 96,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 1.6,
+            "zoom_change_pct": 0.1
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 17,
+            "clear_readings_after": 12,
+            "went_back_s_after_detection": 55,
+            "went_back_at": "23:55",
+            "coverage_before_pct": 90,
+            "coverage_after_pct": 96,
+            "video_after_detection_s": 60,
+            "window": "21:40-24:00",
+            "fps": 6.0
+          }
+        }
+      }
+    },
+    {
+      "set": "eval2",
+      "event_id": "evt_003",
+      "team": "White",
+      "change": "3-4-3 -> 4-4-2",
+      "clock": "23:20",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "revert"
+        ],
+        "missing": []
+      },
+      "cause": "return_leg",
+      "reason_stored": "returns to the shape held before evt_002",
+      "reason_now": "returns to the shape held before evt_002",
+      "before": "Re-analysis shows formation held as 4-4-2 throughout window; no transition to 3-4-3 occurred [R2]",
+      "before_flags": [
+        "does not name the cause (return_leg)",
+        "says the new shape did not hold ('no transition'), which the results do not show"
+      ],
+      "after": "White went back to their old shape because this change just undoes what they did before at 22:25 [R0][R2].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "This is White going back to 4-4-2 after their switch 4-4-2 -> 3-4-3 at 22:25 (evt_002): a there-and-back is not alerted as a new shape, even though the 4-4-2 then showed in 75% of 12 clear readings [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 753,
+        "out": 32,
+        "latency_ms": 1593
+      },
+      "cost_usd": 0.000306,
+      "facts": {
+        "event": {
+          "id": "evt_003",
+          "team": "White",
+          "from": "3-4-3",
+          "to": "4-4-2",
+          "lines": "back line 3->4, front line 3->2",
+          "onset": "23:20",
+          "detected": "23:55"
+        },
+        "decision": "rejected",
+        "cause": "return_leg",
+        "code_reason": "returns to the shape held before evt_002",
+        "rule": "rejected when the change only undoes an earlier change of the same team within 60 s: a there-and-back is not a new shape",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 62,
+            "clear_readings_after": 13,
+            "undoes": "evt_002",
+            "coverage_before_pct": 98,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "22:35-24:55",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 99,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 1.0,
+            "zoom_change_pct": 0.1
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 75,
+            "clear_readings_after": 12,
+            "undoes": "evt_002",
+            "coverage_before_pct": 99,
+            "coverage_after_pct": 99,
+            "video_after_detection_s": 60,
+            "window": "22:35-24:55",
+            "fps": 6.0
+          }
+        },
+        "earlier_change": {
+          "id": "evt_002",
+          "from": "4-4-2",
+          "to": "3-4-3",
+          "onset": "22:25"
+        }
+      }
+    },
+    {
+      "set": "eval2",
+      "event_id": "evt_004",
+      "team": "Blue",
+      "change": "4-4-2 -> 3-4-3",
+      "clock": "23:30",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "persistence"
+        ],
+        "missing": []
+      },
+      "cause": "persistence",
+      "reason_stored": "new shape held in only 30% of 10 confident windows after detection",
+      "reason_now": "new shape held in only 30% of 10 confident windows after detection",
+      "before": "Rejected: second look shows formation not persistent (only 3-4-3 at 23:45-24:00, reverted by 24:05) [R2]",
+      "before_flags": [
+        "clock 23:45 is not in the results",
+        "says the team went back, but no return to the old shape was found"
+      ],
+      "after": "The Blue team tried to shift from 4-4-2 to 3-4-3 at 23:30, but the change is rejected because the new shape only lasted in 30% of the clear readings after 24:05 [R2].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "Blue's 3-4-3 did not last: after 23:30 it showed in only 27% of 11 clear formation readings over the next 60 s (second look with OpenCV at 4 fps) [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 708,
+        "out": 57,
+        "latency_ms": 1417
+      },
+      "cost_usd": 0.000355,
+      "facts": {
+        "event": {
+          "id": "evt_004",
+          "team": "Blue",
+          "from": "4-4-2",
+          "to": "3-4-3",
+          "lines": "back line 4->3, front line 2->3",
+          "onset": "23:30",
+          "detected": "24:05"
+        },
+        "decision": "rejected",
+        "cause": "persistence",
+        "code_reason": "new shape held in only 30% of 10 confident windows after detection",
+        "rule": "rejected when the new shape is in 40% or less of the clear readings in the 60 s after detection",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 25,
+            "clear_readings_after": 12,
+            "coverage_before_pct": 100,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "22:45-25:05",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 99,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 0.8,
+            "zoom_change_pct": 0.1
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 30,
+            "clear_readings_after": 10,
+            "coverage_before_pct": 99,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60,
+            "window": "22:45-25:05",
+            "fps": 6.0
+          }
+        }
+      }
+    },
+    {
+      "set": "eval2",
+      "event_id": "evt_005",
+      "team": "White",
+      "change": "4-4-2 -> 3-4-3",
+      "clock": "24:25",
+      "decision": "uncertain",
+      "decision_rules_arm": "uncertain",
+      "verdict": {
+        "verdict": "uncertain",
+        "failed": [
+          "footage"
+        ],
+        "missing": []
+      },
+      "cause": "footage",
+      "reason_stored": "only 50% of the 60 s look-ahead exists after detection",
+      "reason_now": "only 50% of the 60 s look-ahead exists after detection",
+      "before": "Vision quality sufficient but engine confidence alone insufficient for confirmation; similar pattern seen nearby [R0][R1]",
+      "before_flags": [
+        "mentions a confidence score (not a cause of the decision)",
+        "does not name the cause (footage)"
+      ],
+      "after": "Not enough video to check it: the clip ends 30 s after the change was detected, and 60 s are needed to see whether the 3-4-3 lasts [R0].",
+      "source": "template",
+      "after_raw": "White went to 3-4-3 at 24:25, but we can't say for sure because only half the time after 25:00 is recorded [R0].",
+      "after_raw_flags": [
+        "does not name the cause (footage)"
+      ],
+      "template_rules_arm": "Not enough video to check it: the clip ends 30 s after the change was detected, and 60 s are needed to see whether the 3-4-3 lasts [R0].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 638,
+        "out": 38,
+        "latency_ms": 1147
+      },
+      "cost_usd": 0.000286,
+      "facts": {
+        "event": {
+          "id": "evt_005",
+          "team": "White",
+          "from": "4-4-2",
+          "to": "3-4-3",
+          "lines": "back line 4->3, front line 2->3",
+          "onset": "24:25",
+          "detected": "25:00"
+        },
+        "decision": "uncertain",
+        "cause": "footage",
+        "code_reason": "only 50% of the 60 s look-ahead exists after detection",
+        "rule": "uncertain when less than 60% of the 60 s after detection is on video",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R0",
+        "cite": [
+          "R0"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 50,
+            "clear_readings_after": 6,
+            "coverage_before_pct": 98,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 30
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "23:40-25:30",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 99,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 0.4,
+            "zoom_change_pct": 0.1
+          }
+        }
+      }
+    },
+    {
+      "set": "eval2",
+      "event_id": "evt_006",
+      "team": "Blue",
+      "change": "3-4-3 -> 4-4-2",
+      "clock": "24:40",
+      "decision": "uncertain",
+      "decision_rules_arm": "uncertain",
+      "verdict": {
+        "verdict": "uncertain",
+        "failed": [
+          "footage"
+        ],
+        "missing": []
+      },
+      "cause": "footage",
+      "reason_stored": "only 25% of the 60 s look-ahead exists after detection",
+      "reason_now": "only 25% of the 60 s look-ahead exists after detection",
+      "before": "Vision quality sufficient but engine confidence low (0.74) and pattern matches nearby changes; mark uncertain",
+      "before_flags": [
+        "mentions a confidence score (not a cause of the decision)",
+        "number 0.74 is not in the results",
+        "does not name the cause (footage)"
+      ],
+      "after": "The Blue team tried to shift from 3-4-3 to 4-4-2 at 24:40, but the change is left uncertain because only 15 seconds of video exist after detection [R0].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "Not enough video to check it: the clip ends 15 s after the change was detected, and 60 s are needed to see whether the 4-4-2 lasts [R0].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 638,
+        "out": 49,
+        "latency_ms": 1039
+      },
+      "cost_usd": 0.000314,
+      "facts": {
+        "event": {
+          "id": "evt_006",
+          "team": "Blue",
+          "from": "3-4-3",
+          "to": "4-4-2",
+          "lines": "back line 3->4, front line 3->2",
+          "onset": "24:40",
+          "detected": "25:15"
+        },
+        "decision": "uncertain",
+        "cause": "footage",
+        "code_reason": "only 25% of the 60 s look-ahead exists after detection",
+        "rule": "uncertain when less than 60% of the 60 s after detection is on video",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R0",
+        "cite": [
+          "R0"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 33,
+            "clear_readings_after": 3,
+            "coverage_before_pct": 100,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 15
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "23:55-25:30",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 100,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 0.7,
+            "zoom_change_pct": 0.1
+          }
+        }
+      }
+    },
+    {
+      "set": "eval",
+      "event_id": "evt_001",
+      "team": "Blue",
+      "change": "3-5-2 -> 4-4-2",
+      "clock": "26:35",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "persistence"
+        ],
+        "missing": []
+      },
+      "cause": "persistence",
+      "reason_stored": "new shape held in only 17% of 12 confident windows after detection",
+      "reason_now": "new shape held in only 17% of 12 confident windows after detection",
+      "before": "Re-analysis shows unstable formation sequence with multiple changes; not a persistent 3-5-2 to 4-4-2 shift [R2]",
+      "before_flags": [],
+      "after": "The Blue team tried to shift from 3-5-2 to 4-4-2 at 26:35, but the change is rejected because the new shape only held in 17% of the clear readings after detection [R2].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "Blue's 4-4-2 did not last: after 26:35 it showed in only 17% of 12 clear formation readings over the next 60 s (second look with OpenCV at 4 fps) [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 723,
+        "out": 52,
+        "latency_ms": 1113
+      },
+      "cost_usd": 0.000347,
+      "facts": {
+        "event": {
+          "id": "evt_001",
+          "team": "Blue",
+          "from": "3-5-2",
+          "to": "4-4-2",
+          "lines": "back line 3->4, midfield 5->4",
+          "onset": "26:35",
+          "detected": "27:10"
+        },
+        "decision": "rejected",
+        "cause": "persistence",
+        "code_reason": "new shape held in only 17% of 12 confident windows after detection",
+        "rule": "rejected when the new shape is in 40% or less of the clear readings in the 60 s after detection",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 15,
+            "clear_readings_after": 13,
+            "went_back_s_after_detection": 55,
+            "went_back_at": "28:05",
+            "coverage_before_pct": 100,
+            "coverage_after_pct": 98,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "25:50-28:10",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 99,
+              "Blue": 99
+            },
+            "camera_shift_px_per_s": 2.4,
+            "zoom_change_pct": 0.1
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 17,
+            "clear_readings_after": 12,
+            "coverage_before_pct": 99,
+            "coverage_after_pct": 99,
+            "video_after_detection_s": 60,
+            "window": "25:50-28:10",
+            "fps": 6.0
+          }
+        }
+      }
+    },
+    {
+      "set": "eval",
+      "event_id": "evt_002",
+      "team": "Blue",
+      "change": "4-4-2 -> 3-5-2",
+      "clock": "27:30",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "revert"
+        ],
+        "missing": []
+      },
+      "cause": "return_leg",
+      "reason_stored": "returns to the shape held before evt_001",
+      "reason_now": "returns to the shape held before evt_001",
+      "before": "Re-analysis shows no sustained 3-5-2; labels show fluctuation between 3-4-3 and 3-5-2 but not held for 10+ seconds [R2]",
+      "before_flags": [
+        "number 10 is not in the results",
+        "does not name the cause (return_leg)",
+        "says the new shape did not hold ('not held'), which the results do not show"
+      ],
+      "after": "The Blue team went back to their old shape because this change just undoes what they did in the earlier event at 26:35 [R0][R2].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "This is Blue going back to 3-5-2 after their switch 3-5-2 -> 4-4-2 at 26:35 (evt_001): a there-and-back is not alerted as a new shape, even though the 3-5-2 then showed in 73% of 11 clear readings [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 752,
+        "out": 37,
+        "latency_ms": 1115
+      },
+      "cost_usd": 0.000318,
+      "facts": {
+        "event": {
+          "id": "evt_002",
+          "team": "Blue",
+          "from": "4-4-2",
+          "to": "3-5-2",
+          "lines": "back line 4->3, midfield 4->5",
+          "onset": "27:30",
+          "detected": "28:05"
+        },
+        "decision": "rejected",
+        "cause": "return_leg",
+        "code_reason": "returns to the shape held before evt_001",
+        "rule": "rejected when the change only undoes an earlier change of the same team within 60 s: a there-and-back is not a new shape",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 67,
+            "clear_readings_after": 12,
+            "undoes": "evt_001",
+            "coverage_before_pct": 100,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "26:45-29:05",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 85,
+              "Blue": 99
+            },
+            "camera_shift_px_per_s": 0.5,
+            "zoom_change_pct": 0.1
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 75,
+            "clear_readings_after": 12,
+            "undoes": "evt_001",
+            "coverage_before_pct": 99,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60,
+            "window": "26:45-29:05",
+            "fps": 6.0
+          }
+        },
+        "earlier_change": {
+          "id": "evt_001",
+          "from": "3-5-2",
+          "to": "4-4-2",
+          "onset": "26:35"
+        }
+      }
+    },
+    {
+      "set": "eval",
+      "event_id": "evt_003",
+      "team": "White",
+      "change": "4-4-2 -> 4-2-3-1",
+      "clock": "28:20",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "revert"
+        ],
+        "missing": []
+      },
+      "cause": "revert",
+      "reason_stored": "reverted to the old shape 40 s after detection",
+      "reason_now": "reverted to the old shape 40 s after detection",
+      "before": "Re-analysis shows formation not stable: reverted after 40s with only 40% coverage in new phase [R2]",
+      "before_flags": [],
+      "after": "White played 4-4-2 and tried 4-2-3-1 at 28:20, but they went back to 4-4-2 by 29:50, so the change is rejected. [R0]",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "White went back to 4-4-2 at 29:50, 40 s after the switch to 4-2-3-1 was detected, so the change did not last (second look with OpenCV at 4 fps) [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 731,
+        "out": 54,
+        "latency_ms": 47111
+      },
+      "cost_usd": 0.000354,
+      "facts": {
+        "event": {
+          "id": "evt_003",
+          "team": "White",
+          "from": "4-4-2",
+          "to": "4-2-3-1",
+          "lines": "3 lines -> 4 lines, back line kept at 4",
+          "onset": "28:20",
+          "detected": "29:10"
+        },
+        "decision": "rejected",
+        "cause": "revert",
+        "code_reason": "reverted to the old shape 40 s after detection",
+        "rule": "rejected when the team goes back to the old shape within 60 s of detection",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 40,
+            "clear_readings_after": 10,
+            "went_back_s_after_detection": 40,
+            "went_back_at": "29:50",
+            "coverage_before_pct": 96,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 50
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "27:35-30:00",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 86,
+              "Blue": 99
+            },
+            "camera_shift_px_per_s": 1.7,
+            "zoom_change_pct": 0.0
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 40,
+            "clear_readings_after": 10,
+            "went_back_s_after_detection": 40,
+            "went_back_at": "29:50",
+            "coverage_before_pct": 89,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 50,
+            "window": "27:35-30:00",
+            "fps": 6.0
+          }
+        }
+      }
+    },
+    {
+      "set": "eval",
+      "event_id": "evt_004",
+      "team": "Blue",
+      "change": "3-5-2 -> 4-4-2",
+      "clock": "28:50",
+      "decision": "uncertain",
+      "decision_rules_arm": "uncertain",
+      "verdict": {
+        "verdict": "uncertain",
+        "failed": [
+          "footage"
+        ],
+        "missing": []
+      },
+      "cause": "footage",
+      "reason_stored": "only 58% of the 60 s look-ahead exists after detection",
+      "reason_now": "only 58% of the 60 s look-ahead exists after detection",
+      "before": "Frame quality ok but engine confidence 0.74 and recent similar changes nearby; uncertain",
+      "before_flags": [
+        "mentions a confidence score (not a cause of the decision)",
+        "number 0.74 is not in the results",
+        "does not name the cause (footage)"
+      ],
+      "after": "The Blue team tried to shift from 3-5-2 to 4-4-2 at 28:50, but the change is left uncertain because only 35 seconds of video exist after the change was detected at 29:25 [R0].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "Not enough video to check it: the clip ends 35 s after the change was detected, and 60 s are needed to see whether the 4-4-2 lasts [R0].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 637,
+        "out": 57,
+        "latency_ms": 1118
+      },
+      "cost_usd": 0.000334,
+      "facts": {
+        "event": {
+          "id": "evt_004",
+          "team": "Blue",
+          "from": "3-5-2",
+          "to": "4-4-2",
+          "lines": "back line 3->4, midfield 5->4",
+          "onset": "28:50",
+          "detected": "29:25"
+        },
+        "decision": "uncertain",
+        "cause": "footage",
+        "code_reason": "only 58% of the 60 s look-ahead exists after detection",
+        "rule": "uncertain when less than 60% of the 60 s after detection is on video",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R0",
+        "cite": [
+          "R0"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 14,
+            "clear_readings_after": 7,
+            "coverage_before_pct": 100,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 35
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "28:05-30:00",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 83,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 1.1,
+            "zoom_change_pct": 0.0
+          }
+        }
+      }
+    },
+    {
+      "set": "eval",
+      "event_id": "evt_005",
+      "team": "White",
+      "change": "4-2-3-1 -> 4-4-2",
+      "clock": "29:15",
+      "decision": "uncertain",
+      "decision_rules_arm": "uncertain",
+      "verdict": {
+        "verdict": "uncertain",
+        "failed": [
+          "footage"
+        ],
+        "missing": []
+      },
+      "cause": "footage",
+      "reason_stored": "only 17% of the 60 s look-ahead exists after detection",
+      "reason_now": "only 17% of the 60 s look-ahead exists after detection",
+      "before": "Vision quality ok but engine confidence 0.94 insufficient without ball/possession data; footage unavailable",
+      "before_flags": [
+        "mentions unavailable data: ball",
+        "mentions a confidence score (not a cause of the decision)",
+        "number 0.94 is not in the results"
+      ],
+      "after": "White played 4-2-3-1 at 29:15 and looked like 4-4-2 for a moment, but we can't say it really changed because there's not enough video after 29:50 [R0].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "Not enough video to check it: the clip ends 10 s after the change was detected, and 60 s are needed to see whether the 4-4-2 lasts [R0].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 681,
+        "out": 52,
+        "latency_ms": 1027
+      },
+      "cost_usd": 0.000334,
+      "facts": {
+        "event": {
+          "id": "evt_005",
+          "team": "White",
+          "from": "4-2-3-1",
+          "to": "4-4-2",
+          "lines": "4 lines -> 3 lines, back line kept at 4",
+          "onset": "29:15",
+          "detected": "29:50"
+        },
+        "decision": "uncertain",
+        "cause": "footage",
+        "code_reason": "only 17% of the 60 s look-ahead exists after detection",
+        "rule": "uncertain when less than 60% of the 60 s after detection is on video",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R0",
+        "cite": [
+          "R0"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 100,
+            "clear_readings_after": 2,
+            "undoes": "evt_003",
+            "coverage_before_pct": 70,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 10
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "28:30-30:00",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 84,
+              "Blue": 100
+            },
+            "camera_shift_px_per_s": 0.8,
+            "zoom_change_pct": 0.0
+          }
+        },
+        "earlier_change": {
+          "id": "evt_003",
+          "from": "4-4-2",
+          "to": "4-2-3-1",
+          "onset": "28:20"
+        }
+      }
+    },
+    {
+      "set": "side_eval2",
+      "event_id": "evt_001",
+      "team": "Blue",
+      "change": "4-4-2 -> 3-5-2",
+      "clock": "31:10",
+      "decision": "uncertain",
+      "decision_rules_arm": "uncertain",
+      "verdict": {
+        "verdict": "need_more",
+        "failed": [
+          "persistence"
+        ],
+        "missing": [
+          "second_look"
+        ]
+      },
+      "cause": "experimental_camera",
+      "reason_stored": "no verdict after the evidence budget: new shape held in 57% of windows (inconclusive)",
+      "reason_now": "uncertain: experimental camera (side view, never alerted); detail: second look refused, over budget (estimated 1568 s of OpenCV > 360 s for 140 s at 4 fps); first pass: new shape held in 57% of windows (inconclusive)",
+      "before": "persistence check failed despite good frame quality; second look blocked by budget",
+      "before_flags": [
+        "does not name the cause (experimental_camera)"
+      ],
+      "after": "The Blue team tried to shift to 3-5-2 at 31:10, but it's marked uncertain because the side camera is experimental and we couldn't check the detail in time [R0][R3].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "Experimental camera: changes seen by the side camera are never alerted. The second look was refused as too slow (estimated 1568 s of OpenCV > 360 s for 140 s at 4 fps), and the first pass is inconclusive (57% of 7 clear readings) [R0][R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 718,
+        "out": 47,
+        "latency_ms": 2394
+      },
+      "cost_usd": 0.000333,
+      "facts": {
+        "event": {
+          "id": "evt_001",
+          "team": "Blue",
+          "from": "4-4-2",
+          "to": "3-5-2",
+          "lines": "back line 4->3, midfield 4->5",
+          "onset": "31:10",
+          "detected": "31:45"
+        },
+        "decision": "uncertain",
+        "cause": "experimental_camera",
+        "code_reason": "uncertain: experimental camera (side view, never alerted); detail: second look refused, over budget (estimated 1568 s of OpenCV > 360 s for 140 s at 4 fps); first pass: new shape held in 57% of windows (inconclusive)",
+        "rule": "the side camera is experimental: its changes are at most uncertain and never alerted",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R0",
+        "cite": [
+          "R0",
+          "R3"
+        ],
+        "view": "side",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 57,
+            "clear_readings_after": 7,
+            "coverage_before_pct": 91,
+            "coverage_after_pct": 46,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "30:25-32:45",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 76,
+              "Blue": 70
+            },
+            "camera_shift_px_per_s": 0.2,
+            "zoom_change_pct": 0.0
+          },
+          "R3": {
+            "source": "reanalyse_window (OpenCV)",
+            "refused": "estimated 1568 s of OpenCV > 360 s for 140 s at 4 fps"
+          }
+        }
+      }
+    },
+    {
+      "set": "w900",
+      "event_id": "evt_003",
+      "team": "White",
+      "change": "4-4-2 -> 3-4-3",
+      "clock": "16:30",
+      "decision": "confirmed",
+      "decision_rules_arm": "confirmed",
+      "verdict": {
+        "verdict": "confirm",
+        "failed": [],
+        "missing": []
+      },
+      "cause": "held",
+      "reason_stored": "new shape held in 91% of 11 confident windows over 60 s, no revert",
+      "reason_now": "new shape held in 91% of 11 confident windows over 60 s, no revert",
+      "before": "Second look confirms 4-4-2 to 3-4-3 change for home team between 990-1025 s with 0.84 coverage and 11 confident frames [R1][R2]",
+      "before_flags": [
+        "number 990 is not in the results",
+        "number 1025 s is not in the results",
+        "number 0.84 is not in the results"
+      ],
+      "after": "White played 3-4-3 from 16:30 because it stayed there in 91% of 11 clear readings over the next 60 seconds [R2].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "White kept the 3-4-3 after 16:30: it showed in 91% of 11 clear formation readings over the next 60 s, with no return to 4-4-2 (second look with OpenCV at 6 fps) [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 721,
+        "out": 39,
+        "latency_ms": 1083
+      },
+      "cost_usd": 0.000314,
+      "facts": {
+        "event": {
+          "id": "evt_003",
+          "team": "White",
+          "from": "4-4-2",
+          "to": "3-4-3",
+          "lines": "back line 4->3, front line 2->3",
+          "onset": "16:30",
+          "detected": "17:05"
+        },
+        "decision": "confirmed",
+        "cause": "held",
+        "code_reason": "new shape held in 91% of 11 confident windows over 60 s, no revert",
+        "rule": "confirmed when the new shape is in at least 60% of at least 3 clear readings in the 60 s after detection and the team does not go back",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 85,
+            "clear_readings_after": 13,
+            "coverage_before_pct": 52,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "15:45-18:05",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 84,
+              "Blue": 97
+            },
+            "camera_shift_px_per_s": 0.4,
+            "zoom_change_pct": 0.2
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 91,
+            "clear_readings_after": 11,
+            "coverage_before_pct": 51,
+            "coverage_after_pct": 100,
+            "video_after_detection_s": 60,
+            "window": "15:45-18:05",
+            "fps": 6.0
+          }
+        }
+      }
+    },
+    {
+      "set": "w900",
+      "event_id": "evt_007",
+      "team": "Blue",
+      "change": "4-4-2 -> 4-2-3-1",
+      "clock": "18:50",
+      "decision": "rejected",
+      "decision_rules_arm": "rejected",
+      "verdict": {
+        "verdict": "reject",
+        "failed": [
+          "revert"
+        ],
+        "missing": []
+      },
+      "cause": "return_leg",
+      "reason_stored": "returns to the shape held before evt_005",
+      "reason_now": "returns to the shape held before evt_005",
+      "before": "Re-analysis shows no sustained 4-2-3-1 formation for away team; labels show frequent switching between 4-4-2 and 4-2-3-1 but not held for required duration [R2]",
+      "before_flags": [
+        "does not name the cause (return_leg)",
+        "says the new shape did not hold ('not held'), which the results do not show"
+      ],
+      "after": "The Blue team went back to their old shape because this change just undoes what they did in evt_005 [R0][R2].",
+      "source": "agent",
+      "after_raw": null,
+      "after_raw_flags": [],
+      "template_rules_arm": "This is Blue going back to 4-2-3-1 after their switch 4-2-3-1 -> 4-4-2 at 18:00 (evt_005): a there-and-back is not alerted as a new shape, even though the 4-2-3-1 then showed in 100% of 12 clear readings [R2].",
+      "llm": {
+        "model_id": "global.amazon.nova-2-lite-v1:0",
+        "in": 757,
+        "out": 32,
+        "latency_ms": 946
+      },
+      "cost_usd": 0.000307,
+      "facts": {
+        "event": {
+          "id": "evt_007",
+          "team": "Blue",
+          "from": "4-4-2",
+          "to": "4-2-3-1",
+          "lines": "3 lines -> 4 lines, back line kept at 4",
+          "onset": "18:50",
+          "detected": "19:25"
+        },
+        "decision": "rejected",
+        "cause": "return_leg",
+        "code_reason": "returns to the shape held before evt_005",
+        "rule": "rejected when the change only undoes an earlier change of the same team within 60 s: a there-and-back is not a new shape",
+        "thresholds": {
+          "confirm_pct": 60,
+          "reject_pct": 40,
+          "min_clear_readings": 3,
+          "min_video_pct": 60,
+          "lookahead_s": 60
+        },
+        "reading_window_s": 30,
+        "coverage_means": "frames showing at least 8 outfield players of the team",
+        "decisive": "R2",
+        "cite": [
+          "R2"
+        ],
+        "view": "top",
+        "results": {
+          "R0": {
+            "source": "first pass: tactics engine on the stored positions",
+            "new_shape_pct": 100,
+            "clear_readings_after": 13,
+            "undoes": "evt_005",
+            "coverage_before_pct": 100,
+            "coverage_after_pct": 98,
+            "video_after_detection_s": 60
+          },
+          "R1": {
+            "source": "OpenCV camera check on the video",
+            "window": "18:05-20:25",
+            "pitch_lines_fit_pct": 100,
+            "camera_cut": false,
+            "coverage_pct": {
+              "White": 100,
+              "Blue": 97
+            },
+            "camera_shift_px_per_s": 0.5,
+            "zoom_change_pct": 0.1
+          },
+          "R2": {
+            "source": "OpenCV second look: perception re-run on the video",
+            "new_shape_pct": 100,
+            "clear_readings_after": 12,
+            "undoes": "evt_005",
+            "coverage_before_pct": 99,
+            "coverage_after_pct": 99,
+            "video_after_detection_s": 60,
+            "window": "18:05-20:25",
+            "fps": 6.0
+          }
+        },
+        "earlier_change": {
+          "id": "evt_005",
+          "from": "4-2-3-1",
+          "to": "4-4-2",
+          "onset": "18:00"
+        }
+      }
+    }
+  ],
+  "wall_s": 13.2
+}

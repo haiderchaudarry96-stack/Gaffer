@@ -1,0 +1,224 @@
+{
+  "rows": [
+    {
+      "set": "w900",
+      "match": "teamtrack_top_w900_1260",
+      "event_id": "evt_003",
+      "team": "home",
+      "t": 990.0,
+      "clock": "16:30",
+      "detected_at_s": 1025.0,
+      "from": "4-4-2",
+      "to": "3-4-3",
+      "required_span": [
+        945.0,
+        1085.0
+      ],
+      "first_pass": {
+        "verdict": "confirm",
+        "reason": "new shape held in 85% of 13 confident windows over 60 s, no revert",
+        "source": "first_pass",
+        "coverage_before": 0.52,
+        "coverage_after": 1.0,
+        "after_share_new": 0.85,
+        "confident_after": 13,
+        "reverted_after_s": null,
+        "return_of": null,
+        "footage_frac": 1.0
+      },
+      "quality": {
+        "homography_ok_share": 1.0,
+        "line_error_m_median": 0.084,
+        "camera_shift_px_per_s_max": 0.4,
+        "zoom_change_max": 0.002,
+        "camera_cut": false,
+        "coverage": {
+          "home": 0.84,
+          "away": 0.97
+        },
+        "problems": [],
+        "opencv_ms": 11323.6
+      },
+      "reanalysis": {
+        "window": [
+          945.0,
+          1085.0
+        ],
+        "sample_fps": 6.0,
+        "frames": 840,
+        "processing_s": 252.0,
+        "cache": "hit",
+        "coverage": {
+          "home": 0.84,
+          "away": 0.96
+        },
+        "candidates_in_window": [
+          {
+            "t": 990.0,
+            "team": "away",
+            "from": "3-5-2",
+            "to": "4-4-2"
+          }
+        ],
+        "vs_event": {
+          "event_id": "evt_003",
+          "coverage_before": 0.51,
+          "coverage_after": 1.0,
+          "after_share_new": 0.91,
+          "confident_after": 11,
+          "reverted_after_s": null,
+          "return_of": null,
+          "footage_frac": 1.0,
+          "covers_required_span": true
+        }
+      },
+      "verdict": "confirm",
+      "decision": "confirmed",
+      "reason": "new shape held in 91% of 11 confident windows over 60 s, no revert",
+      "decided_by": "agent",
+      "tool_calls": [
+        "check_frame_quality",
+        "reanalyse_window",
+        "record_decision",
+        "render_evidence",
+        "propose_alert"
+      ],
+      "tool_ms": {
+        "check_frame_quality": 11338.2,
+        "reanalyse_window": 2792.7,
+        "record_decision": 0.4,
+        "render_evidence": 1600.4,
+        "propose_alert": 1.7
+      },
+      "evidence_image": "outputs/agent_video_taskE/evidence/teamtrack_top_w900_1260/evt_003.jpg",
+      "alert_id": "alr_teamtrack_top_w900_1260_evt_003",
+      "opencv_changed_decision": false,
+      "first_pass_decision": "confirmed",
+      "explanation": "Second look confirms 4-4-2 to 3-4-3 change for home team between 990-1025 s with 0.84 coverage and 11 confident frames [R1][R2]",
+      "llm_calls": 5,
+      "guard_blocks": 0,
+      "invalid_calls": 0,
+      "fallback": null,
+      "tokens_in": 15663,
+      "tokens_out": 432,
+      "cost_usd": 0.00578,
+      "llm_s": 9.0,
+      "tool_s": 15.7,
+      "trace_id": "tr_video_llm_w900_teamtrack_top_w900_1260_evt_003",
+      "wall_s": 24.7
+    },
+    {
+      "set": "w900",
+      "match": "teamtrack_top_w900_1260",
+      "event_id": "evt_007",
+      "team": "away",
+      "t": 1130.0,
+      "clock": "18:50",
+      "detected_at_s": 1165.0,
+      "from": "4-4-2",
+      "to": "4-2-3-1",
+      "required_span": [
+        1085.0,
+        1225.0
+      ],
+      "first_pass": {
+        "verdict": "reject",
+        "reason": "returns to the shape held before evt_005",
+        "source": "first_pass",
+        "coverage_before": 1.0,
+        "coverage_after": 0.98,
+        "after_share_new": 1.0,
+        "confident_after": 13,
+        "reverted_after_s": null,
+        "return_of": "evt_005",
+        "footage_frac": 1.0
+      },
+      "quality": {
+        "homography_ok_share": 1.0,
+        "line_error_m_median": 0.084,
+        "camera_shift_px_per_s_max": 0.5,
+        "zoom_change_max": 0.001,
+        "camera_cut": false,
+        "coverage": {
+          "home": 1.0,
+          "away": 0.97
+        },
+        "problems": [],
+        "opencv_ms": 8143.0
+      },
+      "reanalysis": {
+        "window": [
+          1085.0,
+          1225.0
+        ],
+        "sample_fps": 6.0,
+        "frames": 840,
+        "processing_s": 228.8,
+        "cache": "miss",
+        "coverage": {
+          "home": 1.0,
+          "away": 0.97
+        },
+        "candidates_in_window": [
+          {
+            "t": 1155.0,
+            "team": "home",
+            "from": "4-3-3",
+            "to": "5-3-2"
+          }
+        ],
+        "vs_event": {
+          "event_id": "evt_007",
+          "coverage_before": 0.99,
+          "coverage_after": 0.99,
+          "after_share_new": 1.0,
+          "confident_after": 12,
+          "reverted_after_s": null,
+          "return_of": "evt_005",
+          "footage_frac": 1.0,
+          "covers_required_span": true
+        }
+      },
+      "verdict": "reject",
+      "decision": "rejected",
+      "reason": "returns to the shape held before evt_005",
+      "decided_by": "agent",
+      "tool_calls": [
+        "check_frame_quality",
+        "reanalyse_window",
+        "record_decision"
+      ],
+      "tool_ms": {
+        "check_frame_quality": 8158.0,
+        "reanalyse_window": 232059.6,
+        "record_decision": 0.2
+      },
+      "evidence_image": null,
+      "alert_id": null,
+      "opencv_changed_decision": false,
+      "first_pass_decision": "rejected",
+      "explanation": "Re-analysis shows no sustained 4-2-3-1 formation for away team; labels show frequent switching between 4-4-2 and 4-2-3-1 but not held for required duration [R2]",
+      "llm_calls": 3,
+      "guard_blocks": 0,
+      "invalid_calls": 0,
+      "fallback": null,
+      "tokens_in": 8772,
+      "tokens_out": 258,
+      "cost_usd": 0.00328,
+      "llm_s": 4.8,
+      "tool_s": 240.2,
+      "trace_id": "tr_video_llm_w900_teamtrack_top_w900_1260_evt_007",
+      "wall_s": 245.1
+    }
+  ],
+  "wall_s_this_invocation": 271.2,
+  "llm": {
+    "calls": 8,
+    "cost_usd": 0.0091,
+    "tokens": {
+      "in": 24435,
+      "out": 690,
+      "total": 25125
+    }
+  }
+}

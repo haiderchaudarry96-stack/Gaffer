@@ -1,0 +1,316 @@
+{
+  "inputs": {
+    "match": {
+      "id": "teamtrack_top_w900_1260",
+      "teams": {
+        "home": "White",
+        "away": "Blue"
+      },
+      "footage": "15:00-21:00",
+      "view": "top",
+      "unavailable": [
+        "ball",
+        "possession",
+        "pressing"
+      ],
+      "note": "Demonstration window: chosen with the ground-truth positions because the half's two lasting shape changes happen in it; same match as every other real clip."
+    },
+    "segments": [
+      {
+        "seg": "15:00-16:05",
+        "White": {
+          "formation": "uncertain",
+          "line_m": 19.6,
+          "depth_m": 24.8,
+          "width_m": 27.2
+        },
+        "Blue": {
+          "formation": "4-2-3-1",
+          "line_m": 61.4,
+          "depth_m": 31.4,
+          "width_m": 32.6
+        }
+      },
+      {
+        "seg": "16:05-16:30",
+        "White": {
+          "formation": "uncertain",
+          "line_m": 11.5,
+          "depth_m": 28.8,
+          "width_m": 22.7
+        },
+        "Blue": {
+          "formation": "3-5-2",
+          "line_m": 64.9,
+          "depth_m": 37.5,
+          "width_m": 26.9
+        }
+      },
+      {
+        "seg": "16:30-17:30",
+        "White": {
+          "formation": "3-4-3",
+          "line_m": 20.1,
+          "depth_m": 34.8,
+          "width_m": 47.7
+        },
+        "Blue": {
+          "formation": "4-4-2",
+          "line_m": 53.0,
+          "depth_m": 31.2,
+          "width_m": 35.5
+        }
+      },
+      {
+        "seg": "17:30-18:00",
+        "White": {
+          "formation": "3-4-3",
+          "line_m": 27.1,
+          "depth_m": 30.0,
+          "width_m": 47.0
+        },
+        "Blue": {
+          "formation": "4-2-3-1",
+          "line_m": 50.4,
+          "depth_m": 29.4,
+          "width_m": 33.6
+        }
+      },
+      {
+        "seg": "18:00-18:45",
+        "White": {
+          "formation": "3-4-3",
+          "line_m": 37.5,
+          "depth_m": 34.0,
+          "width_m": 44.2
+        },
+        "Blue": {
+          "formation": "4-4-2",
+          "line_m": 35.2,
+          "depth_m": 30.9,
+          "width_m": 32.0
+        }
+      },
+      {
+        "seg": "18:45-18:50",
+        "White": {
+          "formation": "4-3-3",
+          "line_m": 34.6,
+          "depth_m": 43.4,
+          "width_m": 42.0
+        },
+        "Blue": {
+          "formation": "5-3-2",
+          "line_m": 42.7,
+          "depth_m": 29.5,
+          "width_m": 32.6
+        }
+      },
+      {
+        "seg": "18:50-19:15",
+        "White": {
+          "formation": "4-3-3",
+          "line_m": 22.8,
+          "depth_m": 32.2,
+          "width_m": 49.6
+        },
+        "Blue": {
+          "formation": "4-2-3-1",
+          "line_m": 55.4,
+          "depth_m": 28.7,
+          "width_m": 32.5
+        }
+      },
+      {
+        "seg": "19:15-20:00",
+        "White": {
+          "formation": "5-3-2",
+          "line_m": 40.8,
+          "depth_m": 31.3,
+          "width_m": 32.9
+        },
+        "Blue": {
+          "formation": "4-2-3-1",
+          "line_m": 33.5,
+          "depth_m": 35.1,
+          "width_m": 28.2
+        }
+      },
+      {
+        "seg": "20:00-21:00",
+        "White": {
+          "formation": "4-4-2",
+          "line_m": 46.3,
+          "depth_m": 25.6,
+          "width_m": 33.4
+        },
+        "Blue": {
+          "formation": "4-2-3-1",
+          "line_m": 25.4,
+          "depth_m": 26.0,
+          "width_m": 33.3
+        }
+      }
+    ],
+    "events": [
+      {
+        "id": "evt_003",
+        "team": "White",
+        "change": "4-4-2 -> 3-4-3",
+        "onset": "16:30",
+        "lines": "back line 4->3, front line 2->3",
+        "decision": "confirmed",
+        "reason": "new shape held in 91% of 11 confident windows over 60 s, no revert",
+        "explanation": "White played 3-4-3 from 16:30 because it stayed there in 91% of 11 clear readings over the next 60 seconds [R2].",
+        "new_shape_pct": 91,
+        "clear_readings_after": 11,
+        "fps": 6.0,
+        "before": {
+          "window": "15:05-15:35",
+          "formation": "4-4-2",
+          "line_m": 23.8,
+          "depth_m": 26.6,
+          "width_m": 30.1,
+          "own_box_pct": 20
+        },
+        "after": {
+          "window": "16:35-17:05",
+          "formation": "3-4-3",
+          "line_m": 16.8,
+          "depth_m": 37.3,
+          "width_m": 51.1,
+          "own_box_pct": 12
+        },
+        "alert": {
+          "id": "alr_teamtrack_top_w900_1260_evt_003",
+          "status": "pending",
+          "evidence_image": "outputs/agent_video_step7/evidence/teamtrack_top_w900_1260/evt_003.jpg"
+        }
+      },
+      {
+        "id": "evt_007",
+        "team": "Blue",
+        "change": "4-4-2 -> 4-2-3-1",
+        "onset": "18:50",
+        "lines": "3 lines -> 4 lines, back line kept at 4",
+        "decision": "rejected",
+        "reason": "returns to the shape held before evt_005",
+        "explanation": "The Blue team went back to their old shape because this change just undoes what they did in evt_005 [R0][R2].",
+        "new_shape_pct": 100,
+        "clear_readings_after": 12,
+        "fps": 6.0,
+        "undoes": {
+          "id": "evt_005",
+          "change": "4-2-3-1 -> 4-4-2",
+          "onset": "18:00"
+        }
+      }
+    ],
+    "not_verified": [
+      {
+        "id": "evt_001",
+        "team": "Blue",
+        "change": "4-2-3-1 -> 3-5-2",
+        "onset": "16:05"
+      },
+      {
+        "id": "evt_002",
+        "team": "Blue",
+        "change": "3-5-2 -> 4-4-2",
+        "onset": "16:30"
+      },
+      {
+        "id": "evt_004",
+        "team": "Blue",
+        "change": "4-4-2 -> 4-2-3-1",
+        "onset": "17:30"
+      },
+      {
+        "id": "evt_005",
+        "team": "Blue",
+        "change": "4-2-3-1 -> 4-4-2",
+        "onset": "18:00"
+      },
+      {
+        "id": "evt_006",
+        "team": "White",
+        "change": "3-4-3 -> 4-3-3",
+        "onset": "18:45"
+      },
+      {
+        "id": "evt_008",
+        "team": "White",
+        "change": "4-3-3 -> 5-3-2",
+        "onset": "19:15"
+      },
+      {
+        "id": "evt_009",
+        "team": "White",
+        "change": "5-3-2 -> 4-4-2",
+        "onset": "20:00"
+      }
+    ]
+  },
+  "report": {
+    "formation_story": [
+      "White, first-pass reading: no settled shape 15:00-16:30 [seg 15:00-16:30], 3-4-3 16:30-18:45 [seg 16:30-18:45], 4-3-3 18:45-19:15 [seg 18:45-19:15], 5-3-2 19:15-20:00 [seg 19:15-20:00] and 4-4-2 20:00-21:00 [seg 20:00-21:00].",
+      "Blue, first-pass reading: 4-2-3-1 15:00-16:05 [seg 15:00-16:05], 3-5-2 16:05-16:30 [seg 16:05-16:30], 4-4-2 16:30-17:30 [seg 16:30-17:30], 4-2-3-1 17:30-18:00 [seg 17:30-18:00], 4-4-2 18:00-18:45 [seg 18:00-18:45], 5-3-2 18:45-18:50 [seg 18:45-18:50] and 4-2-3-1 18:50-21:00 [seg 18:50-21:00].",
+      "Checked by the agent and confirmed: White 4-4-2 -> 3-4-3 at 16:30 [evt_003]."
+    ],
+    "changes": [
+      {
+        "event": "evt_003",
+        "what_changed": "White went from 4-4-2 to 3-4-3 at 16:30 (back line 4->3, front line 2->3), and the new shape held: new shape held in 91% of 11 confident windows over 60 s, no revert [evt_003]. Typical before (15:05-15:35): line 23.8 m from its goal, 30.1 m wide; after (16:35-17:05): line 16.8 m, 51.1 m wide [evt_003].",
+        "may_have_fixed": "White may have been trying to spread the team wider (30.1 m to 51.1 m) [evt_003], get out of a spell deep in its own half (line 11.5 m from its goal in 16:05-16:30) [seg 16:05-16:30] and put an extra player up front (back line 4->3, front line 2->3) [evt_003]. This is read from the shape alone: there is no event data to confirm the intention."
+      }
+    ],
+    "not_alerted": [
+      "Blue 4-4-2 -> 4-2-3-1 at 18:50 was rejected: returns to the shape held before evt_005; the second look still saw the new shape in 100% of readings, so this may be a real change the return-leg rule misses [evt_007].",
+      "The agent did not check the other candidates of this window (evt_001, evt_002, evt_004, evt_005, evt_006, evt_008, evt_009): they are first-pass readings, not findings."
+    ],
+    "recommendations": [
+      "Against White's back three (from 16:30 [evt_003]), attack the channels behind the wing-backs and pull the outside centre-backs wide.",
+      "With White, practise stepping out of a deep block together: the line sat 11.5 m from goal in 16:05-16:30 [seg 16:05-16:30].",
+      "Review 18:50 on video: Blue's 4-2-3-1 showed in 100% of second-look readings but was not alerted [evt_007]."
+    ],
+    "limits": [
+      "Shapes are read from player positions only: with no event data, the intentions above are guesses, and changes the agent did not check are not findings.",
+      "Demonstration window: chosen with the ground-truth positions because the half's two lasting shape changes happen in it; same match as every other real clip."
+    ]
+  },
+  "source": "code template",
+  "attempts": [
+    {
+      "problems": [
+        "may_have_fixed: no cited number or time in 'may have aimed to add width and defensive cover, possibly ad'",
+        "changes: no citation for 'White changed from a 4-4-2 to a 3-4-3, lowering the defensive line fro'",
+        "limits: [match.note] is not a source"
+      ],
+      "raw": "```json\n{\n  \"formation_story\": [\n    \"White started with an uncertain shape and then settled into a 3-4-3 from 16:30, ending as a 4-4-2 [seg 15:00-21:00].\",\n    \"Blue began as a 4-2-3-1, shifted to a 3-5-2 by 16:05, then settled into a 4-4-2 by 16:30 before fluctuating between 4-4-2 and 4-2-3-1 for the rest of the half [seg 15:00-21:00].\"\n  ],\n  \"changes\": [\n    {\n      \"event\": \"evt_003\",\n      \"what_changed\": \"White changed from a 4-4-2 to a 3-4-3, lowering the defensive line from 23.8 m to 16.8 m and increasing width from 30.1 m to 51.1 m and depth from 26.6 m to 37.3 m\",\n      \"may_have_fixed\": \"may have aimed to add width and defensive cover, possibly addressing a lack of width and a high line earlier\"\n    }\n  ],\n  \"not_alerted\": [\n    \"Blue's change to a 4-2-3-1 at 18:50 was rejected because it simply reversed their prior shift to a 4-4-2 at 18:00 [evt_007].\"\n  ],\n  \"recommendations\": [\n    \"Increase width to exploit the 51.1 m span that White achieved after 16:30 [evt_003].\",\n    \"Deepen the defensive line to match White's drop to 16.8 m after 16:30 [evt_003].\",\n    \"Add a third central defender to mirror White's shift to a 3-4-3 after 16:30 [evt_003].\"\n  ],\n  \"limits\": [\n    \"This is a demonstration window selected for its clear shape changes [match.note].\"\n  ]\n}\n```"
+    },
+    {
+      "problems": [
+        "limits: [match.note] is not a source"
+      ],
+      "raw": "```json\n{\n  \"formation_story\": [\n    \"White started with an uncertain shape and then settled into a 3-4-3 from 16:30, ending as a 4-4-2 [seg 15:00-21:00].\",\n    \"Blue began as a 4-2-3-1, shifted to a 3-5-2 by 16:05, then settled into a 4-4-2 by 16:30 before fluctuating between 4-4-2 and 4-2-3-1 for the rest of the half [seg 15:00-21:00].\"\n  ],\n  \"changes\": [\n    {\n      \"event\": \"evt_003\",\n      \"what_changed\": \"White changed from a 4-4-2 to a 3-4-3, lowering the defensive line from 23.8 m to 16.8 m [evt_003].\",\n      \"may_have_fixed\": \"may have fixed the high defensive line of 23.8 m before 16:30 [evt_003].\"\n    }\n  ],\n  \"not_alerted\": [\n    \"Blue's change to a 4-2-3-1 at 18:50 was rejected because it simply reversed their prior shift to a 4-4-2 at 18:00 [evt_007].\"\n  ],\n  \"recommendations\": [\n    \"Increase width to exploit the 51.1 m span that White achieved after 16:30 [evt_003].\",\n    \"Deepen the defensive line to match White's drop to 16.8 m after 16:30 [evt_003].\",\n    \"Add a third central defender to mirror White's shift to a 3-4-3 after 16:30 [evt_003].\"\n  ],\n  \"limits\": [\n    \"This is a demonstration window chosen with ground-truth positions [match.note].\"\n  ]\n}\n```"
+    }
+  ],
+  "template_problems": [],
+  "llm": {
+    "calls": 2,
+    "cost_usd": 0.0035,
+    "log": [
+      {
+        "in": 1991,
+        "out": 441,
+        "latency_ms": 4683
+      },
+      {
+        "in": 2516,
+        "out": 418,
+        "latency_ms": 2052
+      }
+    ]
+  },
+  "wall_s": 6.8
+}
