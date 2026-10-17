@@ -8,16 +8,15 @@ interface Props {
   clock: PlaybackClock
   /** "hero": light lines on a transparent background; "mini": a filled pitch panel */
   variant?: 'hero' | 'mini'
-  /** faded positions of the last ~1.5 s behind each dot */
-  trails?: boolean
   className?: string
   label: string
 }
 
 const MARGIN_M = 2.5
 
-function cssVar(name: string, fallback: string) {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+/** Reads a design token where the canvas sits, so a pitch inside .theme-light gets light colours. */
+function cssVar(el: Element, name: string, fallback: string) {
+  const v = getComputedStyle(el).getPropertyValue(name).trim()
   return v || fallback
 }
 
@@ -56,9 +55,11 @@ function drawMarkings(ctx: CanvasRenderingContext2D, L: number, W: number, s: nu
 
 /**
  * The 2D top-down pitch with interpolated player dots, drawn on a canvas at display refresh
- * rate. Positions are the real tracked positions from MatchState (metres, origin bottom-left).
+ * rate. Positions are the real tracked positions from MatchState (metres, origin bottom-left),
+ * turned so the home team attacks right (lib/orientation.ts). Only the current position is
+ * drawn: no trails; movement reads through the 60 fps interpolation between 2 fps samples.
  */
-export default function PitchCanvas({ index, pitch, clock, variant = 'mini', trails = false, className, label }: Props) {
+export default function PitchCanvas({ index, pitch, clock, variant = 'mini', className, label }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -68,13 +69,13 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', tra
     if (!ctx) return
 
     const colours = {
-      home: cssVar('--team-a', '#ff5b4f'),
-      away: cssVar('--team-b', '#44c8ff'),
-      referee: cssVar('--muted', '#8fa398'),
-      line: variant === 'hero' ? 'rgba(238,244,240,0.34)' : 'rgba(238,244,240,0.30)',
-      grass: cssVar('--surface', '#0f1914'),
-      stripe: cssVar('--surface-2', '#16231c'),
-      bg: cssVar('--bg', '#070d0a'),
+      home: cssVar(canvas, '--team-a', '#ff5b4f'),
+      away: cssVar(canvas, '--team-b', '#44c8ff'),
+      referee: cssVar(canvas, '--muted', '#8fa398'),
+      line: variant === 'hero' ? 'rgba(238,244,240,0.34)' : cssVar(canvas, '--pitch-line', 'rgba(238,244,240,0.30)'),
+      grass: cssVar(canvas, '--surface', '#0f1914'),
+      stripe: cssVar(canvas, '--surface-2', '#16231c'),
+      bg: cssVar(canvas, '--bg', '#070d0a'),
     }
     const L = pitch.length_m
     const W = pitch.width_m
@@ -83,7 +84,6 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', tra
     let cssW = 0
     let cssH = 0
     const dots: Dot[] = []
-    const trailDots: Dot[] = []
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect()
@@ -123,24 +123,6 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', tra
         const px = (d: Dot) => d.x * s
         const py = (d: Dot) => (W - d.y) * s
         const r = Math.max(2.6, (variant === 'hero' ? 1.25 : 0.95) * s)
-        if (trails) {
-          for (const [dt, alpha] of [
-            [1.5, 0.08],
-            [1.0, 0.14],
-            [0.5, 0.22],
-          ] as const) {
-            index.at(t - dt, trailDots)
-            for (const d of trailDots) {
-              if (d.team === 'referee' || d.team === 'unknown') continue
-              ctx.globalAlpha = alpha
-              ctx.fillStyle = colours[d.team]
-              ctx.beginPath()
-              ctx.arc(px(d), py(d), r * 0.8, 0, Math.PI * 2)
-              ctx.fill()
-            }
-          }
-          ctx.globalAlpha = 1
-        }
         index.at(t, dots)
         for (const d of dots) {
           if (d.team === 'unknown') {
@@ -191,7 +173,7 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', tra
       ro.disconnect()
       io.disconnect()
     }
-  }, [index, pitch.length_m, pitch.width_m, clock, variant, trails])
+  }, [index, pitch.length_m, pitch.width_m, clock, variant])
 
   return <canvas ref={canvasRef} className={className} role="img" aria-label={label} />
 }

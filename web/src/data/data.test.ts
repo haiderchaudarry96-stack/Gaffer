@@ -126,3 +126,37 @@ describe('validators reject bad data loudly', () => {
     expect(() => validateAlert({ alert_id: 'a', status: 'maybe' })).toThrow(DataError)
   })
 })
+
+describe('second pass helpers', () => {
+  it('live plan for evt_003 follows the trace: detected 17:05, checks from 18:05, steps in order', async () => {
+    const { livePlan, livePhase } = await import('./live')
+    const steps = traceForEvent(await loadTrace(DEFAULT_MATCH, diskReader), 'evt_003')
+    const plan = livePlan(steps)!
+    expect(plan.onset).toBe(990)
+    expect(plan.detected).toBe(1025)
+    expect(plan.checksFrom).toBe(1085)
+    expect(plan.stepTimes).toHaveLength(5)
+    for (let i = 1; i < 5; i++) expect(plan.stepTimes[i]).toBeGreaterThan(plan.stepTimes[i - 1])
+    expect(livePhase(plan, 1000).phase).toBe('spotted')
+    expect(livePhase(plan, 1050).phase).toBe('waiting')
+    expect(livePhase(plan, plan.decidedAt).phase).toBe('decided')
+  })
+
+  it('displayFormation never returns "uncertain"', async () => {
+    const { displayFormation } = await import('./timeline')
+    const tl = await loadTimeline(DEFAULT_MATCH, diskReader)
+    for (let t = tl.start_s; t < tl.end_s; t += 5) {
+      for (const side of ['home', 'away'] as const) expect(displayFormation(tl, side, t).formation).not.toBe('uncertain')
+    }
+    // White is unsettled until 16:30: shown as the 4-4-2 it was holding
+    expect(displayFormation(tl, 'home', 977)).toEqual({ formation: '4-4-2', holding: true })
+  })
+
+  it('orientation turns the pitch so home attacks right', async () => {
+    const { orientationAt, orient } = await import('../lib/orientation')
+    const m = await loadMatchState(DEFAULT_MATCH, diskReader)
+    const o = orientationAt(m, 1000)
+    expect(o.turn).toBe(m.teams.home.attacking_direction_first_half === 'left')
+    expect(orient(10, 5, { ...o, turn: true }, 105, 68)).toEqual([95, 63])
+  })
+})

@@ -70,3 +70,24 @@ export function formationAt(tl: FormationTimeline, side: TeamSide, t: number): s
   const seg = tl.segments.find((s) => t >= s.start_s && t < s.end_s) ?? (t >= tl.end_s ? tl.segments.at(-1) : undefined)
   return seg ? seg[side].formation : null
 }
+
+export interface ShownFormation {
+  formation: string | null
+  /** true when the engine is unsure right now and we show the last confident shape */
+  holding: boolean
+}
+
+/**
+ * The shape to show at time t. Never shows "uncertain": when the current segment is uncertain we
+ * show the last confident shape, marked as holding. If there is none earlier in the window, the
+ * next candidate's "from" shape is used: the engine only emits a change from its last confident
+ * label, so that is the shape it was holding.
+ */
+export function displayFormation(tl: FormationTimeline, side: TeamSide, t: number): ShownFormation {
+  const now = formationAt(tl, side, t)
+  if (now && now !== 'uncertain') return { formation: now, holding: false }
+  const earlier = tl.segments.filter((s) => s.start_s <= t && s[side].formation !== 'uncertain').at(-1)
+  if (earlier) return { formation: earlier[side].formation, holding: true }
+  const next = tl.events.find((e) => e.team === side && e.t >= t)
+  return { formation: next ? next.from : null, holding: true }
+}

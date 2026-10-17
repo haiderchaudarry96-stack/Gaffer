@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { m } from 'motion/react'
 import { ArrowDown, Cpu, Eye, Sparkles } from 'lucide-react'
 import type { AgentRunRow, TraceStep, TraceToolCall } from '../../data'
 import { formatClock } from '../../data/time'
@@ -31,7 +32,7 @@ function RulesLine({ rules }: { rules: Record<string, unknown> }) {
   if (!verdict) return null
   const failed = Array.isArray(rules.failed) ? (rules.failed as string[]) : []
   const missing = Array.isArray(rules.missing) ? (rules.missing as string[]) : []
-  const colour = verdict === 'confirm' ? 'text-accent' : verdict === 'reject' ? 'text-danger' : 'text-warn'
+  const colour = verdict === 'confirm' ? 'text-accent-ink' : verdict === 'reject' ? 'text-danger' : 'text-warn'
   return (
     <p className="mt-2 text-xs text-muted">
       Rules after this result: <span className={`font-mono font-semibold ${colour}`}>{verdict}</span>
@@ -103,11 +104,14 @@ export default function TracePanel({
   row,
   focusRef,
   teamName,
+  stepsShown,
 }: {
   steps: TraceStep[]
   row: AgentRunRow | undefined
   focusRef: string | null
   teamName: string
+  /** live replay: only the first n tool steps have happened yet */
+  stepsShown?: number
 }) {
   const listRef = useRef<HTMLOListElement>(null)
 
@@ -118,15 +122,24 @@ export default function TracePanel({
     el?.focus({ preventScroll: true })
   }, [focusRef])
 
-  const tools = steps.filter((s): s is TraceToolCall => s.kind === 'tool_call')
+  const allTools = steps.filter((s): s is TraceToolCall => s.kind === 'tool_call')
+  const tools = stepsShown === undefined ? allTools : allTools.slice(0, stepsShown)
+  const done = tools.length === allTools.length
   const card = steps.find((s) => s.kind === 'card')
-  const decision = steps.find((s) => s.kind === 'decision')
+  const decision = done ? steps.find((s) => s.kind === 'decision') : undefined
 
   return (
     <div>
-      <ol ref={listRef} className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+      <ol ref={listRef} className="space-y-2">
         {card && card.kind === 'card' && (
-          <li data-ref="R0" tabIndex={-1} className={`rounded-xl border p-3 ${focusRef === 'R0' ? 'border-accent' : 'border-line'} bg-bg/50`}>
+          <m.li
+            data-ref="R0"
+            tabIndex={-1}
+            className={`rounded-xl border p-3 ${focusRef === 'R0' ? 'border-accent' : 'border-line'} bg-bg/50`}
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
             <StepHeader refId="R0" title="candidate card" actor="code" />
             <p className="mt-1.5 text-xs text-muted">The tactics engine’s first pass over the stored positions.</p>
             {row && (
@@ -140,13 +153,21 @@ export default function TracePanel({
             )}
             <RulesLine rules={parseCardRules(card.card)} />
             {tools[0] && <NextArrow to={tools[0]} />}
-          </li>
+          </m.li>
         )}
         {tools.map((s, i) => {
           const rules = rec(s.result_summary.rules)
           const opencv = OPENCV_TOOLS.has(s.tool) && s.backend === 'video'
           return (
-            <li key={s.ref} data-ref={s.ref} tabIndex={-1} className={`rounded-xl border p-3 ${focusRef === s.ref ? 'border-accent' : 'border-line'} bg-bg/50`}>
+            <m.li
+              key={s.ref}
+              data-ref={s.ref}
+              tabIndex={-1}
+              className={`rounded-xl border p-3 ${focusRef === s.ref ? 'border-accent' : 'border-line'} bg-bg/50`}
+              initial={{ opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1], delay: stepsShown === undefined ? 0.08 * (i + 1) : 0 }}
+            >
               <StepHeader refId={s.ref} title={s.tool} actor={actorLabel(s.actor)} opencv={opencv} />
               <Facts rows={toolFacts(s)} />
               <RulesLine rules={rules} />
@@ -157,7 +178,7 @@ export default function TracePanel({
                 </p>
               )}
               {tools[i + 1] && <NextArrow to={tools[i + 1]} />}
-            </li>
+            </m.li>
           )
         })}
       </ol>
@@ -188,7 +209,7 @@ function StepHeader({ refId, title, actor, opencv = false }: { refId: string; ti
       <span className="font-mono text-[13px] font-semibold text-text">{title}</span>
       <span className="ml-auto flex items-center gap-1.5">
         {opencv && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 px-2 py-0.5 text-[10px] font-semibold text-accent uppercase">
+          <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 px-2 py-0.5 text-[10px] font-semibold text-accent-ink uppercase">
             <Eye className="size-3" aria-hidden="true" /> OpenCV
           </span>
         )}
@@ -203,7 +224,7 @@ function StepHeader({ refId, title, actor, opencv = false }: { refId: string; ti
 
 function NextArrow({ to }: { to: TraceToolCall }) {
   return (
-    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-accent">
+    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-accent-ink">
       <ArrowDown className="size-3" aria-hidden="true" /> next call: <span className="font-mono">{to.tool}</span>
       {to.tool === 'reanalyse_window' && typeof to.args.sample_fps === 'number' && <span className="font-mono">at {to.args.sample_fps} fps</span>}
     </p>

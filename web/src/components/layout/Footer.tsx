@@ -6,7 +6,7 @@ const linkCls = 'underline decoration-line underline-offset-4 hover:text-text ho
 
 export default function Footer() {
   return (
-    <footer className="border-t border-line bg-bg">
+    <footer className="border-t border-line">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.2fr_1fr_1fr]">
         <div className="space-y-3">
           <div className="flex items-center gap-2.5">

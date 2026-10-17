@@ -4,6 +4,7 @@
  * never counted for a team: DATA_CONTRACT "ignored by consumers, never guessed").
  */
 import type { Frame, MatchState, PlayerTeam } from '../../data'
+import { orient, orientationAt } from '../../lib/orientation'
 
 export interface Dot {
   id: number
@@ -24,10 +25,20 @@ export class PositionIndex {
   readonly end: number
 
   constructor(match: MatchState) {
-    this.frames = match.frames.map((f) => ({
-      t: f.t,
-      byId: new Map(f.players.map((p) => [p.track_id, p])),
-    }))
+    const { length_m: L, width_m: W } = match.pitch
+    // positions are stored already turned for display (home attacks right), see lib/orientation.ts
+    this.frames = match.frames.map((f) => {
+      const o = orientationAt(match, f.t)
+      return {
+        t: f.t,
+        byId: new Map(
+          f.players.map((p) => {
+            const [x, y] = orient(p.x, p.y, o, L, W)
+            return [p.track_id, { ...p, x, y }]
+          }),
+        ),
+      }
+    })
     this.start = match.frames[0]?.t ?? 0
     this.end = match.frames.at(-1)?.t ?? 0
   }

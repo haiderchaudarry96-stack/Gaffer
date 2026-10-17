@@ -1,8 +1,8 @@
 import type { EventStatus } from '../../data'
 
 const styles: Record<EventStatus | 'pending' | 'approved', string> = {
-  confirmed: 'border-accent/50 bg-accent/10 text-accent',
-  approved: 'border-accent/50 bg-accent/10 text-accent',
+  confirmed: 'border-accent/50 bg-accent/10 text-accent-ink',
+  approved: 'border-accent/50 bg-accent/10 text-accent-ink',
   rejected: 'border-danger/50 bg-danger/10 text-danger',
   uncertain: 'border-warn/50 bg-warn/10 text-warn',
   pending: 'border-warn/50 bg-warn/10 text-warn',

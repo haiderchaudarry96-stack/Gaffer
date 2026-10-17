@@ -3,7 +3,7 @@ export type Variant = 'primary' | 'ghost' | 'subtle'
 const base =
   'inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-[background-color,color,border-color,transform] duration-200 ease-(--ease-out) disabled:cursor-not-allowed disabled:opacity-50'
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-bg hover:bg-[#d6ff5c] glow-accent',
+  primary: 'bg-accent text-on-accent hover:bg-[#d6ff5c] glow-accent',
   ghost: 'border border-line text-text hover:border-muted hover:bg-surface-2',
   subtle: 'bg-surface-2 text-text hover:bg-line',
 }

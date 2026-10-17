@@ -6,13 +6,16 @@ import { GITHUB_URL } from '../../lib/links'
 
 const LINKS = [
   { href: '#how', label: 'How it works' },
+  { href: '#verified', label: 'Verified' },
   { href: '#results', label: 'Results' },
-  { href: '#limits', label: 'Limits' },
+  { href: '#tech', label: 'Tech' },
+  { href: '#faq', label: 'FAQ' },
   { href: GITHUB_URL, label: 'GitHub' },
 ]
 
 /** Sticky landing nav: blurs and shrinks once the page scrolls. */
-export default function Nav() {
+/** `light`: the page below the hero is light, so the nav switches to the light tokens. */
+export default function Nav({ light = false }: { light?: boolean }) {
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
 
@@ -25,13 +28,13 @@ export default function Nav() {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-[background-color,border-color,padding] duration-300 ease-(--ease-out) ${
+      className={`fixed inset-x-0 top-0 z-50 transition-[background-color,border-color,padding] duration-300 ease-(--ease-out) ${light ? 'theme-light' : ''} ${
         scrolled || open ? 'border-b border-line bg-bg/75 py-2.5 backdrop-blur-md' : 'border-b border-transparent py-4'
       }`}
     >
       <a
         href="#main"
-        className="sr-only rounded-full bg-accent px-4 py-2 font-semibold text-bg focus:not-sr-only focus:absolute focus:top-3 focus:left-4"
+        className="sr-only rounded-full bg-accent px-4 py-2 font-semibold text-on-accent focus:not-sr-only focus:absolute focus:top-3 focus:left-4"
       >
         Skip to content
       </a>
