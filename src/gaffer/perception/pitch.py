@@ -647,3 +647,484 @@ def draw_overlay(frame: np.ndarray, mapper: PitchMapper, model: PitchModel,
     cv2.putText(out, title, (10, int(bar * 0.7)), cv2.FONT_HERSHEY_SIMPLEX, 0.9 * fs,
                 (255, 255, 255), max(1, int(2 * fs)), cv2.LINE_AA)
     return out
+
+
+# --------------------------------------------------------------------------- 4-corner calibration
+# Phase 4: uploads that are not TeamTrack clips. The coach clicks (or confirms auto-detected)
+# the 4 pitch corners in the order top-left, top-right, bottom-right, bottom-left as seen in the
+# frame; a single homography maps them onto a pitch of the configured size. Only top-down views
+# are supported: a strongly tilted camera is refused (opposite edges too different).
+
+CORNER_ORDER = ("top_left", "top_right", "bottom_right", "bottom_left")
+
+
+@dataclass
+class FourCorners:
+    """A 4-corner pitch homography and the checks made on the clicked quad."""
+
+    H_image_to_pitch: np.ndarray
+    corners_px: np.ndarray  # (4, 2) as given: TL, TR, BR, BL in the frame
+    pitch_targets: np.ndarray  # (4, 2) pitch metres each corner maps to
+    opposite_edge_ratio: float  # min over both pairs of shorter / longer edge
+    aspect_px: float  # mean long edge / mean short edge in pixels (top-down: ~ L / W)
+    area_frac: float
+    rotated: bool  # the pitch length runs up-down in the frame
+
+    def mapper(self) -> HomographyMapper:
+        return HomographyMapper(self.H_image_to_pitch)
+
+
+def _quad_checks(pts: np.ndarray) -> tuple[float, float, float, float]:
+    """Signed area (> 0 = TL, TR, BR, BL order on screen), horizontal and vertical edge
+    means, and the opposite-edge ratio of a quad (4, 2)."""
+    x, y = pts[:, 0], pts[:, 1]
+    signed = 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+    e = np.linalg.norm(np.roll(pts, -1, axis=0) - pts, axis=1)  # TL-TR, TR-BR, BR-BL, BL-TL
+    horiz, vert = (e[0] + e[2]) / 2, (e[1] + e[3]) / 2
+    ratio = min(min(e[0], e[2]) / max(e[0], e[2], 1e-9), min(e[1], e[3]) / max(e[1], e[3], 1e-9))
+    return signed, horiz, vert, float(ratio)
+
+
+def four_corner_homography(points: Any, image_size: tuple[int, int], length_m: float,
+                           width_m: float, settings: dict[str, Any] | None = None
+                           ) -> FourCorners:
+    """Homography from 4 pitch corners clicked in the frame (order TL, TR, BR, BL).
+
+    The longer pair of image edges is taken as the pitch length (`long_side: auto`), so a pitch
+    filmed with its length running up-down works too; with the length across the frame,
+    TL -> (0, W), TR -> (L, W), BR -> (L, 0), BL -> (0, 0) (origin bottom-left, as in the data
+    contract). `cv2.getPerspectiveTransform` gives the exact 4-point homography.
+
+    Raises CalibrationError with a coach-readable message for: not 4 points, points far
+    outside the frame, a crossed or mirrored order, a tiny quad, or a camera so tilted that
+    the view is not top-down (opposite edges differ by more than `min_opposite_edge_ratio`).
+    """
+    s = {"max_outside_frac": 0.25, "min_area_frac": 0.05, "min_opposite_edge_ratio": 0.6,
+         "long_side": "auto", **(settings or {})}
+    try:
+        pts = np.asarray(points, dtype=float).reshape(4, 2)
+    except (ValueError, TypeError) as exc:
+        raise CalibrationError("Exactly 4 pitch corners are needed (top-left, top-right, "
+                               "bottom-right, bottom-left).") from exc
+    if not np.isfinite(pts).all():
+        raise CalibrationError("The pitch corners must be numbers.")
+    w, h = float(image_size[0]), float(image_size[1])
+    m = float(s["max_outside_frac"])
+    if ((pts[:, 0] < -m * w) | (pts[:, 0] > (1 + m) * w) | (pts[:, 1] < -m * h)
+            | (pts[:, 1] > (1 + m) * h)).any():
+        raise CalibrationError("A pitch corner lies far outside the video frame. Place each "
+                               "corner where the pitch lines meet.")
+    if not cv2.isContourConvex(pts.astype(np.float32).reshape(-1, 1, 2)):
+        raise CalibrationError("The 4 corners cross over each other. Click them in order: "
+                               "top-left, top-right, bottom-right, bottom-left.")
+    signed, horiz, vert, ratio = _quad_checks(pts)
+    if signed <= 0:
+        raise CalibrationError("The corners are in the wrong order. Click them in order: "
+                               "top-left, top-right, bottom-right, bottom-left.")
+    area_frac = signed / (w * h)
+    if area_frac < float(s["min_area_frac"]):
+        raise CalibrationError(f"The marked pitch covers only {area_frac:.0%} of the frame. "
+                               "Gaffer needs a view of the whole pitch from above.")
+    if ratio < float(s["min_opposite_edge_ratio"]):
+        raise CalibrationError("The camera looks at the pitch at too steep an angle (the far "
+                               "side is much shorter than the near side). Gaffer only analyses "
+                               "top-down views, such as a drone straight above the pitch.")
+    rotated = (s["long_side"] == "auto" and vert > horiz) or s["long_side"] == "vertical"
+    # rotating the frame 90 deg clockwise makes the old bottom-left the new top-left
+    src = np.roll(pts, 1, axis=0) if rotated else pts
+    L, W = float(length_m), float(width_m)
+    targets = np.array([[0.0, W], [L, W], [L, 0.0], [0.0, 0.0]])
+    H = cv2.getPerspectiveTransform(src.astype(np.float32), targets.astype(np.float32))
+    per_corner = np.roll(targets, -1, axis=0) if rotated else targets
+    aspect = max(horiz, vert) / max(min(horiz, vert), 1e-9)
+    return FourCorners(H.astype(float), pts, per_corner, round(ratio, 3), round(aspect, 3),
+                       round(area_frac, 4), bool(rotated))
+
+
+def four_corner_calibration(fc: FourCorners, image_size: tuple[int, int], length_m: float,
+                            width_m: float, source: str, frame_index: int, picked_by: str,
+                            view: str = "top") -> Calibration:
+    """A `Calibration` (method homography) from 4 corners, saved like the 31-point ones, so the
+    pipeline and the agent use it unchanged. `source` + `frame_index` name the reference frame
+    the drift re-anchoring aligns every other frame to."""
+    lm = {}
+    for name, uv, xy in zip(CORNER_ORDER, fc.corners_px, fc.pitch_targets, strict=True):
+        lm[f"corner_{name}"] = {"approx": [float(uv[0]), float(uv[1])],
+                                "image": [float(uv[0]), float(uv[1])], "snapped": False,
+                                "note": picked_by, "pitch": [float(xy[0]), float(xy[1])],
+                                "fit_residual_m": 0.0}
+    return Calibration(
+        view=view, method="homography", source=source, frame_index=int(frame_index),
+        image_size=(int(image_size[0]), int(image_size[1])), length_m=float(length_m),
+        width_m=float(width_m), params={"H_image_to_pitch": fc.H_image_to_pitch.tolist()},
+        landmarks=lm,
+        errors={"landmarks_used": 4, "landmarks_not_snapped": 4, "fit_rms_m": 0.0,
+                "held_out_mean_m": None, "held_out_median_m": None, "held_out_max_m": None,
+                "note": "4-corner homography: exact fit, no held-out error"},
+        meta={"created_utc": utc_now(), "opencv_version": cv2.__version__,
+              "method": "four_corner", "picked_by": picked_by,
+              "opposite_edge_ratio": fc.opposite_edge_ratio, "aspect_px": fc.aspect_px,
+              "rotated": fc.rotated})
+
+
+def image_corners(mapper: PitchMapper, length_m: float, width_m: float) -> np.ndarray:
+    """The 4 pitch corners in the image, ordered TL, TR, BR, BL by their position on screen
+    (whatever pitch corner each one is): the corners a coach would click."""
+    xy = np.array([[0, 0], [length_m, 0], [length_m, width_m], [0, width_m]], dtype=float)
+    return order_corners(mapper.to_image(xy))
+
+
+def order_corners(pts: Any) -> np.ndarray:
+    """4 points sorted TL, TR, BR, BL on screen (by angle around their centroid)."""
+    p = np.asarray(pts, dtype=float).reshape(4, 2)
+    c = p.mean(axis=0)
+    ang = np.arctan2(p[:, 1] - c[1], p[:, 0] - c[0])  # TL ~ -135 deg, TR ~ -45, BR 45, BL 135
+    return p[np.argsort(ang)]
+
+
+# --------------------------------------------------------------------------- auto-detect
+
+
+@dataclass
+class CornerDetection:
+    """Result of `detect_pitch_corners` (all pixel values at full frame resolution)."""
+
+    found: bool  # a quadrilateral was found at all
+    corners: np.ndarray | None  # (4, 2) TL, TR, BR, BL
+    confidence: float  # 0..1, geometric mean of `parts` (0 when a hard check fails)
+    accepted: bool  # confidence >= accept and no hard failure: ask the coach to confirm
+    parts: dict[str, float]
+    problems: list[str]  # coach-readable reasons for a low confidence
+    method: str  # "approx_poly" | "min_area_rect" | "none"
+    snapped_edges: int  # edges moved onto a painted boundary line
+    line_error_m: float | None  # projected markings vs painted lines (median)
+    timing_ms: float
+
+    def summary(self) -> dict[str, Any]:
+        return {"found": self.found, "accepted": self.accepted,
+                "confidence": round(self.confidence, 3),
+                "corners": None if self.corners is None else
+                [[round(float(x), 1), round(float(y), 1)] for x, y in self.corners],
+                "parts": {k: round(v, 3) for k, v in self.parts.items()},
+                "problems": self.problems, "method": self.method,
+                "snapped_edges": self.snapped_edges, "line_error_m": self.line_error_m,
+                "timing_ms": round(self.timing_ms, 1)}
+
+
+def grass_mask(frame: np.ndarray, hue: tuple[float, float], min_saturation: float,
+               min_value: float) -> np.ndarray:
+    """Grass pixels: the HSV hue/saturation band the team classifier uses to strip grass from
+    shirt crops (`teams.grass_hue`, `teams.grass_min_saturation`), plus a brightness floor."""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    return (((hsv[..., 0] >= hue[0]) & (hsv[..., 0] <= hue[1]) & (hsv[..., 1] >= min_saturation)
+             & (hsv[..., 2] >= min_value)).astype(np.uint8) * 255)
+
+
+def _largest_component(mask: np.ndarray) -> tuple[np.ndarray, float]:
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if n <= 1:
+        return np.zeros_like(mask), 0.0
+    i = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    comp = np.where(labels == i, 255, 0).astype(np.uint8)
+    return comp, float(stats[i, cv2.CC_STAT_AREA]) / mask.size
+
+
+def _quad_from_hull(hull: np.ndarray, eps_range: tuple[float, float]
+                    ) -> tuple[np.ndarray | None, str]:
+    """4 vertices from a convex hull: `cv2.approxPolyDP` with the smallest epsilon that gives
+    exactly 4, else the `cv2.minAreaRect` box."""
+    peri = cv2.arcLength(hull, True)
+    for f in np.geomspace(eps_range[0], eps_range[1], 24):
+        ap = cv2.approxPolyDP(hull, float(f) * peri, True)
+        if len(ap) == 4:
+            return order_corners(ap.reshape(4, 2)), "approx_poly"
+        if len(ap) < 4:
+            break
+    box = cv2.boxPoints(cv2.minAreaRect(hull))
+    return order_corners(box), "min_area_rect"
+
+
+def _line_from(p: np.ndarray, q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    d = q - p
+    return p, d / (np.linalg.norm(d) + 1e-12)
+
+
+def _snap_edges(quad: np.ndarray, lines: np.ndarray, s: dict[str, Any]
+                ) -> tuple[np.ndarray, list[float], int]:
+    """Move each quad edge onto the painted boundary line where one is visible.
+
+    Per edge, a 2D search over the offsets of its two end points along the inward normal
+    (from `outward_frac` outside to `inward_frac` inside) scores the share of sampled points
+    that fall on the (slightly dilated) line mask; the outermost offset pair with at least
+    `keep_outermost` x the best support wins (the boundary is the outermost painted line), then
+    `cv2.fitLine` on the line pixels near it refines it. Adjacent fitted lines are intersected
+    into the new corners. Returns (corners, support per edge, edges snapped)."""
+    h, w = lines.shape
+    hit = cv2.dilate(lines, np.ones((3, 3), np.uint8)) > 0
+    centre = quad.mean(axis=0)
+    t = np.linspace(0.1, 0.9, int(s["samples"]))
+    fitted, support, snapped = [], [], 0
+    ys_all, xs_all = np.nonzero(lines)
+    pix = np.stack([xs_all, ys_all], axis=1).astype(np.float64)
+    for i in range(4):
+        p, q = quad[i], quad[(i + 1) % 4]
+        o, d = _line_from(p, q)
+        n = np.array([-d[1], d[0]])
+        if np.dot(centre - p, n) < 0:
+            n = -n
+        opp = 0.5 * (quad[(i + 2) % 4] + quad[(i + 3) % 4])
+        depth = abs(float(np.dot(opp - p, n)))
+        offs = np.arange(-round(float(s["outward_frac"]) * depth),
+                         round(float(s["inward_frac"]) * depth) + 1, 1.0)
+        a, b = np.meshgrid(offs, offs, indexing="ij")  # offset at p, offset at q
+        base = p[None, :] * (1 - t[:, None]) + q[None, :] * t[:, None]  # (S, 2)
+        off = a[..., None] * (1 - t) + b[..., None] * t  # (A, B, S)
+        pts = base[None, None] + off[..., None] * n  # (A, B, S, 2)
+        u = np.round(pts[..., 0]).astype(int)
+        v = np.round(pts[..., 1]).astype(int)
+        inside = (u >= 0) & (u < w) & (v >= 0) & (v < h)
+        hits = np.zeros(u.shape, bool)
+        hits[inside] = hit[v[inside], u[inside]]
+        score = hits.mean(axis=-1)
+        best = float(score.max())
+        line_pq = (p, q)
+        if best >= float(s["min_support"]):
+            good = score >= float(s["keep_outermost"]) * best
+            # outermost = smallest mean offset along the inward normal
+            mean_off = (a + b) / 2
+            j = np.unravel_index(np.argmin(np.where(good, mean_off, np.inf)), score.shape)
+            p2, q2 = p + a[j] * n, q + b[j] * n
+            o2, d2 = _line_from(p2, q2)
+            rel = pix - o2
+            along = rel @ d2
+            dist = np.abs(rel @ np.array([-d2[1], d2[0]]))
+            L = np.linalg.norm(q2 - p2)
+            near = (dist <= float(s["band_px"])) & (along >= 0.05 * L) & (along <= 0.95 * L)
+            if near.sum() >= 10:
+                vx, vy, x0, y0 = cv2.fitLine(pix[near].astype(np.float32), cv2.DIST_HUBER,
+                                             0, 0.01, 0.01).ravel()
+                o2, d2 = np.array([x0, y0], float), np.array([vx, vy], float)
+            line_pq = (o2, o2 + d2)
+            support.append(best)
+            snapped += 1
+        else:
+            support.append(best)
+        fitted.append(line_pq)
+    corners = []
+    for i in range(4):
+        (p1, q1), (p2, q2) = fitted[(i - 1) % 4], fitted[i]
+        x = _intersect((p1, q1 - p1), (p2, q2 - p2))
+        corners.append(quad[i] if x is None else x)
+    out = np.array(corners, dtype=float)
+    # a snap that runs away (parallel lines, clutter) falls back to the grass quad
+    if (not np.isfinite(out).all()
+            or np.abs(out - quad).max() > 0.25 * max(np.ptp(quad[:, 0]), np.ptp(quad[:, 1]))):
+        return quad, support, 0
+    return out, support, snapped
+
+
+def _edge_support(corners: np.ndarray, lines: np.ndarray, samples: int) -> list[float]:
+    """Share of points along each edge (middle 80 %) that lie on a painted line."""
+    h, w = lines.shape
+    hit = cv2.dilate(lines, np.ones((3, 3), np.uint8)) > 0
+    t = np.linspace(0.1, 0.9, samples)[:, None]
+    out = []
+    for i in range(4):
+        p, q = corners[i], corners[(i + 1) % 4]
+        pts = np.round(p * (1 - t) + q * t).astype(int)
+        ok = (pts[:, 0] >= 0) & (pts[:, 0] < w) & (pts[:, 1] >= 0) & (pts[:, 1] < h)
+        out.append(float(hit[pts[ok, 1], pts[ok, 0]].sum()) / samples)
+    return out
+
+
+def detect_pitch_corners(frame: np.ndarray, cfg: dict[str, Any]) -> CornerDetection:
+    """Find the 4 pitch corners of a top-down frame with OpenCV only (no learnt model).
+
+    1. grass mask (`grass_mask`, the team classifier's HSV grass band) on a frame downscaled to
+       `analysis_width_px`, closed (players, painted lines) and opened (specks);
+    2. the largest connected component (`cv2.connectedComponentsWithStats`), its convex hull
+       (`cv2.convexHull`) and a quadrilateral (`cv2.approxPolyDP`, else `cv2.minAreaRect`);
+    3. each edge snapped onto the painted boundary line where visible (`line_mask` top-hat,
+       `_snap_edges`, `cv2.fitLine`);
+    4. confidence parts: quad area share, aspect vs L / W, boundary-line pixels on the edges,
+       projected markings vs painted lines (`line_alignment_error` through the 4-corner
+       homography: a wrong quad puts the halfway line and boxes off the paint), corners inside
+       the frame, and the top-down check (opposite edges). Settings: `calibration.auto_detect`.
+
+    The result is only a proposal: the API never analyses on unconfirmed corners.
+    """
+    import time as _time
+
+    t0 = _time.perf_counter()
+    ad = cfg["calibration"]["auto_detect"]
+    cc = ad["confidence"]
+    four = cfg["calibration"].get("four_corner", {})
+    tcfg = cfg["teams"]
+    L, W = float(cfg["pitch"]["length_m"]), float(cfg["pitch"]["width_m"])
+    h0, w0 = frame.shape[:2]
+    k = min(1.0, float(ad["analysis_width_px"]) / w0)
+    small = cv2.resize(frame, None, fx=k, fy=k, interpolation=cv2.INTER_AREA) if k < 1 else frame
+    h, w = small.shape[:2]
+
+    def fail(msg: str, method: str = "none") -> CornerDetection:
+        return CornerDetection(False, None, 0.0, False, {}, [msg], method, 0, None,
+                               (_time.perf_counter() - t0) * 1000)
+
+    g = grass_mask(small, (float(tcfg["grass_hue"][0]), float(tcfg["grass_hue"][1])),
+                   float(tcfg["grass_min_saturation"]), float(ad["grass_min_value"]))
+    cp, op = int(ad["close_px"]), int(ad["open_px"])
+    g = cv2.morphologyEx(g, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (cp, cp)))
+    g = cv2.morphologyEx(g, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (op, op)))
+    comp, comp_frac = _largest_component(g)
+    if comp_frac < 0.5 * float(cc["min_area_frac"]):
+        return fail("No large grass area found: is this a football pitch seen from above?")
+    contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    hull = cv2.convexHull(max(contours, key=cv2.contourArea))
+    quad, method = _quad_from_hull(hull, (float(ad["approx_eps"][0]), float(ad["approx_eps"][1])))
+    if quad is None:
+        return fail("Could not find the outline of the pitch.")
+    lm = ad["line_mask"]
+    lines = line_mask(small, int(lm["kernel_px"]), int(lm["threshold"]),
+                      int(lm["max_saturation"]), int(lm["min_component_px"]))
+    corners, _, snapped = _snap_edges(quad, lines, ad["snap"])
+    corners = order_corners(corners)
+    support = _edge_support(corners, lines, int(ad["snap"]["samples"]))
+
+    problems: list[str] = []
+    parts: dict[str, float] = {}
+    signed, horiz, vert, ratio = _quad_checks(corners)
+    area_frac = abs(signed) / (w * h)
+    lo, hi = float(cc["min_area_frac"]), float(cc["good_area_frac"])
+    parts["area"] = float(np.clip((area_frac - lo) / max(hi - lo, 1e-9), 0, 1))
+    if parts["area"] < 0.5:
+        problems.append(f"the pitch fills only {area_frac:.0%} of the frame")
+    aspect = max(horiz, vert) / max(min(horiz, vert), 1e-9)
+    dev = abs(float(np.log(aspect / (L / W))))
+    parts["aspect"] = float(np.clip(1 - dev / float(cc["aspect_tolerance"]), 0, 1))
+    if parts["aspect"] < 0.5:
+        problems.append(f"its shape ({aspect:.2f}:1) is far from a {L:g} x {W:g} m pitch")
+    parts["boundary_lines"] = float(np.clip(np.mean(support) / float(cc["good_line_support"]),
+                                            0, 1))
+    if parts["boundary_lines"] < 0.5:
+        problems.append("the painted boundary lines are hard to see along the outline")
+    m = float(cc["corner_margin_px"])
+    inside = ((corners[:, 0] > m) & (corners[:, 0] < w - 1 - m) & (corners[:, 1] > m)
+              & (corners[:, 1] < h - 1 - m))
+    parts["corners_in_view"] = float(inside.mean())
+    if not inside.all():
+        problems.append(f"{int((~inside).sum())} corner(s) are cut off by the edge of the frame")
+    line_err = None
+    hard = False
+    try:
+        fc = four_corner_homography(corners, (w, h), L, W, {**four, "min_area_frac": 0.0,
+                                                            "min_opposite_edge_ratio": 0.0})
+        model = PitchModel(L, W, Markings.from_config(cfg))
+        le = line_alignment_error(fc.mapper(), lines, model, 1.0, 2.0)
+        found = 1.0 - float(le["not_found_fraction"])
+        med = float(le["median_m"]) if np.isfinite(le["median_m"]) else float("inf")
+        line_err = None if not np.isfinite(med) else round(med, 3)
+        parts["markings"] = float(np.clip(1 - med / float(cc["max_line_error_m"]), 0, 1)) * found
+        quad_mask = np.zeros_like(lines)
+        cv2.fillConvexPoly(quad_mask, np.round(corners).astype(np.int32), 255)
+        density = float((lines[quad_mask > 0] > 0).mean()) if (quad_mask > 0).any() else 1.0
+        if density > float(cc["max_line_density"]):  # clutter / texture, not painted lines
+            parts["markings"] = 0.0
+            problems.append(f"{density:.0%} of the area looks like painted lines: too cluttered "
+                            "to find the pitch markings")
+        elif parts["markings"] < 0.5:
+            problems.append("the pitch markings do not line up with this outline")
+    except CalibrationError as exc:
+        hard = True
+        problems.append(str(exc))
+        parts["markings"] = 0.0
+    min_ratio = float(four.get("min_opposite_edge_ratio", 0.6))
+    if ratio < min_ratio:
+        hard = True
+        problems.append("the view is tilted, not top-down (the far side looks much shorter)")
+    vals = np.array(list(parts.values()), dtype=float)
+    conf = 0.0 if hard or (vals <= 0).any() else float(np.exp(np.mean(np.log(vals))))
+    accepted = conf >= float(cc["accept"]) and not hard
+    return CornerDetection(True, corners / k, conf, accepted, parts, problems, method, snapped,
+                           line_err, (_time.perf_counter() - t0) * 1000)
+
+
+def draw_corner_overlay(frame: np.ndarray, corners: Any, length_m: float, width_m: float,
+                        title: str, max_width_px: int = 1280,
+                        colour: tuple[int, int, int] = (80, 255, 200)) -> np.ndarray:
+    """The frame (downscaled to `max_width_px`) with the pitch outline through the 4 corners,
+    numbered 1-4 (TL, TR, BR, BL) and the markings a 4-corner homography would put there, so
+    a coach can see at a glance whether the outline sits on the pitch."""
+    k = min(1.0, max_width_px / frame.shape[1])
+    img = cv2.resize(frame, None, fx=k, fy=k, interpolation=cv2.INTER_AREA) if k < 1 \
+        else frame.copy()
+    pts = np.asarray(corners, dtype=float).reshape(4, 2) * k
+    h, w = img.shape[:2]
+    try:
+        fc = four_corner_homography(pts, (w, h), length_m, width_m,
+                                    {"min_area_frac": 0.0, "min_opposite_edge_ratio": 0.0,
+                                     "max_outside_frac": 1.0})
+        mapper = fc.mapper()
+        for name, poly in PitchModel(length_m, width_m).lines(0.5).items():
+            if name.startswith(("touch_", "goal_")):
+                continue
+            uv = mapper.to_image(poly)
+            cv2.polylines(img, [np.round(uv).astype(np.int32).reshape(-1, 1, 2)], False,
+                          (255, 255, 255), 1, cv2.LINE_AA)
+    except CalibrationError:
+        pass
+    th = max(2, int(round(w / 400)))
+    cv2.polylines(img, [np.round(pts).astype(np.int32).reshape(-1, 1, 2)], True, colour, th,
+                  cv2.LINE_AA)
+    fs = max(0.5, w / 1600)
+    for i, (x, y) in enumerate(pts):
+        c = (int(round(x)), int(round(y)))
+        cv2.circle(img, c, int(14 * fs), (20, 20, 20), -1, cv2.LINE_AA)
+        cv2.circle(img, c, int(14 * fs), colour, th, cv2.LINE_AA)
+        cv2.putText(img, str(i + 1), (c[0] - int(6 * fs), c[1] + int(6 * fs)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6 * fs, (255, 255, 255), max(1, th - 1),
+                    cv2.LINE_AA)
+    bar = int(36 * fs)
+    cv2.rectangle(img, (0, 0), (w, bar), (20, 20, 20), -1)
+    cv2.putText(img, title, (10, int(bar * 0.7)), cv2.FONT_HERSHEY_SIMPLEX, 0.6 * fs,
+                (255, 255, 255), max(1, int(1.5 * fs)), cv2.LINE_AA)
+    return img
+
+
+def render_pitch_view(size: tuple[int, int], corners_px: Any, length_m: float = 105.0,
+                      width_m: float = 68.0, runoff_m: float = 4.0,
+                      players: list[tuple[float, float, tuple[int, int, int]]] | None = None,
+                      seed: int = 42, line_m: float = 0.15, noise: float = 4.0) -> np.ndarray:
+    """A generated top-down frame (tests and `scripts/eval_autodetect.py --synthetic`): mown
+    grass with stripes, white IFAB markings, `runoff_m` of grass outside the lines, a grey
+    surround, optional players (pitch x, y, BGR colour) and pixel noise. `corners_px` are the
+    image positions of the pitch corners (0, W), (L, W), (L, 0), (0, 0), i.e. TL, TR, BR, BL
+    for an untilted view; any 4 points give a perspective (tilted) view."""
+    w, h = int(size[0]), int(size[1])
+    L, W, r = float(length_m), float(width_m), float(runoff_m)
+    ppm = 12.0
+    tw, th = int((L + 2 * r) * ppm), int((W + 2 * r) * ppm)
+    tex = np.zeros((th, tw, 3), np.uint8)
+    for i, x0 in enumerate(np.arange(-r, L + r, 5.0)):  # mowing stripes every 5 m
+        u0, u1 = int((x0 + r) * ppm), int((x0 + 5.0 + r) * ppm)
+        tex[:, u0:u1] = (52, 128, 46) if i % 2 else (60, 146, 54)
+
+    def tx(xy: np.ndarray) -> np.ndarray:  # pitch metres -> texture pixels (y up)
+        xy = np.asarray(xy, float).reshape(-1, 2)
+        return np.stack([(xy[:, 0] + r) * ppm, (W + r - xy[:, 1]) * ppm], axis=1)
+
+    thick = max(1, int(round(line_m * ppm)))
+    for poly in PitchModel(L, W).lines(0.25).values():
+        cv2.polylines(tex, [np.round(tx(poly)).astype(np.int32).reshape(-1, 1, 2)], False,
+                      (235, 240, 238), thick, cv2.LINE_AA)
+    for x, y, col in players or []:
+        c = np.round(tx([[x, y]])[0]).astype(int)
+        cv2.circle(tex, (int(c[0]), int(c[1])), int(0.45 * ppm), col, -1, cv2.LINE_AA)
+    targets = np.array([[0.0, W], [L, W], [L, 0.0], [0.0, 0.0]])
+    H_p2i = cv2.getPerspectiveTransform(targets.astype(np.float32),
+                                        np.asarray(corners_px, np.float32).reshape(4, 2))
+    A = np.array([[1 / ppm, 0, -r], [0, -1 / ppm, W + r], [0, 0, 1]])  # texture -> pitch
+    out = cv2.warpPerspective(tex, H_p2i @ A, (w, h), flags=cv2.INTER_AREA,
+                              borderMode=cv2.BORDER_CONSTANT, borderValue=(96, 104, 112))
+    rng = np.random.default_rng(seed)
+    out = np.clip(out.astype(np.float32) + rng.normal(0, noise, out.shape), 0, 255)
+    return out.astype(np.uint8)

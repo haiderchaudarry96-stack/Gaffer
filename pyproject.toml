@@ -21,12 +21,18 @@ dependencies = [
     "scipy>=1.13",                     # BSD-3 (Hungarian assignment for formation templates)
     "supervision>=0.30,<0.31",         # MIT (ByteTrack); pulls av (BSD, LGPL FFmpeg), no opencv
     "requests>=2.32",                  # Apache 2.0 (scripts/download_teamtrack.py; already locked)
+    "fastapi>=0.140",                  # MIT (Phase 4 API; pulls starlette BSD-3, anyio MIT,
+                                       #   annotated-doc MIT, opentelemetry-api Apache 2.0)
+    "uvicorn>=0.50",                   # BSD-3 (ASGI server; pulls click BSD-3, h11 MIT)
+    "python-multipart>=0.0.20",        # Apache 2.0 (multipart video uploads)
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",                     # MIT
     "ruff>=0.6",                       # MIT
+    "httpx2>=2.13",                    # BSD-3 (FastAPI TestClient; pulls httpcore2 BSD-3,
+                                       #   truststore MIT)
 ]
 
 [tool.setuptools.packages.find]
