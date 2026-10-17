@@ -320,3 +320,52 @@ export interface FormationTimeline {
   segments: TimelineSegment[]
   events: TimelineEvent[]
 }
+
+// ---------- TacticalTimeline (DATA_CONTRACT.md), as the backend returns it ----------
+
+export interface ContractTeamSegment {
+  formation: string
+  confidence: number
+  defensive_line_m: number | null
+  compactness_m: number | null
+  width_m: number | null
+  centroid?: { x: number; y: number } | null
+  pressing_index?: number | null
+}
+
+export interface ContractSegment {
+  start_s: number
+  end_s: number
+  home: ContractTeamSegment
+  away: ContractTeamSegment
+}
+
+export interface Verification {
+  decided_by: string
+  decision: 'confirmed' | 'rejected' | 'uncertain'
+  reason: string
+  tool_calls: string[]
+  evidence_image: string | null
+  trace_id: string | null
+}
+
+export interface ContractEvent {
+  id: string
+  t: number
+  type: 'shape_change' | 'line_drop' | 'press_trigger'
+  team: TeamSide
+  from: string
+  to: string
+  confidence: number
+  evidence: string
+  status: 'candidate' | 'confirmed' | 'rejected' | 'uncertain'
+  verification: Verification | null
+}
+
+export interface TacticalTimeline {
+  contract_version: '1.0'
+  match_id: string
+  teams: Record<TeamSide, string>
+  segments: ContractSegment[]
+  events: ContractEvent[]
+}

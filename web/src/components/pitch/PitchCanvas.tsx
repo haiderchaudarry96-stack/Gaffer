@@ -69,13 +69,12 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', cla
     if (!ctx) return
 
     const colours = {
-      home: cssVar(canvas, '--team-a', '#ff5b4f'),
-      away: cssVar(canvas, '--team-b', '#44c8ff'),
-      referee: cssVar(canvas, '--muted', '#8fa398'),
+      home: cssVar(canvas, '--pitch-home', '#ff5b4f'),
+      away: cssVar(canvas, '--pitch-away', '#44c8ff'),
+      referee: cssVar(canvas, '--pitch-official', '#8fa398'),
       line: variant === 'hero' ? 'rgba(238,244,240,0.34)' : cssVar(canvas, '--pitch-line', 'rgba(238,244,240,0.30)'),
-      grass: cssVar(canvas, '--surface', '#0f1914'),
-      stripe: cssVar(canvas, '--surface-2', '#16231c'),
-      bg: cssVar(canvas, '--bg', '#070d0a'),
+      grass: cssVar(canvas, '--pitch-grass', '#0f1914'),
+      stripe: cssVar(canvas, '--pitch-stripe', '#16231c'),
     }
     const L = pitch.length_m
     const W = pitch.width_m
@@ -109,12 +108,12 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', cla
         // mown stripes
         const n = 12
         for (let i = 0; i < n; i++) {
-          ctx.fillStyle = i % 2 ? colours.grass : colours.stripe
+          ctx.fillStyle = i % 2 ? colours.stripe : colours.grass
           ctx.fillRect((i * L * s) / n, 0, (L * s) / n + 0.5, W * s)
         }
       }
       ctx.strokeStyle = colours.line
-      ctx.lineWidth = variant === 'hero' ? 1.6 : 1
+      ctx.lineWidth = variant === 'hero' ? 1.6 : 1.2
       drawMarkings(ctx, L, W, s)
 
       if (index) {
@@ -140,10 +139,11 @@ export default function PitchCanvas({ index, pitch, clock, variant = 'mini', cla
           ctx.arc(px(d), py(d), d.team === 'referee' ? r * 0.6 : r, 0, Math.PI * 2)
           ctx.fill()
           if (d.goalkeeper && d.team !== 'referee') {
-            ctx.strokeStyle = colours.bg
-            ctx.lineWidth = Math.max(1, r * 0.35)
+            // keeper: a ring around the dot, in the team colour
+            ctx.strokeStyle = c
+            ctx.lineWidth = Math.max(1.2, r * 0.3)
             ctx.beginPath()
-            ctx.arc(px(d), py(d), r * 0.45, 0, Math.PI * 2)
+            ctx.arc(px(d), py(d), r * 1.65, 0, Math.PI * 2)
             ctx.stroke()
           }
         }

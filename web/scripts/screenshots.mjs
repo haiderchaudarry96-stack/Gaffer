@@ -65,18 +65,133 @@ const LANDING = (w, h, tag) => [
   { name: `landing-${tag}-3-bottom`, path: '/', width: w, height: h, at: async (p) => p.evaluate(() => window.scrollTo(0, document.body.scrollHeight)) },
 ]
 
+const APP = '/app?t=1000&paused=1'
+const UPLOAD = '/app?t=1000&paused=1&upload=1'
+
+/** choose the test clip in the upload panel and wait for its details */
+async function chooseClip(page) {
+  await page.setInputFiles('#upload-file', TEST_CLIP)
+  await page.getByRole('button', { name: 'Next' }).waitFor()
+}
+/** click the n-th pitch point at fractions of the frame */
+async function placePoints(page, fractions) {
+  const frame = page.getByRole('application')
+  const box = await frame.boundingBox()
+  for (const [fx, fy] of fractions) await page.mouse.click(box.x + fx * box.width, box.y + fy * box.height)
+}
+// where the synthetic clip's pitch outline is (see makeTestClip)
+const CLIP_POINTS = [
+  [0.3, 0.22],
+  [0.7, 0.22],
+  [0.94, 0.86],
+  [0.06, 0.86],
+]
+
 const SHOTS = [
   ...LANDING(1440, 900, '1440'),
   ...LANDING(375, 812, '375'),
   { name: 'landing-1440-slider', path: '/', width: 1440, height: 900, at: scrollToSel('#compare', 40) },
   { name: 'landing-1440-story', path: '/', width: 1440, height: 900, at: scrollToSel('#verified', 900) },
   { name: 'landing-1440-1-hero-reduced-motion', path: '/', width: 1440, height: 900, reduced: true, at: async (p) => p.evaluate(() => window.scrollTo(0, 0)) },
-  { name: 'app-1440-default', path: '/app?t=1000&paused=1', width: 1440, height: 900 },
-  { name: 'app-1440-drawer', path: '/app?t=1000&paused=1&drawer=1', width: 1440, height: 900 },
+  { name: 'app-1440-light', path: APP, width: 1440, height: 900 },
+  { name: 'app-375-light', path: APP, width: 375, height: 812, fullPage: true },
   { name: 'app-1440-live-replay', path: '/app?live=1&t=1103&paused=1', width: 1440, height: 900 },
-  { name: 'app-375-default', path: '/app?t=1000&paused=1', width: 375, height: 812, fullPage: true },
+  { name: 'app-1440-drawer-details-closed', path: `${APP}&drawer=1`, width: 1440, height: 900, at: async (p) => p.getByRole('button', { name: 'Technical details' }).scrollIntoViewIfNeeded() },
+  {
+    name: 'app-1440-drawer-details-open',
+    path: `${APP}&drawer=1`,
+    width: 1440,
+    height: 900,
+    at: async (p) => {
+      await p.getByRole('button', { name: 'Technical details' }).click()
+      await p.getByText('Honest reading').scrollIntoViewIfNeeded()
+    },
+  },
+  { name: 'chat-1440-closed', path: APP, width: 1440, height: 900, clip: 'bottom-right' },
+  {
+    name: 'chat-1440-expanded',
+    path: APP,
+    width: 1440,
+    height: 900,
+    at: async (p) => {
+      await p.getByRole('button', { name: /Ask Gaffer/ }).hover()
+      await p.waitForTimeout(700)
+    },
+  },
+  { name: 'upload-1440-1-file-chosen', path: UPLOAD, width: 1440, height: 900, at: chooseClip },
+  {
+    name: 'upload-1440-2-pitch-step',
+    path: UPLOAD,
+    width: 1440,
+    height: 900,
+    at: async (p) => {
+      await chooseClip(p)
+      await p.getByRole('button', { name: 'Next' }).click()
+      await placePoints(p, CLIP_POINTS.slice(0, 2))
+      await p.getByRole('button', { name: /Pitch corner 2 of 4/ }).hover()
+    },
+  },
+  {
+    name: 'upload-375-2-pitch-step',
+    path: UPLOAD,
+    width: 375,
+    height: 812,
+    at: async (p) => {
+      await chooseClip(p)
+      await p.getByRole('button', { name: 'Next' }).click()
+      await placePoints(p, CLIP_POINTS.slice(0, 1))
+      await p.evaluate(() => document.querySelector('dialog[open] .overflow-y-auto')?.scrollTo(0, 0))
+    },
+  },
+  {
+    name: 'upload-1440-3-not-connected',
+    path: UPLOAD,
+    width: 1440,
+    height: 900,
+    at: async (p) => {
+      await chooseClip(p)
+      await p.getByRole('button', { name: 'Next' }).click()
+      await placePoints(p, CLIP_POINTS)
+      await p.getByRole('button', { name: 'Start analysis' }).click()
+      await p.getByText('Analysis server not connected in this demo build').waitFor()
+    },
+  },
 ]
 
+
+/**
+ * A 6 s test clip for the upload screenshots: a synthetic tilted pitch drawn in the browser
+ * (no match footage), encoded with the system ffmpeg. Written to node_modules/.cache.
+ */
+const TEST_CLIP = resolve(here, '..', 'node_modules', '.cache', 'gaffer_test_clip_0900_0930.mp4')
+async function makeTestClip(browser) {
+  mkdirSync(dirname(TEST_CLIP), { recursive: true })
+  const png = TEST_CLIP.replace('.mp4', '.png')
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+  const stripes = Array.from({ length: 12 }, (_, i) => `<path d="M${384 + i * 43} 158 L${427 + i * 43} 158 L${77 + (i + 1) * 94} 619 L${77 + i * 94} 619 Z" fill="${i % 2 ? '#3f8a3a' : '#4a9a44'}"/>`).join('')
+  await page.setContent(`<body style="margin:0"><svg width="1280" height="720" viewBox="0 0 1280 720">
+    <rect width="1280" height="720" fill="#2f6b2c"/>${stripes}
+    <g fill="none" stroke="#f4f4f0" stroke-width="4"><path d="M384 158 L896 158 L1203 619 L77 619 Z"/><path d="M640 158 L640 619"/>
+    <ellipse cx="640" cy="360" rx="95" ry="48"/><path d="M330 240 L430 240 L360 450 L230 450"/><path d="M950 240 L850 240 L920 450 L1050 450"/></g>
+    <text x="24" y="44" fill="#fff" font-family="sans-serif" font-size="22">Synthetic test clip for screenshots (not match footage)</text></svg></body>`)
+  await page.screenshot({ path: png })
+  await page.close()
+  const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-loop', '1', '-i', png, '-t', '6', '-r', '25', '-c:v', 'libvpx-vp9', '-b:v', '600k', '-pix_fmt', 'yuv420p', TEST_CLIP])
+  if (ff.status !== 0) throw new Error(`ffmpeg failed: ${ff.stderr}`)
+}
+
+/** the mascot at 56 and 128 px, cut from the live page's chat button */
+async function mascotShots(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  await page.goto(url + APP, { waitUntil: 'networkidle' })
+  const svg = await page.locator('button[aria-label^="Ask Gaffer"] svg').first().evaluate((el) => el.outerHTML)
+  for (const size of [56, 128]) {
+    await page.setContent(`<body style="margin:0;padding:16px;background:#fff;display:inline-block">${svg.replace(/width="\d+" height="\d+"/, `width="${size}" height="${size}"`)}</body>`)
+    await page.locator('body').screenshot({ path: resolve(out, `mascot-${size}.png`) })
+    console.log(`saved screenshots/mascot-${size}.png`)
+  }
+  await page.close()
+}
 
 const server = await startPreview()
 let browser
@@ -89,6 +204,8 @@ try {
   browser = await chromium.launch({ executablePath })
   if (productOnly) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    // the product shot should not show the first-visit hint dot on the upload button
+    await ctx.addInitScript(() => localStorage.setItem('gaffer.uploadHintSeen', '1'))
     const page = await ctx.newPage()
     watch(page, 'product')
     await page.goto(`${server.url}/app?t=1000&paused=1`, { waitUntil: 'networkidle' })
@@ -98,6 +215,8 @@ try {
     console.log(`saved public/product/app-desk.jpg (${Math.round(statSync(dest).size / 1000)} kB)`)
     await ctx.close()
   } else {
+    if (!only.length || only.some((o) => 'upload'.includes(o) || o.includes('upload'))) await makeTestClip(browser)
+    if (!only.length || only.some((o) => o.includes('mascot'))) await mascotShots(browser, server.url)
     for (const s of SHOTS) {
       if (only.length && !only.some((o) => s.name.includes(o))) continue
       const ctx = await browser.newContext({
@@ -110,7 +229,8 @@ try {
       if (s.path === '/') await warmUp(page)
       if (s.at) await s.at(page)
       await page.waitForTimeout(1400)
-      await page.screenshot({ path: resolve(out, `${s.name}.png`), fullPage: !!s.fullPage })
+      const clip = s.clip === 'bottom-right' ? { x: s.width - 420, y: s.height - 300, width: 420, height: 300 } : undefined
+      await page.screenshot({ path: resolve(out, `${s.name}.png`), fullPage: !!s.fullPage, clip })
       console.log(`saved screenshots/${s.name}.png`)
       await ctx.close()
     }

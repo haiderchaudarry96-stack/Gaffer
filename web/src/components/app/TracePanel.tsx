@@ -1,10 +1,12 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { m } from 'motion/react'
 import { ArrowDown, Cpu, Eye, Sparkles } from 'lucide-react'
+import Disclosure from '../ui/Disclosure'
 import type { AgentRunRow, TraceStep, TraceToolCall } from '../../data'
 import { formatClock } from '../../data/time'
 
 const OPENCV_TOOLS = new Set(['check_frame_quality', 'reanalyse_window', 'render_evidence'])
+const DECIDED: Record<string, string> = { confirmed: 'Confirmed', rejected: 'Rejected', uncertain: 'Marked uncertain' }
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
 const pct = (v: unknown, digits = 0) => (num(v) !== undefined ? `${(num(v)! * 100).toFixed(digits)} %` : '—')
@@ -105,6 +107,7 @@ export default function TracePanel({
   focusRef,
   teamName,
   stepsShown,
+  eventTime,
 }: {
   steps: TraceStep[]
   row: AgentRunRow | undefined
@@ -112,6 +115,8 @@ export default function TracePanel({
   teamName: string
   /** live replay: only the first n tool steps have happened yet */
   stepsShown?: number
+  /** the change's match time, for "Confirmed by the agent at 16:30" */
+  eventTime?: number | null
 }) {
   const listRef = useRef<HTMLOListElement>(null)
 
@@ -183,19 +188,30 @@ export default function TracePanel({
         })}
       </ol>
       {decision && decision.kind === 'decision' && (
-        <div className="mt-3 rounded-xl border border-line p-3 text-xs text-muted">
-          <p>
-            <span className="font-semibold text-text">Decided: {decision.decision}</span> by the {decision.decided_by} ·
-            rules verdict <span className="font-mono">{decision.verdict.verdict}</span> · {decision.llm_calls} LLM calls ·
-            ${decision.cost_usd.toFixed(4)}
+        <div className="mt-3 rounded-xl border border-line p-3">
+          <p className="text-base font-semibold text-text">
+            {DECIDED[decision.decision] ?? decision.decision} by the {decision.decided_by === 'agent' ? 'agent' : decision.decided_by}
+            {eventTime != null ? ` at ${formatClock(eventTime)}` : ''}
           </p>
-          {row && !row.opencv_changed_decision && (
-            <p className="mt-2 leading-relaxed">
-              Honest reading: the first pass alone gives the same decision ({row.first_pass_decision}). Here OpenCV set the
-              path (camera check, second look) and produced the evidence; it did not change the verdict. On real footage
-              that happened only on a simulated camera pan.
-            </p>
-          )}
+          <Disclosure
+            className="mt-2"
+            summaryClassName="text-sm font-medium text-muted hover:text-text"
+            summary={<span>Technical details</span>}
+          >
+            <div className="mt-2 space-y-2 text-xs leading-relaxed text-muted">
+              <p>
+                Decided by: {decision.decided_by} · rules verdict <span className="font-mono">{decision.verdict.verdict}</span> ·{' '}
+                {decision.llm_calls} LLM calls · ${decision.cost_usd.toFixed(4)}
+              </p>
+              {row && !row.opencv_changed_decision && (
+                <p>
+                  Honest reading: the first pass alone gives the same decision ({row.first_pass_decision}). Here OpenCV set the
+                  path (camera check, second look) and produced the evidence; it did not change the verdict. On real footage
+                  a changed verdict happened only on a simulated camera pan.
+                </p>
+              )}
+            </div>
+          </Disclosure>
         </div>
       )}
     </div>

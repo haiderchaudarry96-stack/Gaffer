@@ -52,3 +52,15 @@ export function useClockPlaying(clock: PlaybackClock): boolean {
     () => false,
   )
 }
+
+/** True once the window has scrolled past `px` (for headers that gain a shadow). */
+export function useScrolled(px = 8): boolean {
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > px)
+    on()
+    window.addEventListener('scroll', on, { passive: true })
+    return () => window.removeEventListener('scroll', on)
+  }, [px])
+  return scrolled
+}

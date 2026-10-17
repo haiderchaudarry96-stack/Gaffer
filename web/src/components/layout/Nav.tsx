@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useScrolled } from '../../lib/hooks'
 import { Menu, X } from 'lucide-react'
 import Logo from '../ui/Logo'
 import { ButtonLink } from '../ui/Button'
@@ -18,15 +19,8 @@ const LINKS = [
  * README decision 13). It shrinks slightly once the page scrolls.
  */
 export default function Nav() {
-  const [scrolled, setScrolled] = useState(false)
+  const scrolled = useScrolled(24)
   const [open, setOpen] = useState(false)
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
 
   return (
     <header

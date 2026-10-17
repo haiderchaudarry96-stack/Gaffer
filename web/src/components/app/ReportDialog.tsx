@@ -3,6 +3,7 @@ import Cited from '../ui/Cited'
 import { useResource } from '../../data/useResource'
 import { getReport } from '../../lib/matchData'
 import { ErrorState, Skeleton } from '../ui/States'
+import type { CoachReport } from '../../data'
 
 function Section({ title, items, ordered = false }: { title: string; items: string[]; ordered?: boolean }) {
   const List = ordered ? 'ol' : 'ul'
@@ -21,16 +22,37 @@ function Section({ title, items, ordered = false }: { title: string; items: stri
 }
 
 /** Shows the stored coach report for this window (generating a new one needs the backend). */
-export default function ReportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const res = useResource(getReport, 'report')
+export default function ReportDialog({
+  open,
+  onClose,
+  override,
+}: {
+  open: boolean
+  onClose: () => void
+  /** an uploaded analysis's report (null: it has none); undefined = the stored demo report */
+  override?: CoachReport | null
+}) {
+  const demo = useResource(getReport, 'report')
+  const res =
+    override === undefined
+      ? demo
+      : override === null
+        ? ({ status: 'error', error: 'This analysis has no coach report yet.' } as const)
+        : ({ status: 'ready', data: override } as const)
   return (
     <Dialog open={open} onClose={onClose} title="Coach report · 15:00–21:00">
       <div className="space-y-6 p-5">
         <p className="rounded-xl border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-muted">
-          This is the <span className="text-text">stored</span> report from the Phase 3 run; generating a new one needs the
-          backend. Written by the <span className="text-text">code template</span>: Nova 2 Lite’s version failed the
-          grounding check twice. Every number cites its source: [evt_…] is an agent decision, [seg a-b] the tactics
-          timeline.
+          {override === undefined ? (
+            <>
+              This is the <span className="text-text">stored</span> report from the Phase 3 run; generating a new one needs
+              the backend. Written by the <span className="text-text">code template</span>: Nova 2 Lite’s version failed
+              the grounding check twice. Every number cites its source: [evt_…] is an agent decision, [seg a-b] the
+              tactics timeline.
+            </>
+          ) : (
+            <>Report of the uploaded analysis, as returned by the backend.</>
+          )}
         </p>
         {res.status === 'loading' && <Skeleton className="h-64" />}
         {res.status === 'error' && <ErrorState title="Could not load the report" detail={res.error} />}

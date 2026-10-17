@@ -16,7 +16,13 @@
   /* accent used as TEXT (lime is fine on dark; darker ink on light) */
   --accent-ink: #c8f542;
   --on-accent: #070d0a;
+  /* 2D pitch (PitchCanvas reads these where the canvas sits) */
+  --pitch-grass: var(--surface);
+  --pitch-stripe: var(--surface-2);
   --pitch-line: rgba(238, 244, 240, 0.3);
+  --pitch-home: var(--team-a);
+  --pitch-away: var(--team-b);
+  --pitch-official: var(--muted);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --radius-card: 18px;
@@ -37,11 +43,19 @@
   --text: #0b1510;
   --muted: #4a5c52;
   --accent-ink: #4a6b00;
-  --team-a: #d93a2f;
-  --team-b: #0a7fb0;
+  /* team colours on light: coral and sky blue, >= 3:1 on white for dots and legends (never text) */
+  --team-a: #f2483b;
+  --team-b: #0a8fd4;
   --warn: #9a5b00;
   --danger: #c2183f;
-  --pitch-line: rgba(11, 21, 16, 0.28);
+  /* light pitch: white grass, pale-green mowing stripes, thin grey lines, dark grey officials */
+  --pitch-grass: #ffffff;
+  --pitch-stripe: #eaf4e4;
+  --pitch-line: #b5bfb6;
+  --pitch-official: #4b5563;
+  /* custom properties resolve where they are declared: restate the aliases for the light set */
+  --pitch-home: #f2483b;
+  --pitch-away: #0a8fd4;
   color-scheme: light;
   color: var(--text);
 }
@@ -154,5 +168,27 @@ h3 {
   }
   to {
     background-position: -200% 0;
+  }
+}
+
+/* Mascot eye blink: a quick close every ~6 s (no animation with reduced motion). */
+.mascot-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mascot-blink 6s infinite;
+}
+@keyframes mascot-blink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascot-eyes {
+    animation: none;
   }
 }

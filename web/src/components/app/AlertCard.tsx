@@ -10,6 +10,7 @@ import { splitAlertExplanation } from '../../data/alerts'
 import type { LivePhase, LivePlan } from '../../data/live'
 import { formatClock } from '../../data/time'
 import { STEP_NAMES } from './stepNames'
+import Mascot from '../mascot/Mascot'
 
 type LocalDecision = { status: 'approved' | 'rejected'; at: Date } | null
 
@@ -64,7 +65,12 @@ export default function AlertCard({
     return (
       <article aria-live="polite" className="rounded-(--radius-card) border border-warn/50 bg-surface p-6">
         <div className="flex items-center justify-between">
-          <Badge status="uncertain">{phase === 'spotted' ? 'possible change' : 'checking'}</Badge>
+          <span className="flex items-center gap-2">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-surface-2" aria-hidden="true">
+              <Mascot size={44} />
+            </span>
+            <Badge status="uncertain">{phase === 'spotted' ? 'possible change' : 'checking'}</Badge>
+          </span>
           <span className="font-mono text-sm text-muted">{formatClock(plan.onset)}</span>
         </div>
         <h2 className="mt-4 font-display text-3xl font-semibold text-text">
@@ -99,6 +105,9 @@ export default function AlertCard({
       <div className="space-y-4 p-6 pb-4">
         <div className="flex items-center justify-between gap-2">
           <span className="flex flex-wrap items-center gap-2">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-surface-2" aria-hidden="true">
+              <Mascot size={44} />
+            </span>
             <Badge status="confirmed">verified</Badge>
             <Badge status={status}>{status === 'pending' ? 'waits for you' : status}</Badge>
           </span>

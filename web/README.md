@@ -17,7 +17,10 @@ node scripts/pick-windows.mjs      # recompute the hero window and the /app star
 python3 scripts/crop-evidence.py   # recut the before/after slider images from the evt_003 evidence image
 ```
 
-`/app` URL parameters (demos and screenshots): `?t=<match seconds>&live=1&drawer=1&paused=1`.
+`/app` URL parameters (demos and screenshots): `?t=<match seconds>&live=1&drawer=1&paused=1&upload=1`.
+
+Connect a backend with `VITE_API_URL` (e.g. `VITE_API_URL=http://localhost:8000 npm run dev`). Without
+it the build is a static demo: upload and chat say plainly that the server is not connected.
 
 ## Data
 
@@ -37,7 +40,7 @@ local video file, which stays in the browser.
    Team colours are darker on light (`#D93A2F`, `#0A7FB0`) and used for dots only (≥ 3:1).
    A fixed backdrop interpolates dark → light over the first 30 % of the first light section
    (instant with reduced motion); the light sections also carry their own light background so
-   contrast never depends on scroll position. `/app` stays dark.
+   contrast never depends on scroll position. (`/app` was dark until the third pass; see 14.)
 2. **No hero video.** The hero is a tilted 2D pitch replaying the real tracked positions of
    19:16–20:20, the longest stretch where both teams keep ≥ 8 outfield players in a team in every
    frame and both shapes are confident (`scripts/pick-windows.mjs`, `src/lib/windows.ts`). It never
@@ -71,7 +74,76 @@ local video file, which stays in the browser.
 12. **Screenshots live in `web/screenshots/`** (the brief says `docs/screenshots/`; `docs/` is not
     edited from the web branch).
 13. **The landing header is always white** (light tokens, solid white `bg-surface`), also over the
-    dark hero (user decision after the second pass). `/app` keeps its dark header.
+    dark hero (user decision after the second pass), with a soft shadow once the page scrolls.
+
+### Third pass (user feedback after running the site locally)
+
+14. **`/app` is light**, with the same tokens and the same white header (shadow when scrolled) as
+    the landing body. Reverses "/app stays dark".
+15. **Light 2D pitch** wherever the pitch sits on a light background (`/app`, the landing story):
+    white grass with pale-green mowing stripes (`#EAF4E4`), thin grey lines (`#B5BFB6`), coral
+    `#F2483B` for White and sky blue `#0A8FD4` for Blue (both ≥ 3:1 on white), keepers as ringed
+    dots, officials as small dark grey dots (`#4B5563`), players OpenCV has not put in a team yet
+    as hollow grey rings. No trails, no glow. Tokens: `--pitch-*` in `src/index.css`. The landing
+    hero keeps its dark pitch. Orientation unchanged (home attacks right, like the evidence image).
+16. **Upload for analysis** (the full frontend flow; the backend plugs in through
+    `src/data/analysis.ts`): a small "Upload for analysis" button with a tooltip and, on the first
+    visit, a pulsing lime dot (until the first interaction or 5 s; none with reduced motion).
+    The panel: choose an MP4/MOV (drop or button; name, size, duration and size in pixels read in
+    the browser) -> **"Show us where the pitch is"** -> analyse. The pitch step never says
+    calibration, homography or corners: it shows the first frame, a glowing numbered target and one
+    instruction per click ("1. Click the top-left corner of the pitch", ...), placed points keep
+    their number and are draggable (tooltip "Pitch corner 2 of 4. Drag to adjust."), undo and
+    reset, a "Why do we ask?" popover, a looping illustration of a tilted pitch straightening into
+    a flat map (static with reduced motion), and "My video already looks straight down on the full
+    pitch" (fills the frame edges; "Use this only for a straight top-down view"). Keyboard: arrow
+    keys move the target (Shift = bigger steps), Enter places it, a focused point moves with the
+    arrow keys; the next instruction is announced (aria-live). **Without `VITE_API_URL`, "Start
+    analysis" shows "Analysis server not connected in this demo build"** and offers "Open the
+    analysed demo match instead" (the chosen file then plays next to the stored analysis). No fake
+    progress, no fake results. With a backend: upload % -> server stages and progress -> the result
+    replaces the demo in the same views (pitch, timeline, alerts, chat).
+17. **Agent mascot** (`src/components/mascot/Mascot.tsx`, original inline SVG: a robot with a
+    football head, dark visor, cyan eyes, smile, silver headset with microphone, green jersey with
+    navy trim and an "AI" badge; eyes blink every ~6 s, not with reduced motion). It is the chat
+    button, the alert card avatar and the drawer header icon.
+18. **Chat**: the round mascot button (soft lime ring, small three-dot bubble) expands on hover,
+    keyboard focus or tap into a 360 × 480 chat box (header "Gaffer · Your tactical analyst",
+    suggested questions built from the real timeline, input "Ask Gaffer about this analysis").
+    It collapses when the pointer leaves with an empty input, on a tap outside, or on Escape;
+    focus is trapped while it is open. Sending goes through `src/data/chat.ts`; without a backend
+    it says "The agent runs in Gaffer's Python backend on Amazon Bedrock; answers go live when this
+    site is connected to it." and marks a sent question as not sent.
+19. **Drawer summary**: the coach-facing line is just "Confirmed by the agent at 16:30" (or the
+    event's decision). The LLM call count, cost, rules verdict and the honest note sit in a
+    collapsed "Technical details" toggle (text unchanged).
+
+## Backend API (contract for the FastAPI backend)
+
+All JSON; base URL = `VITE_API_URL`. Errors: a non-2xx status with `{"detail": "<message>"}`
+(FastAPI's default); the UI shows the detail. Types live in `src/data/analysis.ts`,
+`src/data/chat.ts` and `src/data/types.ts` (MatchState, TacticalTimeline, Alert, trace steps as in
+`docs/DATA_CONTRACT.md` and `docs/AGENT_DESIGN.md` §7). Tests: `src/data/api.test.ts` (mocked fetch).
+
+| Method and path | Request | Response |
+|---|---|---|
+| `POST /api/analyses` | `multipart/form-data`, field `video` (MP4/MOV) | `201` AnalysisStatus (`status: "uploaded"`, `stage: "uploading"`) |
+| `POST /api/analyses/{id}/start` | `{"points": [{x,y}×4], "frame": {"width","height","t_s"}, "straight_down": bool}`: pitch top-left, top-right, bottom-right, bottom-left in video pixels (origin top-left) | AnalysisStatus |
+| `GET /api/analyses/{id}` | — | AnalysisStatus |
+| `GET /api/analyses/{id}/result` | — (only when `status = "done"`) | AnalysisResult |
+| `POST /api/chat` | `{"match_id", "question", "history": [{"role": "user"\|"assistant", "text"}]}` | `{"answer", "citations": ["R2", "evt_003", …], "trace_id"}` |
+
+- **AnalysisStatus**: `{"id", "status": "uploaded"|"queued"|"running"|"done"|"failed", "stage":
+  "uploading"|"detecting"|"teams"|"agent"|"done", "progress": 0..1 (overall), "eta_s": number|null,
+  "error": string|null}`. The UI polls every 2 s and labels the stages Uploading, Detecting players
+  (OpenCV), Teams and formations, Agent checking changes, Done.
+- **AnalysisResult**: `{"id", "label", "match_state": MatchState, "timeline": TacticalTimeline,
+  "alerts": [Alert], "trace": [trace step], "report": CoachReport|null}`. Evidence images in alerts
+  should be absolute URLs the backend serves.
+- `POST /api/analyses/{id}/start` is a fourth endpoint next to the three requested: upload and the
+  pitch points are separate steps, so the request that starts the work carries the 4 points.
+- The time estimate in the UI uses the measured 1.2 s of processing per second of drone video
+  (laptop CPU), plus agent checks; the server's `eta_s` is shown when it sends one.
 
 ## Licences
 

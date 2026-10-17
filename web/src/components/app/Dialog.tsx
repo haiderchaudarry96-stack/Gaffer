@@ -13,6 +13,7 @@ export default function Dialog({
   children,
   wide = false,
   variant = 'center',
+  icon,
 }: {
   open: boolean
   onClose: () => void
@@ -20,6 +21,8 @@ export default function Dialog({
   children: ReactNode
   wide?: boolean
   variant?: 'center' | 'drawer'
+  /** shown before the title, e.g. the mascot */
+  icon?: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
@@ -39,7 +42,7 @@ export default function Dialog({
       ref={ref}
       onClose={onClose}
       aria-labelledby="dialog-title"
-      className={`overflow-hidden border-line bg-surface p-0 text-text backdrop:bg-bg/70 backdrop:backdrop-blur-sm ${shell}`}
+      className={`overflow-hidden border-line bg-surface p-0 text-text backdrop:bg-[rgba(11,21,16,0.38)] backdrop:backdrop-blur-[2px] ${shell}`}
     >
       {open && (
         <m.div
@@ -49,7 +52,12 @@ export default function Dialog({
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
         >
           <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
-            <h2 id="dialog-title" className="font-sans text-lg font-semibold tracking-normal">
+            <h2 id="dialog-title" className="flex items-center gap-3 font-sans text-lg font-semibold tracking-normal">
+              {icon && (
+                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface-2" aria-hidden="true">
+                  {icon}
+                </span>
+              )}
               {title}
             </h2>
             <button

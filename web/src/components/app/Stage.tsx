@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle2, Film, Pause, Play, X } from 'lucide-react'
+import { useEffect, useId, useRef } from 'react'
+import { ArrowLeft, ArrowRight, CheckCircle2, Pause, Play, X } from 'lucide-react'
+import UploadButton from '../upload/UploadButton'
 import PitchCanvas from '../pitch/PitchCanvas'
 import type { PositionIndex } from '../pitch/positions'
 import type { PlaybackClock } from '../../lib/clock'
@@ -8,7 +9,15 @@ import type { FormationTimeline, MatchState, TeamSide } from '../../data'
 import { displayFormation } from '../../data/timeline'
 import { formatClock } from '../../data/time'
 import { Skeleton } from '../ui/States'
-import { offsetFromFileName, type Transport, type VideoSource } from './transport'
+import type { Transport, VideoSource } from './transport'
+
+/** A video the coach picked from their disk; it stays in the browser. */
+export interface LocalVideo {
+  url: string
+  name: string
+  /** match second at which the video starts */
+  offset: number
+}
 
 const RATES = [1, 2, 4]
 
@@ -62,6 +71,9 @@ export default function Stage({
   timeline,
   verifiedFor,
   onVideo,
+  video: file,
+  onRemoveVideo,
+  onUpload,
 }: {
   clock: PlaybackClock
   transport: Transport
@@ -71,15 +83,15 @@ export default function Stage({
   /** id of an agent-confirmed change the team is showing at time t, if any */
   verifiedFor: (side: TeamSide, t: number) => string | null
   onVideo: (v: VideoSource | null) => void
+  video: LocalVideo | null
+  onRemoveVideo: () => void
+  onUpload: () => void
 }) {
   const t = useClockTime(clock, 8)
-  const inputId = useId()
   const rangeId = useId()
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [file, setFile] = useState<{ url: string; name: string; offset: number } | null>(null)
   const names = timeline?.teamNames ?? { home: 'White', away: 'Blue' }
 
-  useEffect(() => () => void (file && URL.revokeObjectURL(file.url)), [file])
   useEffect(() => {
     const el = videoRef.current
     if (!file || !el) return
@@ -90,13 +102,6 @@ export default function Stage({
       onVideo(null)
     }
   }, [file, clock, onVideo])
-
-  const pick = (f: File | undefined) => {
-    if (!f) return
-    // TeamTrack clips are named by match second (…_0900_0930.mp4); otherwise assume the window start
-    const offset = offsetFromFileName(f.name) ?? clock.min
-    setFile({ url: URL.createObjectURL(f), name: f.name, offset })
-  }
 
   const pitch = match ? (
     <PitchCanvas
@@ -136,7 +141,7 @@ export default function Stage({
               className="size-full rounded-xl bg-black object-contain"
               aria-label={`Your video ${file.name}, starting at match time ${formatClock(file.offset)}`}
             />
-            <div className="absolute right-3 bottom-14 w-1/3 overflow-hidden rounded-lg border border-line bg-surface/90 shadow-lg">
+            <div className="absolute right-3 bottom-14 w-1/3 overflow-hidden rounded-lg border border-line bg-surface shadow-lg">
               <div className="aspect-[110/73]">{pitch}</div>
             </div>
           </>
@@ -184,21 +189,13 @@ export default function Stage({
         {file ? (
           <button
             type="button"
-            onClick={() => setFile(null)}
+            onClick={onRemoveVideo}
             className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm text-muted hover:bg-surface-2 hover:text-text"
           >
             <X className="size-4" aria-hidden="true" /> Remove video
           </button>
-        ) : (
-          <label
-            htmlFor={inputId}
-            className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full border border-line px-3 text-sm text-text focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent hover:bg-surface-2"
-            title="Video stays in your browser"
-          >
-            <Film className="size-4" aria-hidden="true" /> Your video
-            <input id={inputId} type="file" accept="video/*" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
-          </label>
-        )}
+        ) : null}
+        <UploadButton onClick={onUpload} />
       </div>
     </section>
   )

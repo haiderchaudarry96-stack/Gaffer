@@ -87,6 +87,8 @@ export async function loadTimeline(match: MatchEntry = DEFAULT_MATCH, read: Read
  */
 export function evidenceImageUrl(alert: Alert, match: MatchEntry = DEFAULT_MATCH): string | null {
   if (!alert.evidence_image) return null
+  // a backend analysis returns a URL it serves itself
+  if (/^https?:\/\//.test(alert.evidence_image)) return alert.evidence_image
   const base = alert.evidence_image.split('/').at(-1) ?? ''
   return match.assets.includes(base) ? sampleUrl(path(match, base)) : null
 }
