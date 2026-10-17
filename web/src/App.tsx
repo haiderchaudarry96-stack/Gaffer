@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
-import { MotionConfig } from 'motion/react'
+import { domAnimation, LazyMotion, MotionConfig } from 'motion/react'
 import LandingPage from './pages/LandingPage'
 import NotFound from './pages/NotFound'
 import { PageSkeleton } from './components/ui/States'
@@ -12,6 +12,8 @@ export default function App() {
   return (
     // reducedMotion="user": Motion turns transform/layout animations off when the OS asks for it.
     <MotionConfig reducedMotion="user">
+      {/* LazyMotion + m.* keeps the animation code small (only the DOM animation features) */}
+      <LazyMotion features={domAnimation} strict>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
@@ -26,6 +28,7 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      </LazyMotion>
     </MotionConfig>
   )
 }

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { animate, useInView } from 'motion/react'
+import { useInView } from 'motion/react'
 import { usePrefersReducedMotion } from '../../lib/hooks'
+
+const DURATION_MS = 800
+const easeOut = (x: number) => 1 - Math.pow(1 - x, 3)
 
 /** Counts up to `value` once when scrolled into view; shows the value at once with reduced motion. */
 export default function CountUp({ value, decimals = 0, suffix = '' }: { value: number; decimals?: number; suffix?: string }) {
@@ -11,12 +14,15 @@ export default function CountUp({ value, decimals = 0, suffix = '' }: { value: n
 
   useEffect(() => {
     if (!inView || reduced) return
-    const controls = animate(0, value, {
-      duration: 0.8,
-      ease: [0.22, 1, 0.36, 1],
-      onUpdate: (v) => setShown(v),
-    })
-    return () => controls.stop()
+    let raf = 0
+    const start = performance.now()
+    const tick = (now: number) => {
+      const k = Math.min(1, (now - start) / DURATION_MS)
+      setShown(value * easeOut(k))
+      if (k < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
   }, [inView, reduced, value])
 
   const v = reduced ? value : shown

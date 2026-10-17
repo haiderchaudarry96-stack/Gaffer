@@ -85,6 +85,12 @@ export default function AppPage() {
   return (
     <div className="min-h-screen bg-bg">
       <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
+        <a
+          href="#main"
+          className="sr-only rounded-full bg-accent px-4 py-2 font-semibold text-bg focus:not-sr-only focus:absolute focus:top-3 focus:left-4 focus:z-50"
+        >
+          Skip to content
+        </a>
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
           <Logo />
           <span className="hidden h-6 w-px bg-line sm:block" aria-hidden="true" />

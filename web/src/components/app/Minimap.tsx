@@ -41,13 +41,13 @@ export default function Minimap({
           const f = timeline ? formationAt(timeline, side, t) : null
           const v = timeline ? verifiedAt(timeline, side, t, f) : null
           return (
-            <div key={side} aria-live="polite">
+            <div key={side}>
               <p className="flex items-center gap-1.5 text-xs text-muted">
                 <span className={`size-2.5 rounded-full ${side === 'home' ? 'bg-team-a' : 'bg-team-b'}`} aria-hidden="true" />
-                {names[side]} <span className="text-muted/80">({side})</span>
-                {counts && <span className="ml-auto font-mono tabular">{counts[side]} outfield seen</span>}
+                {names[side]} <span>({side})</span>
               </p>
-              <p className="font-mono text-4xl font-semibold tracking-tight text-text tabular">
+              {counts && <p className="font-mono text-[11px] text-muted tabular">{counts[side]} outfield in a team now</p>}
+              <p className="font-mono text-4xl font-semibold tracking-tight text-text tabular" aria-live="polite">
                 {f === 'uncertain' ? <span className="text-xl font-medium text-muted">unclear</span> : (f ?? '—')}
               </p>
               <p className="mt-0.5 flex min-h-5 items-center gap-1 text-xs">

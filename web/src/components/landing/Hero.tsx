@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { ArrowDown, ArrowRight } from 'lucide-react'
 import PitchCanvas from '../pitch/PitchCanvas'
 import { ButtonLink } from '../ui/Button'
@@ -93,7 +93,7 @@ export default function Hero() {
       />
       {/* the live pitch, tilted like a broadcast camera */}
       <div className="absolute inset-0 -z-10 [perspective:1400px]" aria-hidden={res.status !== 'ready'}>
-        <motion.div
+        <m.div
           className="absolute inset-x-[-20%] top-[52%] bottom-[-14%] origin-bottom sm:inset-x-[-6%] sm:top-[14%] lg:left-[18%] lg:right-[-8%]"
           style={{ rotateX: 36 }}
           initial={{ opacity: 0 }}
@@ -109,7 +109,7 @@ export default function Hero() {
             className="size-full"
             label="Animated top-down pitch: real tracked player positions from the TeamTrack drone clip, 15:00 to 21:00, White in coral, Blue in sky blue."
           />
-        </motion.div>
+        </m.div>
       </div>
       {/* darkening gradients so the copy stays readable */}
       <div
@@ -118,21 +118,21 @@ export default function Hero() {
       />
 
       <div className="mx-auto w-full max-w-7xl px-4 pt-28 pb-56 sm:px-6 sm:pb-40">
-        <motion.p
+        <m.p
           className="mb-6 inline-flex items-center gap-2 rounded-full border border-line bg-surface/70 px-3 py-1 font-mono text-[11px] tracking-widest text-muted uppercase backdrop-blur"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         >
           OpenCV 5 · self-checking agent · for coaches
-        </motion.p>
+        </m.p>
         <h1
           id="hero-title"
           className="max-w-3xl font-display text-[2.6rem] leading-[1.02] font-bold text-text sm:text-6xl lg:text-[5.25rem]"
         >
           {words.map((w, i) => (
             <span key={i} className="inline-block overflow-hidden pb-1 align-bottom">
-              <motion.span
+              <m.span
                 className="inline-block"
                 initial={{ y: '105%', opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
@@ -140,19 +140,19 @@ export default function Hero() {
               >
                 {w}
                 {i < words.length - 1 ? ' ' : ''}
-              </motion.span>
+              </m.span>
             </span>
           ))}
         </h1>
-        <motion.p
+        <m.p
           className="mt-6 max-w-xl text-lg text-muted sm:text-xl"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: 0.65 }}
         >
           {TAGLINE}
-        </motion.p>
-        <motion.div
+        </m.p>
+        <m.div
           className="mt-9 flex flex-wrap gap-3"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -164,10 +164,12 @@ export default function Hero() {
           <ButtonLink to="#how" variant="ghost" size="lg">
             How it checks <ArrowDown className="size-4" aria-hidden="true" />
           </ButtonLink>
-        </motion.div>
+        </m.div>
         <p className="mt-8 max-w-md text-xs leading-relaxed text-muted">
           The pitch behind this text is real data: player positions tracked by Gaffer’s OpenCV 5 pipeline on a TeamTrack
-          drone clip (match time 15:00–21:00), replayed at 3× speed. No video, no mock-up.
+          drone clip (match time 15:00–21:00),{' '}
+          {reduced ? 'shown as a still at 16:45 because your system asks for reduced motion' : 'replayed at 3× speed'}. No video, no
+          mock-up.
           {res.status === 'error' && <span className="block text-warn">Positions could not be loaded: {res.error}</span>}
         </p>
       </div>

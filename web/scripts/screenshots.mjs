@@ -38,6 +38,7 @@ const SHOTS = [
   { name: 'landing-1440', path: '/', width: 1440, height: 900, fullPage: true },
   { name: 'landing-375', path: '/', width: 375, height: 812, fullPage: true },
   { name: 'app-1440', path: '/app', width: 1440, height: 900, fullPage: true },
+  { name: 'app-375', path: '/app', width: 375, height: 812, fullPage: true },
 ]
 
 const server = await startPreview()

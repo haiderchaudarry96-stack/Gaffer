@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { Check, Info, Maximize2, RotateCcw, X } from 'lucide-react'
 import Badge from '../ui/Badge'
 import Cited from '../ui/Cited'
@@ -42,7 +42,7 @@ export default function AlertCard({
   const alt = evidenceAlt(alert, event, teamName)
 
   return (
-    <motion.article
+    <m.article
       initial={{ opacity: 0, x: 24 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ type: 'spring', stiffness: 260, damping: 28 }}
@@ -140,6 +140,6 @@ export default function AlertCard({
           <img src={img} alt={alt} className="w-full" />
         </Dialog>
       )}
-    </motion.article>
+    </m.article>
   )
 }

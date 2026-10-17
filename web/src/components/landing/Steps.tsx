@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { m } from 'motion/react'
 import { ScanSearch, ShieldCheck, Video } from 'lucide-react'
 import Reveal from '../ui/Reveal'
 
@@ -40,7 +40,7 @@ export default function Steps() {
 
         <ol className="relative mt-16 grid gap-6 md:grid-cols-3">
           {/* the line that connects the steps, drawn on scroll */}
-          <motion.div
+          <m.div
             aria-hidden="true"
             className="absolute top-[3.25rem] right-[16%] left-[16%] hidden h-px origin-left bg-gradient-to-r from-line via-accent/60 to-line md:block"
             initial={{ scaleX: 0 }}
