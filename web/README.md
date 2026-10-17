@@ -70,6 +70,8 @@ local video file, which stays in the browser.
 11. **Accordions and the drawer animate opacity and transform only**; height changes are instant.
 12. **Screenshots live in `web/screenshots/`** (the brief says `docs/screenshots/`; `docs/` is not
     edited from the web branch).
+13. **The landing header is always white** (light tokens, solid white `bg-surface`), also over the
+    dark hero (user decision after the second pass). `/app` keeps its dark header.
 
 ## Licences
 

@@ -1,5 +1,5 @@
-import { lazy, Suspense, useRef, useState } from 'react'
-import { m, useMotionValueEvent, useScroll, useTransform } from 'motion/react'
+import { lazy, Suspense, useRef } from 'react'
+import { m, useScroll, useTransform } from 'motion/react'
 import Nav from '../components/layout/Nav'
 import Hero from '../components/landing/Hero'
 import ProductShot from '../components/landing/ProductShot'
@@ -25,13 +25,11 @@ export default function LandingPage() {
   const firstLight = useRef<HTMLElement>(null)
   const { scrollYProgress } = useScroll({ target: firstLight, offset: ['start end', '0.3 end'] })
   const bg = useTransform(scrollYProgress, (p) => (reduced ? (p < 0.5 ? DARK_BG : LIGHT_BG) : mix(DARK_BG, LIGHT_BG, p)))
-  const [light, setLight] = useState(false)
-  useMotionValueEvent(scrollYProgress, 'change', (p) => setLight(p > 0.6))
 
   return (
     <>
       <m.div aria-hidden="true" className="fixed inset-0 -z-50" style={{ backgroundColor: bg }} />
-      <Nav light={light} />
+      <Nav />
       <main id="main">
         <Hero />
         <div className="theme-light">

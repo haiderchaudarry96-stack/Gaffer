@@ -13,9 +13,11 @@ const LINKS = [
   { href: GITHUB_URL, label: 'GitHub' },
 ]
 
-/** Sticky landing nav: blurs and shrinks once the page scrolls. */
-/** `light`: the page below the hero is light, so the nav switches to the light tokens. */
-export default function Nav({ light = false }: { light?: boolean }) {
+/**
+ * Sticky landing nav: always white (light tokens), also over the dark hero (user decision,
+ * README decision 13). It shrinks slightly once the page scrolls.
+ */
+export default function Nav() {
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
 
@@ -28,8 +30,8 @@ export default function Nav({ light = false }: { light?: boolean }) {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-[background-color,border-color,padding] duration-300 ease-(--ease-out) ${light ? 'theme-light' : ''} ${
-        scrolled || open ? 'border-b border-line bg-bg/75 py-2.5 backdrop-blur-md' : 'border-b border-transparent py-4'
+      className={`theme-light fixed inset-x-0 top-0 z-50 border-b border-line bg-surface transition-[padding,box-shadow] duration-300 ease-(--ease-out) ${
+        scrolled || open ? 'py-2.5 shadow-[0_8px_24px_-16px_rgba(7,13,10,0.35)]' : 'py-4'
       }`}
     >
       <a
