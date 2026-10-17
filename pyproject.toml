@@ -31,7 +31,8 @@ dependencies = [
 dev = [
     "pytest>=8.0",                     # MIT
     "ruff>=0.6",                       # MIT
-    "httpx>=0.28",                     # BSD-3 (FastAPI TestClient; pulls httpcore BSD-3)
+    "httpx2>=2.13",                    # BSD-3 (FastAPI TestClient; pulls httpcore2 BSD-3,
+                                       #   truststore MIT)
 ]
 
 [tool.setuptools.packages.find]

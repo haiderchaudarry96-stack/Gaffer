@@ -191,6 +191,12 @@ def analysis_result(storage: Storage, aid: str, status: dict[str, Any], store: A
             v["evidence_image"] = evidence_url(base_url, f"/api/analyses/{aid}", e["id"])
     name = (status.get("video") or {}).get("filename", "upload")
     report = read_json(storage, f"{aid}/report.json")
+    explanations = read_json(storage, f"{aid}/explanations.json")["candidates"]
+    rows = read_json(storage, f"{aid}/run_rows.json")["rows"]
+    for item in explanations + rows:  # local file paths -> the URL the API serves
+        if item.get("evidence_image"):
+            item["evidence_image"] = evidence_url(base_url, f"/api/analyses/{aid}",
+                                                  item["event_id"])
     return {"id": aid, "label": f"Uploaded match · {name}", "kind": "upload",
             "match_state": read_json(storage, f"{aid}/match_state.json"),
             "timeline": tl,
@@ -198,9 +204,9 @@ def analysis_result(storage: Storage, aid: str, status: dict[str, Any], store: A
             "trace": read_jsonl(storage.read_bytes(f"{aid}/trace.jsonl").decode("utf-8")),
             "report": report,
             "report_markdown": storage.read_bytes(f"{aid}/report.md").decode("utf-8"),
-            "explanations": read_json(storage, f"{aid}/explanations.json")["candidates"],
+            "explanations": explanations,
             "team_model": read_json(storage, f"{aid}/match_state.teams.json"),
-            "run_rows": read_json(storage, f"{aid}/run_rows.json")["rows"],
+            "run_rows": rows,
             "summary": status.get("summary")}
 
 

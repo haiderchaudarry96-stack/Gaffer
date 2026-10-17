@@ -1,7 +1,7 @@
 # Exact pinned versions (Python 3.12.10, Windows, pip freeze, 2026-10-09; supervision added 2026-10-10).
 # Reproduce: pip install -r requirements.lock && pip install -e . --no-deps
 # Server: swap opencv-contrib-python for opencv-contrib-python-headless==5.0.0.93
-# Phase 4 backend (17 Oct): fastapi, uvicorn, python-multipart, httpx and their dependencies,
+# Phase 4 backend (17 Oct): fastapi, uvicorn, python-multipart, httpx2 (tests) and their dependencies,
 # resolved with the versions above on Python 3.12 (Linux); all MIT / BSD-3 / Apache 2.0.
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -19,8 +19,8 @@ defusedxml==0.7.1
 fastapi==0.143.3
 fonttools==4.66.1
 h11==0.16.0
-httpcore==1.0.9
-httpx==0.28.1
+httpcore2==2.13.0
+httpx2==2.13.0
 idna==3.20
 iniconfig==2.3.1
 jmespath==1.1.0
@@ -51,6 +51,7 @@ six==1.17.0
 starlette==1.8.0
 supervision==0.30.9
 tqdm==4.70.1
+truststore==0.10.5
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 tzdata==2026.5
