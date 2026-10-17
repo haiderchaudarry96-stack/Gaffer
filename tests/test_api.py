@@ -103,6 +103,9 @@ def videos(tmp_path_factory):
 
 def make_client(tmp_path: Path, cfg: dict[str, Any], llm: Any = None, **kw: Any
                 ) -> TestClient:
+    # the tests never depend on whether web/dist happens to be built in this checkout
+    if not str(cfg["api"].get("web_dist", "")).startswith(str(tmp_path)):
+        cfg = {**cfg, "api": {**cfg["api"], "web_dist": str(tmp_path / "no_web_dist")}}
     usage = Usage(cfg, str(tmp_path / "usage.json"))
     factory = (lambda: llm) if llm is not None else kw.pop("llm_factory", None)
     app = create_app(cfg, storage=LocalStorage(tmp_path / "api"), llm_factory=factory,
@@ -313,6 +316,24 @@ def test_known_teamtrack_clip_skips_the_pitch_step(tmp_path, base_cfg) -> None:
     # known_source=false: treated as any other video (pitch step)
     st2 = upload(c, p, known_source="false").json()
     assert st2["status"] in ("needs_confirmation", "needs_corners")
+
+
+def test_built_site_is_served_without_leaving_its_folder(tmp_path, base_cfg) -> None:
+    """With web/dist built, / and client routes get index.html, assets are served, /api/
+    paths stay JSON 404s, and no path reaches a file outside the site folder."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>Gaffer</title>")
+    (dist / "assets" / "app.js").write_text("console.log(1)")
+    (tmp_path / "secret.txt").write_text("not for the web")
+    cfg = {**base_cfg, "api": {**base_cfg["api"], "web_dist": str(dist)}}
+    c = make_client(tmp_path, cfg)
+    assert "Gaffer" in c.get("/").text and "Gaffer" in c.get("/app").text
+    assert c.get("/assets/app.js").text == "console.log(1)"
+    assert c.get("/api/nope").status_code == 404
+    for bad in ("/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt"):
+        r = c.get(bad)
+        assert "not for the web" not in r.text, bad
 
 
 def test_unknown_analysis_and_queue_limit(tmp_path, base_cfg, videos) -> None:
