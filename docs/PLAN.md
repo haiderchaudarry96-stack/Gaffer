@@ -143,6 +143,8 @@ Footage: **TeamTrack** `soccer_top` (main) and `soccer_side` (fisheye), see `doc
 - [ ] Clean redeploy from the docs works
 - [ ] Budget alarm set
 
+**Status 17 Oct (part B, backend, branch `phase4-backend`): none of the six can be ticked yet** — each needs the deployed site, AWS or the frontend. Done towards them: the FastAPI backend (`docs/API.md`): demo served from `samples/w900_1260` (`GET /api/demo` 1.4 s in the cloud sandbox, 0.19 MB gzipped: local, not a public URL); uploads → pitch step (OpenCV auto-detect + coach confirmation, or 4 corners) → the unchanged pipeline and Phase 3 agent (the agent's vision tools run OpenCV in the API process, i.e. on EC2 once deployed), alerts approve / reject, grounded chat with caps; `deploy/Dockerfile` + `deploy/README.md` (image not built yet: the cloud sandbox cannot pull base images); 51 new tests. Auto-detect accuracy on real footage: **to be measured** with `py scripts\eval_autodetect.py`.
+
 ---
 
 ## Phase 5 — Submission package
