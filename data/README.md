@@ -35,7 +35,7 @@ checks their size and SHA-256 against `data/teamtrack_manifest.json` (committed)
 | soccer_side | `F_20220220_1_1740_1770` | 1740–1770 | same |
 | soccer_side | `F_20220220_1_1770_1800` | 1770–1800 | same |
 
-Local layout: `data/teamtrack/<view>/{videos,annotations}/` (gitignored; 56 files, 600.1 MB
+Local layout: `data/teamtrack/<view>/{videos,annotations}/` (gitignored; 140 files, 1,887 MB
 including the CSVs).
 
 **Second eval set (15 Oct):** the user downloaded 15 more clips **by hand** from the same Kaggle
@@ -44,6 +44,13 @@ dataset: drone `D_20220220_1_1260_1290` … `D_20220220_1_1500_1530` (`soccer_to
 manifest with a note, and form `teamtrack.clip_sets.<view>.eval2`: never used for tuning, but
 **not independent** of the first eval set (same match, cameras and teams, neighbouring minutes;
 `docs/DATA_NOTES.md` section 10). Same MIT licence and citation as above.
+
+**Drone train clips (16 Oct):** the user downloaded the 42 drone clips `D_20220220_1_0000_0030`
+… `D_20220220_1_1230_1260` (`soccer_top/train`) **by hand** from the same Kaggle dataset, so the
+drone view now covers 0–1800 s of the first half (`teamtrack.clip_sets.top.train`, manifest
+entries with a note; `docs/DATA_NOTES.md` section 11). Used only for the oracle search for
+sustained formation changes and the Phase 3 real-footage demonstration windows, never for tuning.
+Same MIT licence and citation.
 
 ### Re-downloading and verifying
 
@@ -68,12 +75,12 @@ first half), except 30 side-view train clips named `F_20200220_1_*`.
 |---|---|---|---|---|
 | soccer_top / test | 9 | 1530–1800 s | 254 MB | **all 9** |
 | soccer_top / val | 9 | 1260–1530 s | 252 MB | **all 9** (by hand, 15 Oct) |
-| soccer_top / train | 42 | 0–1260 s | 1,287 MB | 0 |
+| soccer_top / train | 42 | 0–1260 s | 1,287 MB | **all 42** (by hand, 16 Oct) |
 | soccer_side / test | 10 | 1680–1980 s | 94 MB | **all 10** (1800–1980 s by hand, 15 Oct) |
 | soccer_side / val | 10 | 1380–1680 s | 94 MB | 0 |
 | soccer_side / train | 46 | 0–1380 s (+ `F_20200220`) | 421 MB | 0 |
 
-Not downloaded: drone train (42 clips, 1.29 GB) and the side train/val clips.
+Not downloaded: the side train/val clips.
 
 Notes measured in Phase 2 (details in `docs/DATA_NOTES.md` and `docs/FAILURE_LOG.md`):
 - Consecutive clips of one view are consecutive in time (player IDs continue across them).

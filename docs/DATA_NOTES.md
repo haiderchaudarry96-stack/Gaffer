@@ -184,3 +184,24 @@ evidently produced differently for this clip (interpolated or smoothed between k
 than drawn per frame). **Effect on the old results: none measurable**: pipeline vs GT on this
 clip, recall at 1 m 0.961 and matched position error 0.112 m (median), against 0.88–0.98 and
 0.11–0.20 m on the other clips. The file is left unchanged.
+
+## 11. Drone train clips 0–1260 s (added 16–17 Oct, checked by script)
+
+The user downloaded the **42 drone clips `D_20220220_1_0000_0030` … `D_20220220_1_1230_1260`**
+(Kaggle `soccer_top/train`) by hand, so `data/teamtrack/soccer_top/` now holds 60 clips covering
+**0–1800 s** of the same first half. Config: `teamtrack.clip_sets.top.train`; nothing uses them
+unless asked (`--set train` / `--set full`), so earlier results keep their meaning. Use so far:
+the oracle search for sustained formation changes (Phase 3 Task E), never tuning.
+
+- **Files:** all 42 videos open with `cv2.VideoCapture` and decode their first and last frame
+  (3840×2160, 29.97 fps, 900 frames each; 26.5–35.2 MB). All 42 CSVs parse with
+  `teamtrack.load_gt` (23 objects per frame); 1,437 empty cells in total, skipped as before.
+  SHA-256 in `data/teamtrack_manifest.json` (140 files, 1,887 MB).
+- **Odd:** 6 CSVs (`…_0570_0600` to `…_0720_0750`) have **903–906 annotated frames for 900 video
+  frames**. The oracle reads GT rows by video frame index, so the extra rows are never used; if
+  they are padding at the end, nothing changes; if the annotation were shifted by 3–6 frames
+  (0.1–0.2 s), positions would be off by < 1 m for a sprinting player, far below what moves a
+  formation label. 5 CSVs (`…_0450_0480`, `…_0480_0510`, `…_0780_0810`, `…_0810_0840`,
+  `…_1020_1050`) are ~2× the median size: fractional box values, as in `…_1620_1650` above.
+- **Geometry:** the full-length oracle (`--set full`, 3,601 frames at 2 fps) re-anchors every
+  frame with `homography_ok` in **100 %** of frames, line error median 0.085 m, max 0.114 m.

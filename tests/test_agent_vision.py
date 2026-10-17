@@ -271,10 +271,29 @@ def test_rules_arm_on_video_confirms_with_a_frame_in_the_evidence(video_match, c
     assert out.decision == "confirmed" and out.alert_id
     assert out.quality["homography_ok_share"] == 1.0 and out.quality["opencv_ms"] > 0
     assert out.reanalysis["cache"] == "miss" and out.reanalysis["sample_fps"] == 4.0
-    png = tb.evidence_dir / ctx.match.match_id / f"{out.event_id}.png"
-    img = cv2.imread(str(png))
-    assert img is not None and png.stat().st_size <= 400_000
+    jpg = tb.evidence_dir / ctx.match.match_id / f"{out.event_id}.jpg"
+    assert out.evidence_image.endswith(".jpg")
+    img = cv2.imread(str(jpg))
+    assert img is not None and jpg.stat().st_size <= 1_000_000
     assert img.shape[0] > 600  # video frame panel on top of the two shape panels
+    assert img.shape[1] == 1280  # JPEG keeps the evidence frame at full width
+
+
+def test_footage_limited_candidate_skips_the_second_look(video_match, cfg, tmp_path):
+    """Rule F (clip ends inside the look-ahead) decides uncertain after the camera check; a
+    re-analysis cannot add footage, so none runs (user-approved design change, 16 Oct)."""
+    det = MatchContext(video_match, cfg, backend="video", view="top").candidates[0].detected_at_s
+    end = det + 20.0
+    short = video_match.model_copy(update={
+        "frames": [f for f in video_match.frames if f.t <= end], "duration_s": end})
+    ctx, tb, calls = _video_toolbox(short, cfg, tmp_path)
+    out = _runner(ctx, tb, tmp_path).run()[0]
+    assert out.tool_calls == ["check_frame_quality", "record_decision"] and calls == []
+    assert (out.decision, out.verdict) == ("uncertain", "uncertain")
+    assert "look-ahead exists" in out.reason
+    v = VerifyConfig.from_config(cfg)
+    first = evaluate(ev(footage_frac=0.3), v, backend="video", view="top")
+    assert first.verdict == "need_more" and first.missing == ["quality_check"]
 
 
 def test_rules_arm_refuses_a_panning_camera_without_reanalysis(video_match, cfg, tmp_path):

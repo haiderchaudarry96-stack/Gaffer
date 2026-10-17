@@ -13,6 +13,7 @@ Usage:
     py scripts\\teamtrack_to_matchstate.py --view side
     py scripts\\teamtrack_to_matchstate.py --view top --no-video   # skip re-anchoring (fast)
     py scripts\\teamtrack_to_matchstate.py --view side --gt-inset  # -> oracle_side_inset.json
+    py scripts\\teamtrack_to_matchstate.py --view top --set full   # 0-1800 s: oracle_top_full
 
 The official oracle uses the raw GT box bottom. `--gt-inset` moves the side-view foot point up
 by `teamtrack.views.side.gt_foot_inset_px` (the measured annotation margin, FAILURE_LOG
@@ -58,9 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fps", type=float, default=float(cfg["perception"]["sample_fps"]))
     ap.add_argument("--no-video", action="store_true",
                     help="use the reference calibration without per-frame re-anchoring")
-    ap.add_argument("--set", default=None, choices=["eval2"],
+    ap.add_argument("--set", default=None, choices=["eval2", "train", "full"],
                     help="clip set (teamtrack.clip_sets); default dev + eval. eval2 -> "
-                         "outputs/oracle_<view>_eval2[_inset].json")
+                         "outputs/oracle_<view>_eval2[_inset].json; full = every clip set of "
+                         "the view (top: 0-1800 s)")
     ap.add_argument("--gt-inset", action="store_true",
                     help="move the GT foot point up by gt_foot_inset_px (labelled variant)")
     ap.add_argument("--out", default=None,
@@ -74,7 +76,11 @@ def main(argv: list[str] | None = None) -> int:
     inset = float(vcfg.get("gt_foot_inset_px", 0.0)) if args.gt_inset else 0.0
     try:
         calib = Calibration.for_view(cfg, view)
-        clips = find_clips(view, cfg, [args.set] if args.set else None)
+        sets = ([args.set] if args.set not in (None, "full")
+                else list(tt["clip_sets"][view]) if args.set == "full" else None)
+        clips = find_clips(view, cfg, sets)
+        if not clips:
+            raise DatasetError(f"no {view} clips in clip set(s) {sets}")
         if any(c.half != 1 for c in clips):
             raise DatasetError("only first-half clips are supported (all ours are half 1)")
         match_id = f"teamtrack_{view}" + (f"_{args.set}" if args.set else "")

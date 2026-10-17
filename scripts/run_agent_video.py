@@ -1,9 +1,13 @@
-"""Build step 5: the agent's video backend on the real TeamTrack drone candidates (rules arm).
+"""The agent's video backend on the real TeamTrack candidates (build steps 5-6).
 
-No LLM, no Bedrock: the rules policy runs the same tools as the agent (quality check -> second
-look on video -> decision -> evidence + pending alert for a confirmation). Per candidate it
-records what OpenCV measured, how long each call took and whether the OpenCV result changed the
-verdict the first pass alone would give.
+Default arm `rules` (no LLM, no Bedrock): the rules policy runs the same tools as the agent
+(quality check -> second look on video -> decision -> evidence + pending alert for a
+confirmation). `--arm llm` runs the agent (Nova 2 Lite on Bedrock, spends credits, run cost cap
+`--max-cost-usd`) on the same candidates; re-analyses it asks for are served from the shared
+disk cache when the window and rate match. Per candidate it records what OpenCV measured, how
+long each call took and whether the OpenCV result changed the verdict the first pass alone
+would give. Sets: `eval2`, `eval` (drone pipeline), `side_eval2` (side pipeline, experimental
+camera: capped at uncertain).
 
     py scripts\\run_agent_video.py                  # eval2 + eval pipeline MatchStates
     py scripts\\run_agent_video.py --sets eval2     # one set
@@ -13,8 +17,9 @@ verdict the first pass alone would give.
 Resumable: rows go to `outputs/agent_video/rows.jsonl` as each candidate finishes (finished
 candidates are skipped on the next run) and re-analyses are cached on disk
 (`outputs/agent_cache/video/`), so a cut-off run continues where it stopped. `--fresh` starts
-the rows again (the cache is kept). Output: `outputs/agent_video/report.json` + a decision
-table in the log. Seeds 110-119 are never touched here (real clips only).
+the rows again (the cache is kept). Output: `outputs/agent_video/report.json` (`--out` for
+another folder) + a decision table in the log. Seeds 110-119 are never touched here (real
+clips only).
 """
 
 from __future__ import annotations
@@ -34,19 +39,24 @@ from gaffer.agent.context import MatchContext
 from gaffer.agent.loop import AgentRunner, TraceWriter
 from gaffer.agent.tools import Toolbox, clock
 from gaffer.agent.verify import DECISION_OF
-from gaffer.agent.vision import VideoBackend, VisionError, write_png
+from gaffer.agent.vision import VideoBackend, VisionConfig, VisionError, write_image
 from gaffer.config import load_config, repo_path
 from gaffer.perception.video import VideoSource
 from gaffer.schema import load_match_state
 
-SETS = {"eval2": "outputs/match_state_top_eval2_4fps.json",
-        "eval": "outputs/match_state_top_4fps.json"}
+SETS = {"eval2": ("outputs/match_state_top_eval2_4fps.json", "top"),
+        "eval": ("outputs/match_state_top_4fps.json", "top"),
+        "side_eval2": ("outputs/match_state_side_eval2_2fps.json", "side"),
+        # Task E demonstration window (17 Oct): 15:00-21:00, chosen BECAUSE the oracle shows the
+        # half's two sustained changes away from 4-4-2 in it (16:30 home, 18:50 away)
+        "w900": ("outputs/match_state_top_w900_1260_4fps.json", "top")}
 OUT = "outputs/agent_video"
 
 
-def backend_for(path: str, cfg: dict[str, Any]) -> tuple[MatchContext, VideoBackend]:
+def backend_for(path: str, cfg: dict[str, Any], view: str = "top"
+                ) -> tuple[MatchContext, VideoBackend]:
     m = load_match_state(repo_path(path))
-    return MatchContext(m, cfg, view="top"), VideoBackend.for_match_file(path, m, "top", cfg)
+    return MatchContext(m, cfg, view=view), VideoBackend.for_match_file(path, m, view, cfg)
 
 
 def row_of(set_name: str, ctx: MatchContext, o: Any) -> dict[str, Any]:
@@ -71,19 +81,28 @@ def row_of(set_name: str, ctx: MatchContext, o: Any) -> dict[str, Any]:
         "evidence_image": o.evidence_image, "alert_id": o.alert_id,
         "opencv_changed_decision": o.decision != first_dec,
         "first_pass_decision": first_dec,
+        "explanation": o.explanation, "llm_calls": o.llm_calls, "guard_blocks": o.guard_blocks,
+        "invalid_calls": o.invalid_calls, "fallback": o.fallback, "tokens_in": o.tokens_in,
+        "tokens_out": o.tokens_out, "cost_usd": round(o.cost_usd, 5),
+        "llm_s": round(o.llm_s, 1), "tool_s": round(o.tool_s, 1), "trace_id": o.trace_id,
     }
 
 
 def run_set(set_name: str, cfg: dict[str, Any], done: set[tuple[str, str]],
-            rows_path: Any) -> list[dict[str, Any]]:
-    ctx, vb = backend_for(SETS[set_name], cfg)
-    tb = Toolbox(ctx, AlertStore(f"{OUT}/alerts_rules.jsonl"), "outputs/evidence", video=vb)
-    runner = AgentRunner(ctx, tb, arm="rules", trace=TraceWriter(f"{OUT}/trace_rules.jsonl"),
-                         run_id=f"video_{set_name}")
+            rows_path: Any, arm: str = "rules", llm: Any = None, budget: Any = None,
+            only: set[str] | None = None) -> list[dict[str, Any]]:
+    path, view = SETS[set_name]
+    ctx, vb = backend_for(path, cfg, view)
+    tb = Toolbox(ctx, AlertStore(f"{OUT}/alerts_{arm}.jsonl"), f"{OUT}/evidence", video=vb)
+    runner = AgentRunner(ctx, tb, arm=arm, llm=llm, budget=budget,
+                         trace=TraceWriter(f"{OUT}/trace_{arm}.jsonl"),
+                         run_id=f"video_{arm}_{set_name}")
     rows = []
     print(f"\n=== {set_name}: {ctx.match.match_id}, {len(ctx.candidates)} candidates, footage "
           f"{ctx.footage[0]:.0f}-{ctx.footage[1]:.0f} s ===", flush=True)
     for c in ctx.candidates:
+        if only and c.id not in only:
+            continue
         if (ctx.match.match_id, c.id) in done:
             print(f"  {c.id}: done earlier, skipped", flush=True)
             continue
@@ -133,7 +152,7 @@ def make_simulated_pan(src_uri: str, lo: float, hi: float, out_dir: Any, fps: fl
 
 def run_simulated_pan(cfg: dict[str, Any]) -> dict[str, Any]:
     """Rules arm on one eval2 candidate whose video is replaced by a simulated pan/zoom."""
-    ctx, _ = backend_for(SETS["eval2"], cfg)
+    ctx, _ = backend_for(SETS["eval2"][0], cfg)
     c = ctx.candidates[0]
     a, b = ctx.required_span(c)
     uri = make_simulated_pan(ctx.match.source_video.uri, a, b + 1.0,
@@ -158,7 +177,7 @@ def render_check(cfg: dict[str, Any], set_name: str, event_id: str, decision: st
     """The video evidence renderer on a real 4K frame for a candidate that was NOT confirmed
     (no real candidate is), under a red banner saying so. Not an alert, not in the store; it
     uses the cached re-analysis of the rules run."""
-    ctx, vb = backend_for(SETS[set_name], cfg)
+    ctx, vb = backend_for(SETS[set_name][0], cfg, SETS[set_name][1])
     tb = Toolbox(ctx, AlertStore(f"{OUT}/alerts_render_check.jsonl"), f"{OUT}/render_check",
                  video=vb)
     c = ctx.candidate(event_id)
@@ -169,8 +188,9 @@ def render_check(cfg: dict[str, Any], set_name: str, event_id: str, decision: st
     img, shows, frame_t = tb.evidence_image(
         c, st.data or ctx.first, note=f"RENDER CHECK ONLY: {c.id} was {decision} by the rules "
                                       "- not a confirmed change, not an alert")
-    path = repo_path(f"{OUT}/render_check/{ctx.match.match_id}_{c.id}.png")
-    size = write_png(path, img, int(cfg["agent"]["vision"]["evidence_max_bytes"]))
+    vc = VisionConfig.from_config(cfg)
+    path = repo_path(f"{OUT}/render_check/{ctx.match.match_id}_{c.id}.{vc.evidence_format}")
+    size = write_image(path, img, vc.evidence_max_bytes, vc.evidence_jpeg_quality)
     out = {"set": set_name, "event_id": c.id, "decision": decision, "image": str(path),
            "bytes": size, "frame_t": frame_t, "shows": shows, "reanalysis_cache": r.get("cache")}
     print(f"\n=== render check {set_name} {c.id} ({decision}) -> {path} ({size} bytes), "
@@ -180,7 +200,7 @@ def render_check(cfg: dict[str, Any], set_name: str, event_id: str, decision: st
 
 def run_bench(cfg: dict[str, Any]) -> dict[str, Any]:
     """One 145 s re-analysis at 4 fps (acceptance: < 4 min on the laptop), cached separately."""
-    ctx, vb = backend_for(SETS["eval2"], cfg)
+    ctx, vb = backend_for(SETS["eval2"][0], cfg)
     lo = 1300.0
     vb.cache_dir = repo_path("outputs/agent_cache/video_bench")
     for p in vb.cache_dir.glob("*.json") if vb.cache_dir.exists() else []:
@@ -220,6 +240,7 @@ def table(rows: list[dict[str, Any]]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global OUT
     cfg = load_config()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--sets", default="eval2,eval")
@@ -228,22 +249,41 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--render-check", default=None, metavar="SET:EVENT",
                     help="evidence renderer on a real frame of a non-confirmed candidate")
     ap.add_argument("--fresh", action="store_true", help="start the rows again (cache kept)")
+    ap.add_argument("--out", default=OUT, help=f"output folder (default {OUT})")
+    ap.add_argument("--arm", choices=["rules", "llm"], default="rules")
+    ap.add_argument("--candidates", default=None, help="comma-separated event ids (all sets)")
+    ap.add_argument("--max-cost-usd", type=float, default=0.5, help="llm arm: run cost cap")
     args = ap.parse_args(argv)
+    OUT = args.out
     out_dir = repo_path(OUT)
     out_dir.mkdir(parents=True, exist_ok=True)
-    rows_path = out_dir / "rows.jsonl"
+    rows_path = out_dir / ("rows.jsonl" if args.arm == "rules" else "rows_llm.jsonl")
     if args.fresh and rows_path.exists():
         rows_path.unlink()
     rows = ([json.loads(x) for x in rows_path.read_text(encoding="utf-8").splitlines()
              if x.strip()] if rows_path.exists() else [])
     done = {(x["match"], x["event_id"]) for x in rows}
-    report_path = out_dir / "report.json"
+    llm = budget = None
+    if args.arm == "llm":
+        from gaffer.agent.loop import make_budget
+        from gaffer.llm.bedrock_client import BedrockClient, BedrockError
+
+        try:
+            llm = BedrockClient(cfg)
+        except BedrockError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        budget = make_budget(cfg, None, args.max_cost_usd)
+        budget.run_cost = sum(x.get("cost_usd", 0.0) for x in rows)
+        budget.run_calls = sum(x.get("llm_calls", 0) for x in rows)
+    report_path = out_dir / ("report.json" if args.arm == "rules" else "report_llm.json")
     report = (json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists()
               and not args.fresh else {})
     t0 = time.perf_counter()
     try:
         for s in filter(None, (x.strip() for x in args.sets.split(","))):
-            rows += run_set(s, cfg, done, rows_path)
+            only = set(args.candidates.split(",")) if args.candidates else None
+            rows += run_set(s, cfg, done, rows_path, args.arm, llm, budget, only)
         if args.simulated_pan:
             report["simulated_pan"] = run_simulated_pan(cfg)
         if args.bench:
@@ -258,6 +298,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     report["rows"] = rows
     report["wall_s_this_invocation"] = round(time.perf_counter() - t0, 1)
+    if budget is not None:
+        report["llm"] = {"calls": budget.run_calls, "cost_usd": round(budget.run_cost, 4),
+                         "tokens": dict(budget.run_tokens)}
     report_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     print("\n" + table(rows))
     print(f"\n-> {report_path}")

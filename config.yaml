@@ -187,8 +187,11 @@ teamtrack:
   # Clip sets by match time [start_s, end_s). Scripts use dev + eval unless asked (--set eval2).
   # eval2 = the "second eval set" (downloaded by hand by the user, 15 Oct): never used for
   # tuning, but NOT independent of eval (same match, same cameras, neighbouring minutes).
+  # train = Kaggle soccer_top/train, 0-1260 s of the same match (downloaded by hand by the user,
+  # 16 Oct): used for the oracle search for sustained changes (Phase 3 Task E), never for tuning.
   clip_sets:
-    top: {dev: [1530, 1560], eval: [1560, 1800], eval2: [1260, 1530]}   # eval2 = Kaggle val
+    top: {dev: [1530, 1560], eval: [1560, 1800], eval2: [1260, 1530],   # eval2 = Kaggle val
+          train: [0, 1260]}                                              # train = Kaggle train
     side: {dev: [1680, 1710], eval: [1710, 1800], eval2: [1800, 1980]}  # eval2 = Kaggle test
   default_sets: [dev, eval]
   views:
@@ -397,6 +400,11 @@ agent:
   # 39/43 alerted, 4 false alerts (one-shot 39 / 27); 63 of 81 grid settings pass the step-1 gate;
   # chosen by max(alerted hits - false alerts) -> persist_pass 0.7 -> 0.6, min_confident 4 -> 3
   # (design values gave 37 / 4). Never re-tune on seeds 100-119.
+  # FROZEN AGAIN 17 Oct after Task A (4-3-3/4-2-3-1 metric check, CV on 42-52 + 100-109: did not
+  # clearly help, left OFF, not implemented) and the return-leg experiment (OFF, below): no
+  # threshold or rule change after this point. eval_agent.py fingerprint of the agent/tactics/
+  # bedrock/synthetic/formations config: ca4ff9bbf7b01c6c (the llm arm refuses to resume if
+  # it changes).
   verify:
     lookahead_s: 60.0             # verification waits this much play after detection (user, 15 Oct)
     before_s: 45.0                # coverage "before" window: [onset - before_s, onset]
@@ -406,6 +414,8 @@ agent:
     persist_fail: 0.4             # at or below -> not held (reject)
     min_confident_windows: 3      # fewer confident look-ahead windows -> persistence unknown
     min_footage_frac: 0.6         # share of the look-ahead that must exist (clip ends)
+    return_leg_needs_failed_persistence: false  # R rejects a return leg only if P fails:
+                                  # measured 17 Oct, OFF (42-52 + 100-109: +25 false alerts, 0 hits)
     geometry:                     # check_frame_quality (video backend) -> refuse when broken
       min_homography_ok_share: 0.9
       max_shift_px_per_s: 25.0
@@ -433,8 +443,11 @@ agent:
                                   # top 4 fps 1.2-1.4 s/s incl. debug video, side 2.7 s/frame)
     grid_s: 5.0                   # re-analysis windows snap outwards to this grid (cache reuse)
     cache_dir: outputs/agent_cache/video
-    evidence_width_px: 1280       # evidence frame width (PNG)
-    evidence_max_bytes: 400000    # evidence PNG size cap (downscaled until it fits)
+    evidence_width_px: 1280       # evidence frame width
+    evidence_format: jpg          # jpg (16 Oct, user-approved): a 400 KB PNG shrank a 4K frame
+                                  # to ~570 px wide; png still works
+    evidence_jpeg_quality: 90
+    evidence_max_bytes: 1000000   # evidence image size cap (downscaled until it fits)
   limits:                         # docs/AGENT_DESIGN.md §6
     max_llm_calls_per_candidate: 8
     max_vision_calls_per_candidate: 3

@@ -93,7 +93,7 @@ Every result carries `ref` (`R1`, `R2`, … per candidate), which is the citatio
 
 ### Vision tools (OpenCV on the `video` backend)
 
-**`check_frame_quality`**: samples `agent.vision.quality_frames` (6) frames in the window. For each frame it re-anchors to the calibration (`cv2.phaseCorrelate` + `cv2.findTransformECC`, as in `drift.py`) and measures the line error (`homography_ok`). Between consecutive samples it measures camera motion (shift from `cv2.phaseCorrelate`, scale from `cv2.estimateAffinePartial2D` on ORB matches, which detects zoom) and checks for cuts (`cv2.compareHist` on HSV histograms). From the stored MatchState it adds per-team coverage (share of frames with ≥ 8 outfield players). Cost is ~1–3 s on the top view.
+**`check_frame_quality`**: samples `agent.vision.quality_frames` (6) frames in the window. For each frame it re-anchors to the calibration (`cv2.phaseCorrelate` + `cv2.findTransformECC`, as in `drift.py`) and measures the line error (`homography_ok`). Between consecutive samples it measures camera motion (shift from `cv2.phaseCorrelate`, scale from `cv2.estimateAffinePartial2D` on ORB matches, which detects zoom) and checks for cuts (`cv2.compareHist` on HSV histograms). From the stored MatchState it adds per-team coverage (share of frames with ≥ 8 outfield players). Cost: design guess ~1–3 s; **measured 8–13 s per call** on the 4K drone video (12 frames decoded with H.264 seeks + 6 ECC re-anchorings; 11 real windows, step 5), i.e. ~6 % of a candidate's OpenCV time next to a 104–178 s re-analysis.
 ```json
 {"type":"object","additionalProperties":false,"required":["start_s","end_s","why"],
  "properties":{"start_s":{"type":"number","minimum":0},"end_s":{"type":"number","minimum":0},
@@ -131,13 +131,13 @@ Error example: `{"ref":"R7","error":"over_budget","message":"estimated 512 s > 3
 - `render_evidence` on video: inside the most confident look-ahead window in the new shape, the frame with most outfield players of the team; both teams' positions and the team's formation lines (template fit) are projected back into that frame through its own re-anchored homography, cropped to the pitch, above the two shape panels. Both shape panels use the **most confident window** of the old / new shape (latest pass first, then first pass); with none, the panel says "low visibility" instead of averaging partial frames.
 - Alerts and the verified timeline show the **code-written** reason (`verify.decision_reason`) first; the model's text is kept as the separate "explanation" (spike 15 Oct). Every rules block carries `next_step`.
 
-**`render_evidence`**: allowed only after `record_decision(confirmed)`. It decodes the frame where the new shape is most confident and draws team-coloured boxes (`render.annotate_frame`). Next to it go two minimaps: the team's average shape (template-slot means from the formation fit) before and after the change, labelled with formations and clocks. Output is PNG, ≤ 400 KB. Synthetic/annotation backends get the minimaps only.
+**`render_evidence`**: allowed only after `record_decision(confirmed)`. It decodes the frame where the new shape is most confident and draws team-coloured boxes (`render.annotate_frame`). Next to it go two minimaps: the team's average shape (template-slot means from the formation fit) before and after the change, labelled with formations and clocks. Output is **JPEG (quality 90), ≤ 1 MB, 1280 px wide** (changed 16 Oct, user-approved: a 400 KB PNG cap shrank a 4K evidence frame to ~570 px). Synthetic/annotation backends get the minimaps only.
 ```json
 {"type":"object","additionalProperties":false,"required":["event_id","why"],
  "properties":{"event_id":{"type":"string","pattern":"^evt_\\d{3}$"},"why":{"type":"string","maxLength":120}}}
 ```
 ```json
-{"ref":"R9","image":"outputs/evidence/top_eval2/evt_004.png","frame_t":1497.5,"clock":"24:57",
+{"ref":"R9","image":"outputs/evidence/top_eval2/evt_004.jpg","frame_t":1497.5,"clock":"24:57",
  "shows":["frame with team boxes","average shape 23:50-24:25 vs 24:35-25:30"],"bytes":212000,"opencv_ms":950}
 ```
 
@@ -167,7 +167,7 @@ Error example: `{"ref":"R7","error":"over_budget","message":"estimated 512 s > 3
 ```
 ```json
 {"ref":"R10","ok":true,"alert_id":"alr_top_eval2_evt_004","status":"pending",
- "evidence_image":"outputs/evidence/top_eval2/evt_004.png"}
+ "evidence_image":"outputs/evidence/top_eval2/evt_004.jpg"}
 ```
 
 ---
@@ -236,7 +236,7 @@ All five become mocked-LLM tests (§9). The real-footage runs in §8 are expecte
 | R2 | `reanalyse_window` | over budget (window too long at 6 fps) | retry with the window that fits: `reanalyse_window(…, 4)` |
 | R3 | `reanalyse_window` | coverage 0.52, `after_share_new` 0.55, verdict `uncertain` | `record_decision(uncertain, "only 52 % of frames show 8+ Blue outfield players (R3)")` |
 
-**E. Data result skips vision (synthetic/annotation backend only).** `list_candidate_changes` shows that the candidate returns to the shape held before an earlier rejected candidate, within 60 s → reject as a revert with no vision call. **On real video, every decision except a refusal needs a second OpenCV look**, because a first-pass revert can be a perception artefact (eval2: away 1410 s is an oracle event, but the pipeline reverts at 1480 s).
+**E. Data result skips vision (synthetic/annotation backend only).** `list_candidate_changes` shows that the candidate returns to the shape held before an earlier rejected candidate, within 60 s → reject as a revert with no vision call. **On real video, every decision except a refusal needs a second OpenCV look**, because a first-pass revert can be a perception artefact (eval2: away 1410 s is an oracle event, but the pipeline reverts at 1480 s). **Exception (16 Oct, user-approved):** when rule F fails (the clip ends inside the look-ahead), the verdict is uncertain after the camera check without a second look; F depends only on the window bounds, so no re-analysis can change it (step 5: 477 s of 1,545 s of real-clip re-analysis went to 4 such candidates, none changed).
 
 ---
 
@@ -255,7 +255,9 @@ Set in build step 1 on dev seeds 42–52 and **frozen on 15 Oct** (`scripts/eval
 | C coverage | MatchState (latest pass) | ≥ 60 % of frames with ≥ 8 outfield of the team, before and after | → need_more (**a second look first**); after the second look it never blocks a verdict. Changed in step 1: as a hard gate it blocked 13 of 39 real changes on dev, all with ≥ 4 confident look-ahead windows (a confident window already needs ≥ 8 visible players) |
 | P persistence | window labels in [t_det, t_det + 60 s], latest pass | new family ≥ 60 % of ≥ 3 confident windows | ≤ 40 % → reject; between, or < 3 confident → need_more / uncertain |
 | R revert | candidates (latest pass) | no reverse change within 60 s of detection | reverse within 60 s, or return leg of a rejected candidate → reject |
-| S second look | `reanalyse_window` covering the required span | done (required on `video` only) | → need_more |
+
+*R experiment (17 Oct, OFF):* "a return leg is rejected only when P fails" (`agent.verify.return_leg_needs_failed_persistence`) would let the real oracle's away 4-4-2 → 4-2-3-1 at 18:50 (held 220 s) through, but on 42–52 + 100–109 it adds **25 false alerts and no hit** (leave-one-seed-out CV picks "off" in 21 / 21 folds): synthetic return legs that persist for 60 s are almost all flip-flops (15 of the 25 are 4-3-3 ↔ 4-2-3-1). FAILURE_LOG 2026-10-17.
+| S second look | `reanalyse_window` covering the required span | done (required on `video` only; not required once F fails, 16 Oct) | → need_more |
 | V view | config | top: no cap | side: verdict capped at uncertain (§13) |
 
 **Latest pass wins:** once a re-analysis exists, C, P and R use the re-analysed data, not the first pass. That is how a vision result overturns a first-pass revert or confirms one.
@@ -352,8 +354,8 @@ Phase 3 has a CLI for the coach (`py -m gaffer.agent.alerts --approve|--reject <
 
 **Data and order (no peeking):**
 1. Dev seeds **42–52**: set thresholds (step 1), tune the prompt (step 4).
-2. Seeds **100–109**: validation; seen by the engine, never by the agent. Reported, not tuned on.
-3. Seeds **110–119**: **run once** with the frozen config.
+2. Seeds **100–109**: validation; seen by the engine, never by the agent. Reported, not tuned on. **Exception (17 Oct, user-approved): they became development data for one bounded experiment** (Task A: a metric check on 4-3-3 ↔ 4-2-3-1 candidates, threshold by leave-one-seed-out CV over 42–52 + 100–109). It did not clearly help (CV false alerts 23 → 19, real changes 67 → 66; −5 was required) and is **OFF** (FAILURE_LOG 2026-10-17). Validation numbers on 100–109 reported before 17 Oct stay valid (no rule changed).
+3. Seeds **110–119**: **run once** with the frozen config. **Frozen 17 Oct** after Task A and the return-leg experiment (§4; both OFF): no threshold or rule change afterwards; `eval_agent.py` stores a fingerprint of the `agent` / `tactics` / `bedrock` / `synthetic` / `formations` config (`ca4ff9bbf7b01c6c`) and refuses to resume the LLM arm if it changes. **Not unseen:** the tactics engine's output on 110–119 was already seen in Phase 2 (one-shot baseline 34 false positives, 34 / 38 hits; the 4-3-3 family option measured there). The set is **agent-untouched** (no agent rule, threshold or prompt was ever run or tuned on it), not unseen data.
 4. Real drone: **dev** (30 s, 0 candidates: smoke only), **eval** 1560–1800 s (4 pipeline candidates), **eval2** 1260–1530 s (6). Each runs on the pipeline MatchState (`video` backend) and on the oracle (`annotation` backend).
 5. Side eval2: one candidate, to show the conservative behaviour.
 
@@ -461,3 +463,31 @@ flowchart TD
 3. **Real clips:** reported as decision tables + pipeline-vs-oracle decision agreement; no false-alert / miss rates on real footage.
 4. **Bedrock quota: unknown**, and no Service Quotas permission will be added. The step 4 spike measures what we get; the quota-exhausted rules fallback and `--resume` stay as designed. Throttling is reported to the user.
 5. **Rules-only arm: published**, even if it shows the LLM adds little to decisions.
+
+---
+
+## 14. Results (build step 6, 17 Oct): source for the technical report
+
+Rules frozen 17 Oct (config fingerprint `ca4ff9bbf7b01c6c`) after two development-only experiments, both OFF: Task A (4-3-3 ↔ 4-2-3-1 metric check: CV false alerts 23 → 19, real changes 67 → 66; −5 was required) and "persistence beats the return-leg rule" (+25 false alerts, 0 hits on 42–52 + 100–109). FAILURE_LOG 2026-10-17.
+
+### Final eval, seeds 110–119 (run once, 17 Oct; agent-untouched, not unseen: the engine's output was seen in Phase 2)
+
+| arm | alerted real changes | false alerts | uncertain | rejected real | mean alert delay | LLM calls | cost |
+|---|---|---|---|---|---|---|---|
+| one-shot (alert every candidate) | 34 / 38 | 34 | 0 % | 0 | 42 s | 0 | 0 |
+| rules only (no LLM) | **32 / 38** | **9** | 2 % (1 / 68) | 2 | 105 s | 0 | 0 |
+| agent (Nova 2 Lite) | **32 / 38** | **9** | 2 % (1 / 68) | 2 | 105 s | 195 (2.9 / cand.) | $0.21 ($0.021 / match) |
+
+Judged as written in §8: bar (≤ 16 false alerts AND ≥ 30 / 38) **met**, uncertain ≤ 30 % met, delay ≤ 120 s met → **"agent helped"**: false alerts −25 (−74 %) for −2 real changes. Cost limits met (max 39 calls per match, p95 LLM time 5.7 s per candidate, no throttling). **The LLM adds nothing to decisions:** 68 / 68 agree with the rules arm (0 guard blocks, 0 fallbacks). Decisions come from the deterministic rules; the LLM's role is orchestration (window, rate) and text, and its text is weak (31 / 41 alert explanations repeat the engine's "held 20 s").
+
+### Real footage (one match, no accuracy claims)
+
+- **Oracle, whole first half 0–1800 s:** 43 candidates; 8 hold ≥ 2 min with ≥ 60 % of windows in the new shape, 6 of them returns to the usual 4-4-2; 2 move away from it (home 4-4-2 → 3-4-3 at 16:30, 130 s; away 4-4-2 → 4-2-3-1 at 18:50, 220 s). Rules on the oracle: 6 confirmed, 32 rejected, 5 uncertain; the 18:50 change is rejected by rule R as a return leg.
+- **Pipeline, drone eval + eval2 (11) and side eval2 (1), rules and Nova:** identical decisions (12 / 12): 7 rejected, 5 uncertain (4 within 60 s of the clip end, 1 side: re-analysis over budget), 0 confirmed. Nova cost $0.037 (35 calls).
+- **Demonstration window 900–1260 s** (selected because the oracle shows both sustained changes in it): the pipeline finds both; **home 4-4-2 → 3-4-3 at 16:30 is confirmed** by both arms (first-pass coverage 52 % → re-analysis at 6 fps, 252 s, 91 % held) with a real-frame evidence JPEG and a pending alert; away 18:50 is rejected by R. Pipeline 424 s (1.18 s/s); Task E OpenCV total ≈ 19 min.
+
+### Agentic Vision evidence status (plain)
+
+1. **OpenCV result changes the next call AND the decision, on real frames:** only the **simulated pan/zoom** (real drone frames, synthetic camera motion): `check_frame_quality` measures 190 px/s, 30 % zoom, lines fit 33 % → refuse → no re-analysis → uncertain, where the first pass alone says reject. **No genuinely real case exists:** on 14 real candidates the decision always equals the first pass alone. The closest: demo evt_003, where low first-pass coverage (52 %) makes the second look run at the highest rate (6 fps instead of 4): the next call's arguments change, the decision (confirm) does not.
+2. **Re-analysis contradicts a first-pass finding on a real clip:** eval evt_001 (away 3-5-2 → 4-4-2, 26:35): first pass "reverted after 55 s"; the second look at 4 fps and at 6 fps finds no revert but the new shape in only 17 % of windows → still rejected, with a different reason. Decision unchanged, reason changed.
+3. **Confirmed alert with an evidence image on real footage: yes, one** (demo window evt_003, `outputs/agent_video_taskE/evidence/teamtrack_top_w900_1260/evt_003.jpg`), in a window chosen with the oracle, so it is a demonstration; its "before" panel shows a likely set piece (FAILURE_LOG). On the eval / eval2 sets no candidate is confirmed. Confirmed alerts with evidence otherwise exist on synthetic matches (41 in the final run, shape panels only) and on generated frames (tests).

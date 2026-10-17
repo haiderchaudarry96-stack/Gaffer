@@ -41,7 +41,15 @@ from gaffer.agent.verify import (
     decision_reason,
     evaluate,
 )
-from gaffer.agent.vision import OverBudget, VideoBackend, VisionError, problems_of, snap, write_png
+from gaffer.agent.vision import (
+    OverBudget,
+    VideoBackend,
+    VisionConfig,
+    VisionError,
+    problems_of,
+    snap,
+    write_image,
+)
 from gaffer.config import repo_path
 from gaffer.perception.pitch import PitchModel
 from gaffer.tactics.formation import UNCERTAIN, WindowResult, build_template, fit_template
@@ -659,8 +667,9 @@ class Toolbox:
         c = st.cand
         try:
             img, shows, frame_t = self.evidence_image(c, st.data or self.ctx.first)
-            path = self.evidence_dir / self.ctx.match.match_id / f"{c.id}.png"
-            size = write_png(path, img, int(self.cfg["vision"]["evidence_max_bytes"]))
+            vc = VisionConfig.from_config(self.ctx.cfg)
+            path = self.evidence_dir / self.ctx.match.match_id / f"{c.id}.{vc.evidence_format}"
+            size = write_image(path, img, vc.evidence_max_bytes, vc.evidence_jpeg_quality)
         except VisionError as exc:
             raise _ToolFailure("render_failed", str(exc), {"retryable": False}) from exc
         st.evidence_image = _rel(path)

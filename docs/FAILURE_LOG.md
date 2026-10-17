@@ -25,6 +25,72 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-17] Real footage: one confirmed alert in a window chosen by the oracle; short clips leave a third of the candidates footage-limited
+**Stage:** agent (video backend), real drone footage
+**Severity:** limitation (what the real-footage evidence can and cannot show)
+
+**Input:** frozen rules + Nova 2 Lite on (a) the drone eval / eval2 pipeline candidates (1260–1800 s, 11) and the side eval2 candidate (`outputs/agent_video_final/`), (b) a 6 min demonstration window 900–1260 s (`outputs/agent_video_taskE/`) **selected because the oracle shows the half's two sustained changes inside it**, so it is a demonstration, not a random sample, and it is the same match as every other clip.
+**What happened:** (1) **Clip lengths:** eval2 and eval are 4.5 min each and the look-ahead needs 60 s after detection, so **4 of the 11** top candidates (eval2 evt_005/006, eval evt_004/005) sit within 60 s of the end and are uncertain by rule F whatever OpenCV sees (since 16 Oct without a re-analysis). The side eval2 set is 3 min; its only candidate is uncertain because a 140 s side re-analysis is refused on budget (estimated 1,568 s > 360 s) and the first pass is inconclusive (57 %). (2) On the 11 top candidates **nothing is confirmed** (7 rejected, 4 uncertain), and the decision never differs from the first pass alone. (3) In the demonstration window the pipeline finds both oracle changes; **w900 evt_003 (home 4-4-2 -> 3-4-3, 16:30) is confirmed** by both arms (first-pass coverage 52 % before -> re-analysis at 6 fps, 252 s; new shape in 91 % of 11 windows) with an evidence JPEG and a pending alert: the **only confirmed alert on real footage**. Its "before" panel uses the most confident 4-4-2 window, 15:15–15:45 (30 frames), where the team is packed inside its own box (very likely defending a set piece), so the picture overstates the change. w900 evt_007 (away 4-4-2 -> 4-2-3-1, 18:50, held 100 % on the second look) is rejected by rule R (return leg; entry below). The first pass alone would have given both decisions too.
+**Why (best guess):** TeamTrack clips are 30 s, and our real sets are 4.5 min runs; a 60 s look-ahead costs ~1 min per set end. The real match changes shape often but rarely keeps a new one (oracle: 43 candidates, 2 sustained moves away from the usual 4-4-2).
+**Screenshot / output:** outputs/agent_video_taskE/evidence/teamtrack_top_w900_1260/evt_003.jpg, outputs/agent_video_taskE/report.json, report_llm.json, trace_llm.jsonl; outputs/agent_video_final/report.json, report_llm.json
+**Fix or mitigation:** reported as is. Longer windows reduce F losses (the full 0–1800 s is now local). The shape panels should skip windows where the team is inside its own box (Phase 4 rendering; not changed, frozen).
+**Measured impact:** 14 real candidates (11 top eval/eval2, 1 side, 2 demo): **1 confirmed** (demo window), 8 rejected, 5 uncertain (4 footage, 1 side budget); 0 decisions changed by the second look (1 reason changed: eval evt_001, "reverted after 55 s" -> "held in only 17 %").
+
+### [2026-10-17] Real footage: Nova agrees with every rules decision, but half its explanations are wrong
+**Stage:** agent (LLM arm, video backend)
+**Severity:** wrong output (text only; decisions all equal to the rules)
+
+**Input:** Nova 2 Lite on the 12 real candidates (`outputs/agent_video_final/report_llm.json`) and the 2 demonstration candidates (`outputs/agent_video_taskE/`).
+**What happened:** **14 / 14 decisions equal the rules arm**, 0 fallbacks, 2 guard blocks (side). But **7 of 14 explanations are wrong**: 3 contradict the re-analysis they cite (eval2 evt_003 "no transition occurred" and eval evt_002 "not held for 10+ seconds", both held 75 %; w900 evt_007 "not held", held 100 %: all three are rejected as return legs, which the model does not mention), and all 4 footage-limited candidates are explained as "engine confidence insufficient" instead of missing footage. Nova picked 6 fps for every second look (the rules policy picks 4 fps unless coverage is low), which cost 5 extra uncached re-analyses (~950 s OpenCV).
+**Why (best guess):** the model paraphrases the label strip rather than the `rules.failed` field; the verdict reason is in the result but not quoted.
+**Screenshot / output:** outputs/agent_video_final/trace_llm.jsonl, outputs/agent_video_taskE/trace_llm.jsonl
+**Fix or mitigation:** the code-written verified reason is the primary text in alerts and the verified timeline (spike fix); the model's text is the secondary "explanation". Not changed (frozen). For Phase 4: show the model text collapsed, or put `rules.reason` into the record_decision prompt as a required quote.
+**Measured impact:** 7 / 14 real explanations wrong; 0 / 14 decisions differ.
+
+### [2026-10-17] Final run: Nova's decisions equal the rules', its alert text is formulaic
+**Stage:** agent (LLM arm), final eval seeds 110–119
+**Severity:** degraded (text only; every decision equals the rules arm)
+
+**Input:** `eval_agent.py --set final --final --arms oneshot,rules,llm` (run once, 17 Oct), Nova 2 Lite, 68 candidates, 41 alerts.
+**What happened:** 68 / 68 decisions equal the rules arm (0 guard blocks, 0 invalid calls, 0 fallbacks), so the LLM adds nothing to decisions. In the 41 alerts the model's explanation repeats the engine's persistence rule ("held for 20 seconds") in **31**, although the verified reason above it says 60 s of look-ahead; the suggestions are near-templates ("Consider adjusting midfield pressing …" 14, "… pressure" 8, "… pressing intensity" 5). 23 of 68 candidates were decided with `record_decision` only (synthetic backend, design situation E: a first-pass revert rejects without a vision call).
+**Why (best guess):** the candidate card's engine evidence string contains "held 20s"; the small model copies the most salient number. Tactical suggestions get no tactical context beyond the two formation names.
+**Screenshot / output:** outputs/eval_agent_final/alerts_llm.jsonl, outputs/eval_agent_final/llm_rows.jsonl, outputs/eval_agent_final.json
+**Fix or mitigation:** mitigated by design: the code-written verified reason is shown first in every alert (spike fix, 15 Oct). Not changed (frozen). For Phase 4: drop "held 20s" from the card's engine evidence, or show the model's text collapsed.
+**Measured impact:** 31 / 41 explanations restate the wrong persistence window; 0 / 68 decisions differ from the rules.
+
+### [2026-10-17] "Strong persistence beats the return-leg rule" adds 25 false alerts on synthetic data (left OFF)
+**Stage:** agent (rules verifier, rule R), experiment
+**Severity:** limitation (fix tested, not adopted)
+
+**Input:** proposed after the real oracle showed R rejecting away evt_033 (4-4-2 -> 4-2-3-1 at 18:50, held 220 s; entry below). Change: a return leg is rejected only when persistence fails (P >= 0.6 on >= 3 confident look-ahead windows, no reverse change -> judged like any candidate). No threshold. Evaluated on dev 42–52 + seeds 100–109 only (same evidence cache as Task A), leave-one-seed-out CV, kept only if <= +1 false alert per 10 matches and no lost hit (fixed in advance). `scripts/return_leg_experiment.py`.
+**What happened:** in-sample: alerted real changes **67 -> 67**, false alerts **23 -> 48** (dev 4 -> 14, seeds 100–109 19 -> 34); CV picks "off" in **21 of 21** folds. All 25 changed decisions are false candidates moving from rejected to confirmed; 15 of them are 4-3-3 <-> 4-2-3-1 return legs (8 in seeds 104 / 105). Real oracle 0–1800 s (information only): 7 of 43 decisions would change rejected -> confirmed, evt_033 among them, but 6 of the 7 are returns to the team's usual 4-4-2.
+**Why (best guess):** in the synthetic matches every real change is a single step to a new shape, so a return leg that persists for 60 s is the second half of a flip-flop, not a decision; on the real match, the persistent return legs are mostly the team going back to its base shape after a 30–60 s excursion. Neither is what a coach wants alerted, and evt_033 alone does not justify it.
+**Screenshot / output:** outputs/return_leg_experiment.json, outputs/return_leg_experiment.log
+**Fix or mitigation:** **left OFF** (`agent.verify.return_leg_needs_failed_persistence: false`, code kept as a measured option). Rule R unchanged; evt_033 stays a known miss on the real match.
+**Measured impact:** +25 false alerts / +0 hits on 21 development matches if switched on.
+
+### [2026-10-17] Shape metrics do not separate a real 4-3-3 <-> 4-2-3-1 change from a flip (Task A, rule left OFF)
+**Stage:** agent (rules verifier), experiment
+**Severity:** limitation (idea tested, not adopted)
+
+**Input:** dev seeds 42–52 plus seeds 100–109 (**development data for this experiment only**; 110–119 never loaded), rules arm with the frozen thresholds, `scripts/flip_experiment.py`. Rule fixed before looking at data: a candidate the rules would confirm whose shapes are {4-3-3, 4-2-3-1} becomes uncertain when D = max(|d defensive line|, |d width|, |d compactness|) between [onset − 45 s, onset] and [detection, detection + 60 s] on the re-analysed pass is <= T (one threshold, grid off / 0.5–8 m). T by leave-one-seed-out CV (21 folds, objective alerted hits − false alerts); "clearly helps" fixed in advance as CV false alerts −5 or better with <= 2 real changes lost.
+**What happened:** of the rules arm's 23 false alerts on the 21 matches, 14 are confirmed 4-3-3 <-> 4-2-3-1 flips, against 4 real changes of that pair. D does **not** separate them: flips 0.98–38.4 m (median ~10 m), real changes 1.09 / 11.9 / 14.5 / 25.6 m. Cross-validated: false alerts **23 -> 19**, alerted real changes **67 -> 66** (the real change with D = 1.09 m is lost); T = 7.5 m in 20 of 21 folds (7.0 m in one), the grid edge region, i.e. "turn most pair confirmations off". On seeds 100–109 alone: false alerts 19 -> 15, alerted 28 -> 27; dev unchanged (4 / 39).
+**Why (best guess):** a flip in the synthetic matches is the team *really* moving (wide forwards dropping when out of possession), so its metrics move as much as a tactical switch; "no metric change" is not what distinguishes it. The distinguishing variable is possession, which the drone pipeline cannot see.
+**Screenshot / output:** outputs/flip_experiment.json, outputs/flip_experiment.log
+**Fix or mitigation:** **left OFF** (−4 false alerts < the −5 fixed in advance; not tuned further). Rules frozen 17 Oct after this. Better fix stays: classify in- and out-of-possession shapes separately (needs ball detection).
+**Measured impact:** CV −4 false alerts / −1 real change if it had been switched on.
+
+### [2026-10-17] Full first half (oracle): one candidate every 42 s, and the return-leg rule rejects a shape that then holds 220 s
+**Stage:** change detection + agent (rules verifier), oracle (GT positions)
+**Severity:** wrong output (known limitation; found on the real match, not tuned on)
+
+**Input:** oracle MatchState of the drone view over 0–1800 s (60 clips, `teamtrack_to_matchstate.py --view top --set full`), tactics engine unchanged, rules arm on the annotation backend (`scripts/oracle_sustained.py --rules`).
+**What happened:** (1) With perfect positions the engine emits **43 candidates in 30 min** (home 21, away 22). Home spends 56 % of the half in 4-4-2 and keeps flipping to 3-4-3 / 4-2-3-1 for 30–60 s; away moves between 4-4-2 (35 %), 4-2-3-1 (22 %) and 3-5-2/5-3-2 (25 %). Only 8 candidates hold >= 2 min with the new shape in >= 60 % of confident windows, and 6 of those are returns to the team's usual 4-4-2; 2 move away from it (home 4-4-2 -> 3-4-3 at 16:30, 130 s; away 4-4-2 -> 4-2-3-1 at 18:50, 220 s). Nothing holds longer than 4.5 min. (2) The rules confirm 6, reject 32, leave 5 uncertain. They **reject away evt_033 (4-4-2 -> 4-2-3-1 at 18:50), the longest new shape of the half (220 s, 78 % of 45 windows)**, as the return leg of evt_031, which was itself the return leg of evt_030 (4-4-2 -> 4-2-3-1 at 17:30, 4-2-3-1 -> 4-4-2 at 18:00): rule R looks one step back and cannot tell A->B->A->B from a flip-flop. (3) They confirm away evt_001 (5-3-2 -> 4-2-3-1 at 1:15), which then holds only 70 s.
+**Why (best guess):** a 30 s window classifier on a grassroots-style match where players drift between lines; with no ball (no in/out-of-possession split) the shape label follows the phase of play. Rule R was designed on synthetic out-and-back pairs; a third leg after a quick double flip looks like a return.
+**Screenshot / output:** outputs/oracle_top_full_changes.json, outputs/oracle_top_full_changes.log
+**Fix or mitigation:** not changed (rules frozen for the final run; real footage is not a tuning set). Possible fix for later: rule R only when the earlier leg was not itself rejected as a return.
+**Measured impact:** 1 of the 2 sustained "away from the usual shape" changes in the half is rejected by R.
+
 ### [2026-10-15] Real drone candidates: the second OpenCV look never changed a decision
 **Stage:** agent (video backend, build step 5)
 **Severity:** limitation (evidence for the Agentic Vision claim on real footage)
@@ -44,8 +110,8 @@
 **What happened:** 4 of 11 real candidates (eval2 evt_005 / evt_006, eval evt_004 / evt_005) are within 60 s of the clip end. Rule F makes them uncertain whatever the evidence, but on video every verdict except a refusal waits for a second look, so each still ran a 104-127 s re-analysis: **477 s of the 1,545 s** of re-analysis in the run.
 **Why:** design rule "on real video every decision except a refusal needs a second OpenCV look" (AGENT_DESIGN §3 E) does not except F, which no second look can fix.
 **Screenshot / output:** outputs/agent_video/report.json (`reanalysis.processing_s` of those rows)
-**Fix or mitigation:** open, a design change for the user: let an F failure decide uncertain without the second look (saves ~30 % of real-clip OpenCV time here; would not change any decision).
-**Measured impact:** 477 s of OpenCV on 4 candidates.
+**Fix or mitigation:** **fixed 16 Oct (user-approved design change):** when F fails, the verdict is uncertain right after the camera check, with no second look (`verify.evaluate`; test `test_footage_limited_candidate_skips_the_second_look`). Re-run on the same 11 candidates (`scripts/run_agent_video.py --out outputs/agent_video_fskip`, cached re-analyses): **11 of 11 decisions unchanged**, 4 re-analyses not run.
+**Measured impact:** the 4 skipped re-analyses had taken **455 s of the 1,444 s** of uncached re-analysis OpenCV time in the step-5 run (31 %; the 477 s / 1,545 s first written here counted wall time with pipeline overhead).
 
 ### [2026-10-15] Vision checks: the quality check is slower than designed, and drone re-anchoring absorbs a crop/zoom "pan"
 **Stage:** agent (video backend `check_frame_quality`)

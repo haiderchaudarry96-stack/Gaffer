@@ -112,6 +112,17 @@ def test_verdict_table(vcfg):
              geometry=Geometry(1.0, 0, 0, False)) == "uncertain"
 
 
+def test_return_leg_switch_is_off_and_only_spares_persisting_legs(vcfg):
+    from dataclasses import replace
+    leg = ev(return_of="evt_001")
+    assert not vcfg.return_leg_needs_failed_persistence  # measured 17 Oct, OFF
+    assert evaluate(leg, vcfg).verdict == "reject"
+    on = replace(vcfg, return_leg_needs_failed_persistence=True)
+    assert evaluate(leg, on).verdict == "confirm"
+    assert evaluate(ev(return_of="evt_001", share_new=0.5), on).verdict == "reject"
+    assert evaluate(ev(return_of="evt_001", reverted_after_s=30.0), on).verdict == "reject"
+
+
 def test_video_needs_quality_and_second_look_even_for_a_reject(vcfg):
     r = evaluate(ev(reverted_after_s=20.0), vcfg, backend="video", view="top")
     assert r.verdict == "need_more" and set(r.missing) == {"quality_check", "second_look"}
@@ -583,3 +594,32 @@ def test_eval_scoring_counts_alerts_by_candidate_label(vcfg):
 
 def test_final_seeds_need_the_final_flag():
     assert _eval_module().main(["--set", "final"]) == 2
+
+
+def test_llm_arm_scoring_and_the_section_8_judgement(vcfg):
+    mod = _eval_module()
+    from dataclasses import asdict
+    good = asdict(ev())
+    run = {"match_id": "m", "gt": {"match_id": "m", "formations": [], "changes": [
+        {"team": "home", "t": 1000.0, "from": "4-4-2", "to": "3-5-2"}]},
+        "candidates": [{"id": "evt_001", "team": "home", "t": 1010.0, "detected_at_s": 1040.0,
+                        "from": "4-4-2", "to": "3-5-2", "first": good, "reanalysis": good}]}
+    rows = {("m", "evt_001"): {"decision": "uncertain", "verdict": "confirm", "reason": "r",
+                               "decided_by": "agent", "tool_calls": ["check_frame_quality"]}}
+    s = mod.score([run], vcfg, "llm", 90.0, rows)["summary"]
+    assert (s["alerted_hits"], s["uncertain_hits"]) == (0, 1)
+    with pytest.raises(KeyError):
+        mod.score([run], vcfg, "llm", 90.0, {})
+
+    def summ(fa, hits, unc=0.1, delay=100.0):
+        return {"false_alerts": fa, "alerted_hits": hits, "uncertain_share": unc,
+                "mean_alert_delay_s": delay}
+
+    assert mod.judge(summ(16, 30))["verdict"] == "helped"
+    assert mod.judge(summ(16, 30, unc=0.31))["verdict"] == "partial"
+    assert mod.judge(summ(17, 31))["verdict"] == "partial"
+    assert mod.judge(summ(26, 34))["verdict"] == "did not help"
+    assert mod.judge(summ(17, 28))["verdict"] == "did not help"  # no better than the config
+    assert mod.llm_adds(summ(10, 30), summ(12, 30))
+    assert not mod.llm_adds(summ(11, 30), summ(12, 30))
+    assert not mod.llm_adds(summ(10, 29), summ(12, 30))  # fewer FAs but lost a hit

@@ -18,7 +18,7 @@
   resumes for free; cache hits cost nothing).
 - **Evidence frame** (`render_evidence`): the decoded frame with the MatchState positions
   projected back through that frame's homography and the team's formation lines (from the
-  template fit) drawn on it.
+  template fit) drawn on it; saved as JPEG (`write_image`) so it keeps its 1280 px width.
 """
 
 from __future__ import annotations
@@ -71,6 +71,8 @@ class VisionConfig:
     cache_dir: str
     evidence_width_px: int
     evidence_max_bytes: int
+    evidence_format: str = "jpg"
+    evidence_jpeg_quality: int = 90
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any]) -> VisionConfig:
@@ -82,7 +84,8 @@ class VisionConfig:
                    float(v["max_reanalysis_s"]), float(v["max_opencv_s_per_match"]),
                    {k: float(x) for k, x in v["s_per_frame"].items()}, float(v["grid_s"]),
                    str(v["cache_dir"]), int(v["evidence_width_px"]),
-                   int(v["evidence_max_bytes"]))
+                   int(v["evidence_max_bytes"]), str(v.get("evidence_format", "jpg")),
+                   int(v.get("evidence_jpeg_quality", 90)))
 
 
 # --------------------------------------------------------------------------- frame measures
@@ -440,10 +443,15 @@ class VideoBackend:
         return cv2.resize(crop, None, fx=k, fy=k, interpolation=cv2.INTER_AREA)
 
 
-def write_png(path: Path, img: np.ndarray, max_bytes: int) -> int:
-    """PNG (OpenCV) no larger than `max_bytes`: downscaled in steps if needed."""
+def write_image(path: Path, img: np.ndarray, max_bytes: int, jpeg_quality: int = 90) -> int:
+    """Evidence image (OpenCV encoder chosen by the suffix: .jpg or .png) no larger than
+    `max_bytes`: downscaled in steps if needed. JPEG keeps a 4K evidence frame at its 1280 px
+    width (a 400 KB PNG shrank it to ~570 px, step 5)."""
+    ext = path.suffix.lower()
+    params = ([cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)] if ext in (".jpg", ".jpeg")
+              else [cv2.IMWRITE_PNG_COMPRESSION, 9])
     for _ in range(8):
-        ok, buf = cv2.imencode(".png", img, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+        ok, buf = cv2.imencode(ext, img, params)
         if not ok:
             raise VisionError(f"OpenCV could not encode {path}")
         if len(buf) <= max_bytes:

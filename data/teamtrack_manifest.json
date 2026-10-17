@@ -1,8 +1,302 @@
 {
  "dataset": "atomscott/teamtrack",
  "licence": "MIT",
- "note": "26 files downloaded 9 Oct 2026 (dev + first eval set); 30 files with a 'note' downloaded manually by the user on 15 Oct 2026 (second eval set, Kaggle soccer_top/val and soccer_side/test)",
+ "note": "26 files downloaded 9 Oct 2026 (dev + first eval set); files with a 'note' were downloaded manually by the user: 30 on 15 Oct 2026 (second eval set, Kaggle soccer_top/val and soccer_side/test), 84 on 16 Oct 2026 (Kaggle soccer_top/train, 0-1260 s)",
  "files": [
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0000_0030.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0000_0030.mp4",
+   "bytes": 35238930,
+   "sha256": "26c3b4016b943219855f2006d4083744a00f2e5f4770bc63a595ae378c444eda",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0030_0060.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0030_0060.mp4",
+   "bytes": 32243731,
+   "sha256": "0c63f597f096f49e692403f73bf32a09b923a3fcfc44740e41ef51b38c67f7d2",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0060_0090.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0060_0090.mp4",
+   "bytes": 32289784,
+   "sha256": "33ba6f3c7df96dcc84f53f4264369fbc39d5df6b1b1b1293b9e86f87c977665e",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0090_0120.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0090_0120.mp4",
+   "bytes": 30315927,
+   "sha256": "0f4b6bbef5e47f3f7cac83f37661728f383f0290bc03651e81f75aadccf1edbf",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0120_0150.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0120_0150.mp4",
+   "bytes": 31469528,
+   "sha256": "93822caf8f1610ca75d32a29356cd634e344d90b123e566f1671dee162c26f42",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0150_0180.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0150_0180.mp4",
+   "bytes": 31405086,
+   "sha256": "b6292dc38fbc3c2335eda6b98a9d6179f1854e1cc6c1122939d1606c2903f421",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0180_0210.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0180_0210.mp4",
+   "bytes": 32168253,
+   "sha256": "a6df149cce9f8834262f3622da3ad63e64e300275a1d8c87c41ba8c8e6c9d958",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0210_0240.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0210_0240.mp4",
+   "bytes": 31949449,
+   "sha256": "c48b9ae733f22c4adc960feec1c94ad725729d84633195ab292b7909e4b3bf0e",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0240_0270.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0240_0270.mp4",
+   "bytes": 33943510,
+   "sha256": "09cb2f78abddaa7daf381f01fedc0043ce72fbb1b33cbe0fb9386ba691440ad8",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0270_0300.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0270_0300.mp4",
+   "bytes": 30980032,
+   "sha256": "d150c830bcc8ceece81a79c61e7b6857eb6e7493a9e87b15a2f531ede530710a",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0300_0330.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0300_0330.mp4",
+   "bytes": 32043227,
+   "sha256": "123bf938aadb308f6278456c44623cbe8580c8b968dd6942a0fc17ecaf0c1db3",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0330_0360.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0330_0360.mp4",
+   "bytes": 29563664,
+   "sha256": "116b401b5fc133cf1c287aa80c03691ddc58d172d6acbafea0686ead6db57942",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0360_0390.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0360_0390.mp4",
+   "bytes": 30541845,
+   "sha256": "6307dffd6eeba7e16520e6180aa41ed390c647f35b547cd8c08fa348bfe80873",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0390_0420.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0390_0420.mp4",
+   "bytes": 28849894,
+   "sha256": "10fbc0daf77739fc2d67b32ad83c49a142dd7b8f905570e9e6b35288622dfb82",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0420_0450.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0420_0450.mp4",
+   "bytes": 29159451,
+   "sha256": "27dd37744bc5fb8d7c955f97e1157804f02f10f726230355aa1560cc88c363a0",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0450_0480.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0450_0480.mp4",
+   "bytes": 29653661,
+   "sha256": "6469f602b1ddfd68dc4dada225daabecb8e2bf96d95b9904425cc0da6488ab2c",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0480_0510.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0480_0510.mp4",
+   "bytes": 29394234,
+   "sha256": "16144400c8fd68d76477ebd26da4dd0b67f84052a4e28428e72fcce4583f24c2",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0510_0540.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0510_0540.mp4",
+   "bytes": 31072821,
+   "sha256": "3435111e1904ce0f199f3ab7fef1d0d3b3b4269ec659a588c83c60f2a29f03cd",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0540_0570.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0540_0570.mp4",
+   "bytes": 29927661,
+   "sha256": "31b4e2281bd45a3eadf2bb24052e710f16c22c6e4eefd1483130a8adb1cff9bd",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0570_0600.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0570_0600.mp4",
+   "bytes": 29832566,
+   "sha256": "e662c7d715c69ca70e504a8ee624a33233bc49f06fa04308a6e2ed3227320b44",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0600_0630.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0600_0630.mp4",
+   "bytes": 30979544,
+   "sha256": "bef52828bcde730e1060bdb4fe16da02f0746006620c3116df2148b23381c680",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0630_0660.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0630_0660.mp4",
+   "bytes": 34258973,
+   "sha256": "1c60f3fe700ba23967daf6b1953b5f536bb286f58c1feee41731ee1f6c667624",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0660_0690.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0660_0690.mp4",
+   "bytes": 33169495,
+   "sha256": "c426bfa32b8016c13eb77de6d1da6599a0684cbe2f1e33b5f219510c0a7be524",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0690_0720.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0690_0720.mp4",
+   "bytes": 31257859,
+   "sha256": "5d3ab45c07f4680ce23dad8ad68ac5905654a35edf7cffa671fd92167f0eaf5d",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0720_0750.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0720_0750.mp4",
+   "bytes": 32190720,
+   "sha256": "84b2486cccc5d04e44286cf0cd2d1d1aed31dc9659bef1a070256ce424cf95fa",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0750_0780.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0750_0780.mp4",
+   "bytes": 27958082,
+   "sha256": "3ee173508ab10aaba5de9151bdb35b9c836b759bdcad3de0cf78233ecb02cea3",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0780_0810.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0780_0810.mp4",
+   "bytes": 27363202,
+   "sha256": "d179bde5cd7651e8d0acfea679637e5e9cba3093fba1fa45cde9af001f9bc660",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0810_0840.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0810_0840.mp4",
+   "bytes": 27522249,
+   "sha256": "68a8f2378d12c83d61ce9234c063e22357c4661a8d65ac2c2377f991174d7b7b",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0840_0870.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0840_0870.mp4",
+   "bytes": 27922698,
+   "sha256": "699429614ac739a843e5b1dd5865a951ae6819c852f7ec64e3a2c2b1f62f0085",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0870_0900.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0870_0900.mp4",
+   "bytes": 28044339,
+   "sha256": "b256a50d0a52ef81a3602721e53128403b3e98da1ad91cbb22ced5ed2947ac61",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0900_0930.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0900_0930.mp4",
+   "bytes": 28266788,
+   "sha256": "7ae2b15011a4eea068c2df25b396841bc926b4defdaf429e55602eaae920ed39",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0930_0960.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0930_0960.mp4",
+   "bytes": 27987474,
+   "sha256": "860f44eb9c03f2ad1e4ec8959f2ca02174ab7585a8292bb24218834bfab85521",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0960_0990.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0960_0990.mp4",
+   "bytes": 27553871,
+   "sha256": "aefee7d7c11ccee200cd98018104a0456eeb18e25e8a95b09ad7e5bcb909355a",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_0990_1020.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_0990_1020.mp4",
+   "bytes": 27517453,
+   "sha256": "7a59e4d7f99eb3a352a593aec082b7a71b930b87e6442eb657873eee4256db50",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1020_1050.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1020_1050.mp4",
+   "bytes": 26461982,
+   "sha256": "585cfe28cb46986e063a582351462ae799b442054fd11dc6d412aa17cb8347fc",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1050_1080.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1050_1080.mp4",
+   "bytes": 30667665,
+   "sha256": "0ff08b2490d0b15f079f6a433f8adcc13d3a2a550a62cfaaa8017a1d7cbd683d",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1080_1110.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1080_1110.mp4",
+   "bytes": 32363761,
+   "sha256": "bc630876beb5124834f5fdd22d1776af4d499f10b0afc1a0bea13f8c253800f9",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1110_1140.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1110_1140.mp4",
+   "bytes": 27741184,
+   "sha256": "f58483f6bdb73e5595aa79662208b2a86abb98a3b91e531cabcbff678f2f22ad",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1140_1170.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1140_1170.mp4",
+   "bytes": 27759397,
+   "sha256": "7f42c2683d8e4ae982591044794df56fb09f8d788b1986db9c9d96e7d65df2c0",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1170_1200.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1170_1200.mp4",
+   "bytes": 28138284,
+   "sha256": "25809808d7be5af299c1a41c1aacc71c2964f8418e6847ea9cc1c97b391ca816",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1200_1230.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1200_1230.mp4",
+   "bytes": 26758065,
+   "sha256": "e2dc381eb83bd18d6f55eae450c39ea34cb2b1c452ccb21ffcdc42026cc26a27",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/videos/D_20220220_1_1230_1260.mp4",
+   "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1230_1260.mp4",
+   "bytes": 28127759,
+   "sha256": "ad6092e44cc8b93f273f8f0ddb901240c91556f29a21a622fa8419cb95dd9cfb",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
   {
    "kaggle": "teamtrack/teamtrack/soccer_top/val/videos/D_20220220_1_1260_1290.mp4",
    "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1260_1290.mp4",
@@ -119,6 +413,300 @@
    "local": "data/teamtrack/soccer_top/videos/D_20220220_1_1770_1800.mp4",
    "bytes": 27772657,
    "sha256": "41cd34e2cd7272393ca57e042c668cb6d8c853c19880551705c91b7efece45c9"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0000_0030.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0000_0030.csv",
+   "bytes": 500902,
+   "sha256": "8137989fa32ec2ee54df051816d2aadca91e6c9a4d1229dcf3fab653254eb309",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0030_0060.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0030_0060.csv",
+   "bytes": 503645,
+   "sha256": "bf6e51b237260077901e165d60a9bf1f0c846011560cebd3da658bb1c0b37a08",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0060_0090.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0060_0090.csv",
+   "bytes": 527968,
+   "sha256": "723f8f945763113f7f4f4a744c9087722b1d998fd2fed5e951c30477f8b60efb",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0090_0120.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0090_0120.csv",
+   "bytes": 538093,
+   "sha256": "4f4badb8066ae34b9eb4680872695fbce6b4f92f7eef436812d443bba5322baa",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0120_0150.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0120_0150.csv",
+   "bytes": 505721,
+   "sha256": "71e9623e6524f17c47da0783b7e86a4261d6e9147118fe8731974954a74fa8f5",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0150_0180.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0150_0180.csv",
+   "bytes": 530424,
+   "sha256": "a7a909f84ad054c82a882402b8632af27b24fd22a13330e6a2244d4d9bffeb19",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0180_0210.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0180_0210.csv",
+   "bytes": 557855,
+   "sha256": "52f9f571d64cbd859a5fff8083f6ef0bc189974cf465435853503cfda51e45c4",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0210_0240.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0210_0240.csv",
+   "bytes": 512694,
+   "sha256": "cd67c29f1426a92c08666fb3f61ec7bf91c43345117c8d2f7b7769c9dc96e68d",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0240_0270.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0240_0270.csv",
+   "bytes": 513324,
+   "sha256": "22eb0578b966dd16f01ddc5d170a5328ba8d8582a42059632ee907337d51dfc1",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0270_0300.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0270_0300.csv",
+   "bytes": 534008,
+   "sha256": "3cf0f2b49bd178fc2c85a3a7aed3c0d8036755777e0482f44d4057a7304bced3",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0300_0330.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0300_0330.csv",
+   "bytes": 529340,
+   "sha256": "e4b3547022cf7408cf7d9bff249ee79c3912c9cfe8ce398707d30b03b81d12a9",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0330_0360.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0330_0360.csv",
+   "bytes": 512898,
+   "sha256": "945f29a53c5b71b642be8f206241f9a194c55edf46edae158357fcf981d7382d",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0360_0390.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0360_0390.csv",
+   "bytes": 540287,
+   "sha256": "3c8e7e02287cfc729c71cd3540ba48e88ef629d80fb2739263d89fcef1a8066c",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0390_0420.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0390_0420.csv",
+   "bytes": 515710,
+   "sha256": "c9879854d2c9f0a6613de772ddfe619d001f732a7e86640ae9737a3b607a885f",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0420_0450.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0420_0450.csv",
+   "bytes": 524408,
+   "sha256": "c6f4a0328ded5845f494dcd054913cde88150bf1bb45eee6af57eca2fb2b7e65",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0450_0480.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0450_0480.csv",
+   "bytes": 1148916,
+   "sha256": "1ee496e437a2283f7b916fed8eabb68e41fdabed11cf4cb8f1cb9781529e19e9",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0480_0510.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0480_0510.csv",
+   "bytes": 1122090,
+   "sha256": "f32e8f8e0d665046255e042820dbd9feb871feed97258d3402e0e9e8efa3e77c",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0510_0540.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0510_0540.csv",
+   "bytes": 494906,
+   "sha256": "73f44072d89776ff86c2c18fa1de8410c21d0dbe9b2b9c710dbd57d507fb1237",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0540_0570.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0540_0570.csv",
+   "bytes": 493306,
+   "sha256": "04e1af73db64afa84ae947e76009d165accf67afe3b4136f77241d1530a611f7",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0570_0600.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0570_0600.csv",
+   "bytes": 498358,
+   "sha256": "9e1061e8e50a46e967c879d7c16bfb1ee6070ac62750e14762a68c799f23ee9d",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0600_0630.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0600_0630.csv",
+   "bytes": 498096,
+   "sha256": "7e3c03df3b5817f68c09dfa3cde0ca4bb2f5f70f3e4698e74f9999d36687d3b6",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0630_0660.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0630_0660.csv",
+   "bytes": 503817,
+   "sha256": "8eeecfc5d0b34912ef8a0dd19e78c8d62cee0287394f2a5ddd62e9df351592d8",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0660_0690.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0660_0690.csv",
+   "bytes": 515741,
+   "sha256": "88256f02238f8e60a6a8a457845ede6d2d2a057802a209730307f4ef575000cb",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0690_0720.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0690_0720.csv",
+   "bytes": 497430,
+   "sha256": "e054edb361d73e30a267e55730eb07aa16807c6078247b7c65b9b67a80d15251",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0720_0750.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0720_0750.csv",
+   "bytes": 509056,
+   "sha256": "3fcb40c7fad16f921d5c77a3019ecc87d2542e2ca35c52d9ab229e5fbad6a0d1",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0750_0780.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0750_0780.csv",
+   "bytes": 499915,
+   "sha256": "bf1a22e04a2de7273f6f122b423c0bdec79ab928a3f24c409428339e307e05d4",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0780_0810.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0780_0810.csv",
+   "bytes": 1127849,
+   "sha256": "7b97640116dbbfcfc04a7915a1e6e8765da1fb9f485c6034967d464ae10dddc9",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0810_0840.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0810_0840.csv",
+   "bytes": 1141074,
+   "sha256": "25c21024833f05cbc4d54bc472fb1bfb7449782b3963ed04be171b7b960c6a53",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0840_0870.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0840_0870.csv",
+   "bytes": 501904,
+   "sha256": "2a06dd54c890a0901c5574cb25a3715d575ae175be03aa2c88df58407b47c415",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0870_0900.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0870_0900.csv",
+   "bytes": 510438,
+   "sha256": "38494a95b085d63f69177a173674b9a741d5feb701de41fa033b6a8a4ee03d38",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0900_0930.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0900_0930.csv",
+   "bytes": 505932,
+   "sha256": "d56dadfb0be95cf56a5b1a80a5c53a1294986a59de752497f83f3b3b7fd966db",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0930_0960.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0930_0960.csv",
+   "bytes": 582356,
+   "sha256": "969343acbdacf1d3a8edbfd510aaa2d671b35c0cde44c50147d94c00ea2bf9ac",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0960_0990.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0960_0990.csv",
+   "bytes": 545771,
+   "sha256": "f6cc5a706bbe053c880119a3bb457aeb0f837bceb4cbdb829fe863bf65466f85",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_0990_1020.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_0990_1020.csv",
+   "bytes": 516985,
+   "sha256": "c381a444eec62eb5e2335588139b5786695446e4b04af43eeb9f422af0f4bb6b",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1020_1050.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1020_1050.csv",
+   "bytes": 1148006,
+   "sha256": "bb74f55608c829962ee0582c037e2f980e64b9e10aca194e9b3dbc7d824bbc05",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1050_1080.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1050_1080.csv",
+   "bytes": 502957,
+   "sha256": "9664e2309caf1be5b322fe4a0baa275520f4fdd0287b10d61d5d77eb434f7e67",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1080_1110.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1080_1110.csv",
+   "bytes": 531281,
+   "sha256": "c90d977837ad4507890d5093003611440cc2a5a213242cfc8825bd65eaebce5e",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1110_1140.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1110_1140.csv",
+   "bytes": 525734,
+   "sha256": "4aac1fe1d8ad7cf7bbf1da8b4c02c551c3c27e0b25fac2c71b15d7052922b78f",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1140_1170.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1140_1170.csv",
+   "bytes": 503438,
+   "sha256": "d7f51fb5a6daeb7c5b2d7c6015e8bac1ddd1d06aed02b1612f2c376d1c6f3e14",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1170_1200.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1170_1200.csv",
+   "bytes": 517040,
+   "sha256": "afaf36afc0004c01b8d500d4d68624d66eeab8c2363d305a8eb67c87e6cb30c4",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1200_1230.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1200_1230.csv",
+   "bytes": 566333,
+   "sha256": "e0a9a471024be92a82087dc435f0e2df181363aa1a1e94f04d0178254eea1dbe",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
+  },
+  {
+   "kaggle": "teamtrack/teamtrack/soccer_top/train/annotations/D_20220220_1_1230_1260.csv",
+   "local": "data/teamtrack/soccer_top/annotations/D_20220220_1_1230_1260.csv",
+   "bytes": 516351,
+   "sha256": "2de064719ccb80c1427a18e4623a6399260d1005c1cf1538a2c49f8a99397f7e",
+   "note": "downloaded manually by the user from the Kaggle dataset atomscott/teamtrack (16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle search for sustained changes only"
   },
   {
    "kaggle": "teamtrack/teamtrack/soccer_top/val/annotations/D_20220220_1_1260_1290.csv",

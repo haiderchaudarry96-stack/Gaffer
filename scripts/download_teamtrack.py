@@ -154,9 +154,14 @@ def list_soccer(manifest: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
-KAGGLE_SPLIT = {("top", "eval2"): "val"}  # Kaggle split per (view, clip set); default "test"
-MANUAL_NOTE = ("downloaded manually by the user from the Kaggle dataset atomscott/teamtrack "
-               "(15 Oct 2026); second eval set (teamtrack.clip_sets.eval2)")
+KAGGLE_SPLIT = {("top", "eval2"): "val", ("top", "train"): "train"}  # default "test"
+MANUAL_NOTE = {  # per clip set: files the user downloaded by hand
+    "eval2": ("downloaded manually by the user from the Kaggle dataset atomscott/teamtrack "
+              "(15 Oct 2026); second eval set (teamtrack.clip_sets.eval2)"),
+    "train": ("downloaded manually by the user from the Kaggle dataset atomscott/teamtrack "
+              "(16 Oct 2026, soccer_top/train); 0-1260 s (teamtrack.clip_sets.train), oracle "
+              "search for sustained changes only"),
+}
 
 
 def write_manifest(cfg: dict[str, Any], old: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -182,8 +187,8 @@ def write_manifest(cfg: dict[str, Any], old: list[dict[str, Any]]) -> list[dict[
                 split = KAGGLE_SPLIT.get((vname, cs), "test")
                 e = {"kaggle": f"{KAGGLE_ROOT}/{view['folder']}/{split}/{kind}/{p.name}",
                      "local": local, "bytes": p.stat().st_size, "sha256": sha256(p)}
-                if cs == "eval2":
-                    e["note"] = MANUAL_NOTE
+                if cs in MANUAL_NOTE:
+                    e["note"] = MANUAL_NOTE[cs]
                 entries.append(e)
     return entries
 
@@ -203,9 +208,10 @@ def main(argv: list[str] | None = None) -> int:
             entries = write_manifest(cfg, old)
             mpath.write_text(json.dumps({
                 "dataset": DATASET, "licence": "MIT",
-                "note": "26 files downloaded 9 Oct 2026 (dev + first eval set); 30 files with a "
-                        "'note' downloaded manually by the user on 15 Oct 2026 (second eval set, "
-                        "Kaggle soccer_top/val and soccer_side/test)",
+                "note": "26 files downloaded 9 Oct 2026 (dev + first eval set); files with a "
+                        "'note' were downloaded manually by the user: 30 on 15 Oct 2026 (second "
+                        "eval set, Kaggle soccer_top/val and soccer_side/test), 84 on 16 Oct "
+                        "2026 (Kaggle soccer_top/train, 0-1260 s)",
                 "files": entries}, indent=1), encoding="utf-8")
             print(f"{len(entries)} files, {sum(e['bytes'] for e in entries) / 1e6:.1f} MB "
                   f"-> {mpath}")

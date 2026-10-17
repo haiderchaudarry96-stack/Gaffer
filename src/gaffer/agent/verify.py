@@ -16,7 +16,8 @@ Checks (latest pass wins: once a re-analysis exists its evidence replaces the fi
   window already needs enough visible players.
 - **P persistence**: share of confident look-ahead windows in the new formation family.
   ``>= persist_pass`` held, ``<= persist_fail`` -> ``reject``, between -> ``need_more``.
-- **S second look** (video only): no verdict except a refusal without a re-analysis.
+- **S second look** (video only): no verdict except a refusal without a re-analysis, unless F
+  already fails (no second look can add footage after the clip end).
 - **V view**: per-view cap (the side camera is at most ``uncertain``).
 
 No rule reads the ball, possession or pressing (the drone pipeline never sees the ball), on
@@ -63,6 +64,8 @@ class VerifyConfig:
     max_shift_px_per_s: float
     max_zoom_change: float
     views: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # R: a return leg is rejected only when the new shape does not persist (17 Oct experiment)
+    return_leg_needs_failed_persistence: bool = False
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any] | None = None, **overrides: Any) -> VerifyConfig:
@@ -79,6 +82,8 @@ class VerifyConfig:
             max_shift_px_per_s=float(g["max_shift_px_per_s"]),
             max_zoom_change=float(g["max_zoom_change"]),
             views=dict(a.get("views") or {}),
+            return_leg_needs_failed_persistence=bool(
+                v.get("return_leg_needs_failed_persistence", False)),
         )
         values.update(overrides)
         return cls(**values)
@@ -191,6 +196,11 @@ def evaluate(ev: PassEvidence | None, cfg: VerifyConfig, *, backend: Backend = "
         # 39 real changes, all with >= 4 confident look-ahead windows; FAILURE_LOG 15 Oct)
         missing.append("second_look")
     v = _evaluate_pass(ev, cfg, view)
+    if "footage" in v.failed:
+        # F is a fact about the window bounds, the same on every pass: no second look can add
+        # footage after the clip end (real drone, 15 Oct: 477 s of 1,545 s of re-analysis went
+        # to 4 such candidates, no decision changed; skipped since 16 Oct, user-approved)
+        missing = [m for m in missing if m != "second_look"]
     if missing and v.verdict != "need_more":
         # no verdict without the second look (real video: a first-pass revert can be a
         # perception artefact); the first-pass hint stays in the reason
@@ -210,7 +220,8 @@ def _evaluate_pass(ev: PassEvidence, cfg: VerifyConfig, view: str | None) -> Ver
         return VerdictResult("uncertain", ["footage"], [],
                              f"only {ev.footage_frac:.0%} of the {cfg.lookahead_s:.0f} s "
                              "look-ahead exists after detection")
-    if ev.return_of is not None:
+    if ev.return_of is not None and not (cfg.return_leg_needs_failed_persistence
+                                         and _persists(ev, cfg)):
         return VerdictResult("reject", ["revert"], [],
                              f"returns to the shape held before {ev.return_of}")
     if ev.reverted_after_s is not None:
@@ -235,6 +246,13 @@ def _evaluate_pass(ev: PassEvidence, cfg: VerifyConfig, view: str | None) -> Ver
     return VerdictResult("confirm", [], [],
                          f"new shape held in {ev.share_new:.0%} of {ev.confident_after} "
                          f"confident windows over {cfg.lookahead_s:.0f} s, no revert")
+
+
+def _persists(ev: PassEvidence, cfg: VerifyConfig) -> bool:
+    """P passes over the look-ahead and no reverse change was detected inside it."""
+    return (ev.reverted_after_s is None and ev.share_new is not None
+            and ev.confident_after >= cfg.min_confident_windows
+            and ev.share_new >= cfg.persist_pass)
 
 
 def _need_more(failed: list[str], missing: list[str], reason: str) -> VerdictResult:
