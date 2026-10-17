@@ -562,6 +562,11 @@ api:
       run_rows: report_llm.json
       evidence: [evt_003.jpg]
     view: top
+  visitors:                       # anonymous visitor id (random, cookie; no personal data)
+    cookie: gaffer_visitor
+    max_age_days: 365
+    max_visitors: 10000           # demo approve / reject kept in memory per visitor (oldest
+                                  # forgotten first; a restart forgets all); never global
   uploads:
     max_bytes: 524288000          # 500 MB (a 6 min 4K drone clip is ~130 MB)
     max_duration_s: 360           # 6 min: ~7 min of OpenCV on the laptop CPU + agent checks

@@ -41,6 +41,13 @@ from gaffer.api.uploads import (
     save_stream,
 )
 from gaffer.api.usage import Usage
+from gaffer.api.visitors import (
+    DecisionConflict,
+    VisitorDecisions,
+    new_visitor_id,
+    valid_visitor_id,
+    visitor_id,
+)
 from gaffer.config import load_config, repo_path
 from gaffer.perception.pitch import CalibrationError
 
@@ -127,6 +134,10 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     chat = ChatService(cfg, usage, factory,
                        repo_path(chat_trace or Path(api["storage"].get("root", "outputs/api"))
                                  / "chat_trace.jsonl"))
+    vis = api.get("visitors", {})
+    cookie_name = str(vis.get("cookie", "gaffer_visitor"))
+    cookie_age = int(float(vis.get("max_age_days", 365)) * 86400)
+    demo_decisions = VisitorDecisions(int(vis.get("max_visitors", 10000)))
     ctx_cache: OrderedDict[str, Any] = OrderedDict()
     ctx_lock = threading.Lock()
     upload_lock = threading.Lock()
@@ -134,11 +145,36 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     app = FastAPI(title="Gaffer API", version="0.4.0",
                   description="AI football tactical analyst: OpenCV 5 perception, a "
                               "self-verifying agent on Amazon Bedrock. See docs/API.md.")
+
+    @app.middleware("http")
+    async def visitor_cookie(request: Request, call_next: Any) -> Any:
+        """Every /api request carries an anonymous visitor id (random, in a cookie; no
+        personal data). It keys the visitor's own demo decisions (api/visitors.py)."""
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        got = request.cookies.get(cookie_name)
+        fresh = not valid_visitor_id(got)
+        request.state.visitor_id = new_visitor_id() if fresh else got
+        request.state.visitor_from_cookie = not fresh
+        response = await call_next(request)
+        if fresh:
+            response.set_cookie(cookie_name, request.state.visitor_id, max_age=cookie_age,
+                                httponly=True, samesite="lax", path="/",
+                                secure=request.url.scheme == "https")
+        return response
+
+    # innermost first: the visitor middleware above runs inside gzip and CORS
     app.add_middleware(GZipMiddleware, minimum_size=2048)
     app.add_middleware(CORSMiddleware, allow_origins=list(api.get("cors_origins", [])),
-                       allow_methods=["GET", "POST"], allow_headers=["*"])
+                       allow_methods=["GET", "POST"], allow_headers=["*"],
+                       allow_credentials=True)  # the visitor cookie (dev: Vite on :5173)
     app.state.jobs, app.state.storage, app.state.usage = jobs, storage, usage
     app.state.demo, app.state.chat, app.state.cfg = demo, chat, cfg
+    app.state.demo_decisions = demo_decisions
+
+    def demo_alerts(request: Request) -> list[dict[str, Any]]:
+        """The demo alerts as THIS visitor sees them (their own decisions only)."""
+        return demo_decisions.apply(visitor_id(request), demo.alerts(base(request)))
 
     def store() -> AlertStore:
         return AlertStore(alerts_path)
@@ -188,7 +224,15 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         if not demo.available():
             raise HTTPException(503, "The demo match files are missing on this server "
                                      f"({cfg['api']['demo']['dir']}).")
-        return demo.bundle(store(), base(request))
+        return demo.bundle(base(request), demo_alerts(request))
+
+    @app.get("/api/demo/alerts")
+    def get_demo_alerts(request: Request) -> list[dict[str, Any]]:
+        """The demo alerts with this visitor's own approve / reject (small; the desk reloads
+        it instead of the whole bundle)."""
+        if not demo.available():
+            raise HTTPException(503, "The demo match files are missing on this server.")
+        return demo_alerts(request)
 
     @app.get("/api/demo/files/{name}")
     def demo_file(name: str) -> FileResponse:
@@ -384,10 +428,7 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     def _alert_url(a: dict[str, Any], request: Request) -> dict[str, Any]:
         if not a.get("evidence_image"):
             return a
-        aid = a["alert_id"]
-        if demo.sample_alert(aid) is not None:
-            return {**a, "evidence_image": evidence_url(base(request), "/api/demo",
-                                                        a["event_id"])}
+        aid = a["alert_id"]  # uploads only: demo alerts already carry their URL
         if aid.startswith("alr_up_"):
             an = aid.removeprefix("alr_up_").rsplit("_evt_", 1)[0]
             return {**a, "evidence_image": evidence_url(base(request), f"/api/analyses/{an}",
@@ -396,17 +437,18 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
 
     def _decide(alert_id: str, approve: bool, body: DecisionRequest | None,
                 request: Request) -> dict[str, Any]:
-        s = store()
         note = body.note if body else None
+        if demo.available() and demo.sample_alert(alert_id) is not None:
+            # the demo is shared by every visitor: the decision is this visitor's only
+            seed = next(a for a in demo.alerts(base(request)) if a["alert_id"] == alert_id)
+            try:
+                return demo_decisions.decide(visitor_id(request), seed, approve, note)
+            except DecisionConflict as exc:
+                raise HTTPException(409, str(exc)) from exc
+        s = store()
+        if alert_id not in s.all():
+            raise HTTPException(404, f"No alert with id {alert_id!r}.")
         try:
-            if alert_id not in s.all():
-                seed = demo.sample_alert(alert_id)
-                if seed is None:
-                    raise HTTPException(404, f"No alert with id {alert_id!r}.")
-                # the demo alert lives in samples/: first decision copies it into the store
-                s.create(alert_id.removeprefix("alr_").rsplit("_" + seed.event_id, 1)[0],
-                         seed.event_id, seed.match_time_s, seed.title, seed.explanation,
-                         seed.suggestion, seed.evidence_image)
             a = s.decide(alert_id, approve=approve, note=note)
         except AlertError as exc:
             raise HTTPException(409, str(exc)) from exc
@@ -427,8 +469,7 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         if match_id == demo.id:
             if not demo.available():
                 raise HTTPException(503, "The demo match files are missing on this server.")
-            return ChatSource(demo.id, demo.context(), demo.decisions(),
-                              demo.alerts(store(), base(request)))
+            return ChatSource(demo.id, demo.context(), demo.decisions(), demo_alerts(request))
         st = jobs.get(match_id)
         if st is None:
             raise HTTPException(404, f"No analysis with id {match_id!r}.")
@@ -455,8 +496,11 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     @app.post("/api/chat")
     def post_chat(body: ChatRequest, request: Request) -> dict[str, Any]:
         src = chat_source(body.match_id, request)
+        # header, else the visitor cookie the browser sent back, else the client IP (a client
+        # that drops cookies must not get a fresh daily allowance on every question)
         visitor = request.headers.get("x-visitor-id") or (
-            request.client.host if request.client else "unknown")
+            visitor_id(request) if getattr(request.state, "visitor_from_cookie", False)
+            else (request.client.host if request.client else "unknown"))
         try:
             return chat.ask(src, body.question, [t.model_dump() for t in body.history],
                             visitor)

@@ -385,6 +385,8 @@ def test_upload_end_to_end_agent_confirms_a_real_change(tmp_path, base_cfg) -> N
 
 
 def test_alerts_approve_reject(tmp_path, base_cfg) -> None:
+    """The demo alert: decided per visitor, never written to the shared store. An upload's
+    alert: the shared append-only store, as before."""
     c = make_client(tmp_path, base_cfg)
     r = c.post(f"/api/alerts/{DEMO_ALERT}/approve", json={"note": "good spot"})
     assert r.status_code == 200
@@ -393,8 +395,7 @@ def test_alerts_approve_reject(tmp_path, base_cfg) -> None:
     assert a["evidence_image"].endswith("/api/demo/evidence/evt_003.jpg")
     assert c.post(f"/api/alerts/{DEMO_ALERT}/reject").status_code == 409  # decided once
     assert c.get("/api/demo").json()["alerts"][0]["status"] == "approved"
-    lines = (tmp_path / "alerts.jsonl").read_text().splitlines()
-    assert len(lines) == 2  # appended: pending copy + decision (history never rewritten)
+    assert not (tmp_path / "alerts.jsonl").exists()  # the demo never touches the shared store
     assert c.post("/api/alerts/alr_nope_evt_001/approve").status_code == 404
     # an upload's alert (as the agent writes it) is rejected through the same store
     s = AlertStore(tmp_path / "alerts.jsonl")
@@ -403,6 +404,66 @@ def test_alerts_approve_reject(tmp_path, base_cfg) -> None:
     r = c.post("/api/alerts/alr_up_abcdef123456_evt_002/reject")
     assert r.status_code == 200 and r.json()["status"] == "rejected"
     assert r.json()["evidence_image"].endswith("/api/analyses/abcdef123456/evidence/evt_002.jpg")
+    lines = (tmp_path / "alerts.jsonl").read_text().splitlines()
+    assert len(lines) == 2  # appended: pending + decision (history never rewritten)
+    # ... and an upload's decision is the same for everyone (a second browser)
+    other = TestClient(c.app)
+    assert other.post("/api/alerts/alr_up_abcdef123456_evt_002/approve").status_code == 409
+
+
+def test_demo_decision_is_per_visitor(tmp_path, base_cfg) -> None:
+    """One visitor's approve never changes what another visitor sees on the demo."""
+    c = make_client(tmp_path, base_cfg)
+    a, b = TestClient(c.app), TestClient(c.app)  # two browsers: two cookie jars
+    assert a.get("/api/demo/alerts").json()[0]["status"] == "pending"
+    assert a.post(f"/api/alerts/{DEMO_ALERT}/approve").json()["status"] == "approved"
+    assert a.get("/api/demo/alerts").json()[0]["status"] == "approved"
+    assert b.get("/api/demo/alerts").json()[0]["status"] == "pending"
+    assert b.get("/api/demo").json()["alerts"][0]["status"] == "pending"
+    # the second visitor decides differently; the first still sees their own decision
+    assert b.post(f"/api/alerts/{DEMO_ALERT}/reject").json()["status"] == "rejected"
+    assert a.get("/api/demo/alerts").json()[0]["status"] == "approved"
+    assert b.get("/api/demo/alerts").json()[0]["status"] == "rejected"
+    # a third, new visitor still gets the alert as shipped
+    assert TestClient(c.app).get("/api/demo/alerts").json()[0]["status"] == "pending"
+    assert not (tmp_path / "alerts.jsonl").exists()
+    assert len(c.app.state.demo_decisions) == 2
+
+
+def test_visitor_cookie(tmp_path, base_cfg) -> None:
+    c = make_client(tmp_path, base_cfg)
+    r = c.get("/api/health")
+    jar = r.headers["set-cookie"]
+    assert jar.startswith("gaffer_visitor=") and "HttpOnly" in jar and "samesite=lax" in jar.lower()
+    assert "set-cookie" not in c.get("/api/health").headers  # kept by the browser, not renewed
+    # a malformed cookie is replaced, not trusted
+    bad = TestClient(c.app, cookies={"gaffer_visitor": "<script>"})
+    assert bad.get("/api/health").headers["set-cookie"].startswith("gaffer_visitor=")
+
+
+def test_visitor_decisions_are_capped(tmp_path, base_cfg) -> None:
+    cfg = copy.deepcopy(base_cfg)
+    cfg["api"]["visitors"]["max_visitors"] = 2
+    c = make_client(tmp_path, cfg)
+    first, second, third = (TestClient(c.app) for _ in range(3))
+    for v in (first, second, third):
+        assert v.post(f"/api/alerts/{DEMO_ALERT}/approve").status_code == 200
+    assert len(c.app.state.demo_decisions) == 2
+    assert first.get("/api/demo/alerts").json()[0]["status"] == "pending"  # forgotten (oldest)
+    assert third.get("/api/demo/alerts").json()[0]["status"] == "approved"
+
+
+def test_chat_visitor_from_cookie(tmp_path, base_cfg) -> None:
+    """Without X-Visitor-Id, the visitor cookie counts the daily questions."""
+    cfg = copy.deepcopy(base_cfg)
+    cfg["api"]["chat"]["max_questions_per_visitor_per_day"] = 1
+    c = make_client(tmp_path, cfg, llm=FakeLLM(["Ask me about a change [evt_003]."] * 3))
+    q = {"match_id": "w900_1260", "question": "hello", "history": []}
+    a, b = TestClient(c.app), TestClient(c.app)
+    a.get("/api/health"), b.get("/api/health")  # each browser gets its cookie
+    assert a.post("/api/chat", json=q).status_code == 200
+    assert a.post("/api/chat", json=q).status_code == 429
+    assert b.post("/api/chat", json=q).status_code == 200  # another browser
 
 
 # --------------------------------------------------------------------------- chat
