@@ -15,14 +15,19 @@ Python 3.12 virtualenv with `uvicorn` and `curl`.
 From the repo root:
 
 ```powershell
-# optional: build the frontend first so the image serves it at /
-cd web; npm ci; $env:VITE_API_URL="http://localhost:8000"; npm run build; cd ..
+# optional: build the frontend first so the image serves it at / ("/" = the API is on this
+# same server, so the site works on any host name; empty = static demo, not connected)
+cd web; npm ci; $env:VITE_API_URL="/"; npm run build; cd ..
 
 docker build -f deploy/Dockerfile -t gaffer:latest .
 docker run --rm -p 8000:8000 -v "${PWD}/outputs:/app/outputs" --name gaffer gaffer:latest
 ```
 
-Then open http://localhost:8000/api/health (and http://localhost:8000/ if the frontend was built).
+Then open http://localhost:8000/api/health (and http://localhost:8000/ and /app if the frontend
+was built).
+
+Without Docker, the same combined app on the laptop is one command after the build above:
+`uvicorn gaffer.api.main:app` (http://localhost:8000/).
 `outputs/` is mounted so analyses, alerts (`outputs/alerts.jsonl`) and the daily usage counters
 survive a restart.
 

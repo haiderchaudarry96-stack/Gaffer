@@ -25,6 +25,26 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-17] Generated clip with worn markings: White's shirts mostly not given a team, so no White shape and no candidates
+**Stage:** team colour (upload through the web app, Phase 4 integration check)
+**Severity:** wrong output (on generated footage)
+**Input:** generated top-down clip, 960 × 600, 120 s, 8 fps (`tests/videogen.py` frames with the painted lines faded to 20 %, White switching 4-4-2 → 3-5-2 at 0:50); OpenCV pitch auto-detect was unsure (correctly: faint lines), the coach marked the 4 corners in the browser.
+**What happened:** the analysis finished, but of 6,218 player detections only 1,463 were labelled home (White), 2,666 away, 1,021 referee and 1,068 unknown: White never reached 8 labelled outfield players often enough for a shape, the engine produced 0 candidates and the desk showed "No shape changes found" with most White players as hollow (unassigned) rings. For comparison, the 3-min generated clip with full-strength markings uploaded in the same check (switch at 1:15): home 4,221 / away 4,169 of 9,617 detections, 3 candidates, the change confirmed.
+**Why (best guess):** the team model is fitted per upload; with the faded paint blended into the grass, one team's colour gate came out at 5.0 (7.4 on the clean clip), so many torsos fell outside it and went to "other" (referee / unknown). Generated footage, so it says little about real worn pitches, but it is the honest outcome of that upload.
+**Screenshot / output:** web/screenshots/integrate/14-needs-corners-result-desk.png
+**Fix or mitigation:** none (perception not tuned in the integration session). The UI states plainly that no changes were found and shows unassigned players as rings, never guessed.
+**Measured impact:** share of all detections labelled home 44 % (clean clip) vs 24 % (worn markings); candidates 3 vs 0.
+
+### [2026-10-17] Web app rejected every real upload result: agent traces now contain "explanation" steps
+**Stage:** web app (data validation), found by the Phase 4 end-to-end check
+**Severity:** crash (of the result view: "The analysis did not start or finish")
+**Input:** the first generated upload analysed by the API and loaded by the connected frontend.
+**What happened:** `GET /api/analyses/{id}/result` returned 200, but `validateTraceStep` threw on `kind: "explanation"`, so the desk never showed the result. The demo trace (`samples/`) predates build step 7 and has no such step, so the frontend's own tests could not catch it.
+**Why (best guess):** the frontend was written against the step-6 trace; step 7 added the checked-explanation step to the trace after the decision.
+**Screenshot / output:** none (caught in the walkthrough log); fixed result: web/screenshots/integrate/08-upload-result-desk.png
+**Fix or mitigation:** fixed (branch `phase4-integrate`): `explanation` is an accepted, untyped trace kind; a test covers it.
+**Measured impact:** upload results shown: 0 / 1 → 2 / 2 in the walkthrough.
+
 ### [2026-10-17] Coach report: Nova's version does not pass the grounding check; the code template is published
 **Stage:** agent (coach report, `agent/report.py`, build step 7)
 **Severity:** degraded (the LLM's part of the report; the published report is the template)

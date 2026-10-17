@@ -145,6 +145,9 @@ Footage: **TeamTrack** `soccer_top` (main) and `soccer_side` (fisheye), see `doc
 
 **Status 17 Oct (part B, backend, branch `phase4-backend`): none of the six can be ticked yet** — each needs the deployed site, AWS or the frontend. Done towards them: the FastAPI backend (`docs/API.md`): demo served from `samples/w900_1260` (`GET /api/demo` 1.4 s in the cloud sandbox, 0.19 MB gzipped: local, not a public URL); uploads → pitch step (OpenCV auto-detect + coach confirmation, or 4 corners) → the unchanged pipeline and Phase 3 agent (the agent's vision tools run OpenCV in the API process, i.e. on EC2 once deployed), alerts approve / reject, grounded chat with caps; `deploy/Dockerfile` + `deploy/README.md` (image not built yet: the cloud sandbox cannot pull base images); 51 new tests. Auto-detect accuracy on real footage: **to be measured** with `py scripts\eval_autodetect.py`.
 
+
+**Status 17 Oct (integration, branch `phase4-integrate`): still none of the six can be ticked** — all need the public deploy on EC2, AWS (Budgets), a stranger test or the UI quality-bar audit, none of which happened. Done towards them: frontend and backend now run as **one app** (`VITE_API_URL=/` build served by one `uvicorn`); the desk reads the demo from the API; demo approvals are per visitor (cookie, never global); uploads go through the pitch step in the browser ("Is this your pitch?" on OpenCV's outline, or the 4-point screen preloaded with the found / guessed corners) → progress → the analysed result in the same views. Checked in the cloud sandbox only, with generated videos and Bedrock switched off (rules arm, no AWS call): Playwright walkthrough of all paths, 14 screenshots in `web/screenshots/integrate/`, no console errors; 210 Python tests + 25 web tests. Not checked: real Bedrock from the app, real non-TeamTrack footage, load time of a public URL, EC2.
+
 ---
 
 ## Phase 5 — Submission package
