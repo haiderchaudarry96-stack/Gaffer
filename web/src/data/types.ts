@@ -150,9 +150,11 @@ export interface TraceMatchSummary extends TraceBase {
   cost_usd: number
 }
 
-/** Other kinds (guard_block, fallback) are kept but not typed further. */
+/** Other kinds are kept but not typed further: guard_block, fallback, and explanation (the
+ * checked explanation step the agent writes after a decision since Phase 3 step 7; the demo
+ * trace predates it, analyses of uploads carry it). */
 export interface TraceOther extends TraceBase {
-  kind: 'guard_block' | 'fallback'
+  kind: 'guard_block' | 'fallback' | 'explanation'
   [key: string]: unknown
 }
 

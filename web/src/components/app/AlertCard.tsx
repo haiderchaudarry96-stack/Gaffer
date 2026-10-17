@@ -87,6 +87,8 @@ export default function AlertCard({
   const status = decision?.status ?? alert.status
   const alt = evidenceAlt(alert, event, teamName)
   const change = event?.change.replace('->', '→') ?? alert.title
+  // the new shape: from the report event, else from the code-written title "<team>: A -> B (mm:ss)"
+  const newShape = event?.change.split('->')[1]?.trim() ?? /->\s*([0-9-]+)/.exec(alert.title)?.[1] ?? change
 
   if (live && live.phase !== 'decided') {
     const { plan, phase, stepsDone, stepTools } = live
@@ -155,7 +157,7 @@ export default function AlertCard({
           </button>
         </div>
         <h2 id={`alert-${alert.alert_id}`} className="font-display text-3xl leading-tight font-semibold text-text">
-          {teamName} switched to <span className="whitespace-nowrap">{event?.change.split('->')[1]?.trim() ?? change}</span>
+          {teamName} switched to <span className="whitespace-nowrap">{newShape}</span>
         </h2>
         {text.explanation && (
           <p className="text-lg leading-relaxed text-text">

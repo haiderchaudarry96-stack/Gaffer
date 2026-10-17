@@ -16,6 +16,7 @@ import {
   type PitchPointsRequest,
 } from './analysis'
 import { sendChat } from './chat'
+import { validateTraceStep } from './validate'
 
 const BASE = 'https://api.test'
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -176,6 +177,12 @@ describe('analysis API client', () => {
     })
     expect(guess.pitch?.corners).toBeNull()
     expect(guess.pitch?.suggested_corners).toEqual(corners)
+  })
+
+  it('accepts the explanation step of current agent traces (uploads)', () => {
+    const step = { ts: '2026-10-17T12:10:56Z', run_id: 'api_1', match_id: 'up_1', event_id: 'evt_001', step: 4, actor: 'code', kind: 'explanation', source: 'template', text: 'White kept the 3-5-2 [R2].' }
+    expect(validateTraceStep(step).kind).toBe('explanation')
+    expect(() => validateTraceStep({ ...step, kind: 'nonsense' })).toThrow(/kind/)
   })
 
   it('estimates processing from the measured 1.2 s per second of video', () => {

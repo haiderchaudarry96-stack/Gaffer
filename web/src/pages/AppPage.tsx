@@ -36,6 +36,8 @@ interface Uploaded {
   index: PositionIndex
   timeline: TimelineView
   window: [number, number]
+  /** where the desk opens: shortly before the first confirmed change */
+  start: number
 }
 
 /**
@@ -48,7 +50,7 @@ export default function AppPage() {
   const [params] = useSearchParams()
   const [uploaded, setUploaded] = useState<Uploaded | null>(null)
   const [w0, w1] = uploaded?.window ?? DEFAULT_MATCH.window
-  const startT = uploaded ? w0 : Number(params.get('t') ?? APP_START_S)
+  const startT = uploaded ? uploaded.start : Number(params.get('t') ?? APP_START_S)
   const clock = useMemo(() => new PlaybackClock({ min: w0, max: w1 - 0.5, start: startT, rate: 1 }), [w0, w1, startT])
   const [video, setVideo] = useState<VideoSource | null>(null)
   const [localVideo, setLocalVideo] = useState<LocalVideo | null>(null)
@@ -123,9 +125,11 @@ export default function AppPage() {
   const selectedEvent = tl?.events.find((e) => e.id === selected)
   const alert = alertList?.find((a) => a.event_id === selected)
   const steps = traceForEvent(allTrace, selected)
-  // run rows, explanations and the report exist for the stored demo analysis only
+  // run rows and explanations are read for the stored demo analysis only; an upload's result
+  // carries its own coach report (same format), used for the alert's before / after shapes
   const row = !uploaded && rows.status === 'ready' ? rows.data.find((r) => r.event_id === selected) : undefined
-  const reportEvent = !uploaded && report.status === 'ready' ? report.data.inputs.events.find((e) => e.id === selected) : undefined
+  const reportData = uploaded ? uploaded.result.report : report.status === 'ready' ? report.data : null
+  const reportEvent = reportData?.inputs.events.find((e) => e.id === selected)
   const explanation = !uploaded && explanations.status === 'ready' ? explanations.data.find((e) => e.event_id === selected) : undefined
   const plan = plans.get(selected)
   const liveState: LiveState | null =
@@ -167,7 +171,10 @@ export default function AppPage() {
     const frames = result.match_state.frames
     const win: [number, number] = [frames[0]?.t ?? 0, (frames.at(-1)?.t ?? 0) + 0.5]
     const tlView = timelineFromContract(result.timeline)
-    setUploaded({ result, index: new PositionIndex(result.match_state), timeline: tlView, window: win })
+    const first = tlView.events.find((e) => e.status === 'confirmed') ?? tlView.events[0]
+    // team labels settle a few seconds into a video: open just before the first confirmed change
+    const start = first ? Math.max(win[0], first.t - 15) : win[0]
+    setUploaded({ result, index: new PositionIndex(result.match_state), timeline: tlView, window: win, start })
     // a video this browser cannot decode is analysed by the server but not played here
     setLocalVideo(v.previewable ? videoFrom(v, win[0]) : null)
     setSelected(tlView.events.find((e) => e.status === 'confirmed')?.id ?? tlView.events[0]?.id ?? '')

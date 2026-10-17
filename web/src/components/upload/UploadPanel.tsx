@@ -299,7 +299,7 @@ export default function UploadPanel({
               <img
                 src={step.status.pitch.preview_url}
                 alt={`First frame of ${video.file.name} with the pitch outline Gaffer found, corners numbered 1 to 4`}
-                className="w-full rounded-xl border border-line"
+                className="mx-auto max-h-[52vh] w-auto max-w-full rounded-xl border border-line"
                 data-testid="pitch-preview"
               />
             ) : (
