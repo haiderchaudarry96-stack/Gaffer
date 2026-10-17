@@ -128,8 +128,9 @@ Error example: `{"ref":"R7","error":"over_budget","message":"estimated 512 s > 3
 - Camera motion is measured on **frame pairs 0.5 s apart** at each of the 6 sample times (ORB + `cv2.estimateAffinePartial2D` with RANSAC, so moving players are outliers), not between samples ~25 s apart. 0.2 s pairs were too coarse: at 960 px analysis width, 1 px of noise is 20 px/s against a 25 px/s limit. Consecutive samples are still compared for cuts (HSV histogram correlation < 0.5) and zoom drift; two samples that **no longer align at all** count as a view change (reported as a cut), and a pair that does not align means the camera moved too fast. Static views (side) check alignment with their calibration frame instead of line re-anchoring.
 - Re-analysis on video covers exactly the requested window snapped outwards to 5 s (no extra `context_s`, which only the synthetic backend adds), tracking = output = `sample_fps`; the window MatchState goes through the same `MatchContext.tactics_pass` as the synthetic slice. Budget: window × fps × `agent.vision.s_per_frame[view]` (top 0.33 s) ≤ 360 s, and ≤ 1200 s of OpenCV per match; cache hits are free and never refused. Cache key = video, view, window, fps, team model and perception/detector config.
 - The rules policy re-analyses at the **lowest** allowed rate, or at the highest when first-pass coverage is low, stepping down when OpenCV refuses on budget.
-- `render_evidence` on video: inside the most confident look-ahead window in the new shape, the frame with most outfield players of the team; both teams' positions and the team's formation lines (template fit) are projected back into that frame through its own re-anchored homography, cropped to the pitch, above the two shape panels. Both shape panels use the **most confident window** of the old / new shape (latest pass first, then first pass); with none, the panel says "low visibility" instead of averaging partial frames.
+- `render_evidence` on video: inside the most confident look-ahead window in the new shape, the frame with most outfield players of the team; both teams' positions and the team's formation lines (template fit) are projected back into that frame through its own re-anchored homography, cropped to the pitch, above the two shape panels. Both shape panels use the **most confident window** of the old / new shape (latest pass first, then first pass); with none, the panel says "low visibility" instead of averaging partial frames. **Step 7:** a window with more than 25 % of the team's outfield positions inside its own penalty area (deep defending or a set piece) is skipped, and "before" searches 120 s back from the onset (`presentation.evidence`); if every window is packed the most confident one is drawn with an "ATYPICAL" note. The 16:30 demo alert's "before" panel moved from a packed 15:15–15:45 window (45 % in own box) to 15:05–15:35 (20 %).
 - Alerts and the verified timeline show the **code-written** reason (`verify.decision_reason`) first; the model's text is kept as the separate "explanation" (spike 15 Oct). Every rules block carries `next_step`.
+- **Explanation step (build step 7, 17 Oct; presentation only).** Right after a successful `record_decision` the loop calls `agent/explain.py` in its **own** conversation (own budget `presentation.explain`, shared rate limiter): Nova gets `facts` (decision, code reason, cause, the rule in plain words, the key numbers of the candidate's results by ref; never the engine's evidence string or the label strip) and writes 1-2 sentences, which a cheap check accepts or replaces with a code template (§5). The alert's explanation is this text, labelled `Explanation (agent)` or `Explanation (template)`; the free text of `record_decision` and `propose_alert` stays in the trace only (`decision_text`). The rules arm gets the template; a rules-arm runner given an explainer with an LLM gets Nova's words for the rules' decisions. The orchestration prompt and budget are unchanged, so decisions cannot depend on it (asserted on the 14 real candidates by replaying their traces). Settings live outside `agent:` so the frozen fingerprint stays `ca4ff9bbf7b01c6c`.
 
 **`render_evidence`**: allowed only after `record_decision(confirmed)`. It decodes the frame where the new shape is most confident and draws team-coloured boxes (`render.annotate_frame`). Next to it go two minimaps: the team's average shape (template-slot means from the formation fit) before and after the change, labelled with formations and clocks. Output is **JPEG (quality 90), ≤ 1 MB, 1280 px wide** (changed 16 Oct, user-approved: a 400 KB PNG cap shrank a 4K evidence frame to ~570 px). Synthetic/annotation backends get the minimaps only.
 ```json
@@ -294,7 +295,9 @@ Verdict order: G fail → refuse; C fail without a second look, or S missing →
 - `propose_alert.explanation` must contain ≥ 1 `[Rn]`. The UI renders it as a "how I checked this" link into the trace.
 - Clocks in text (`mm:ss`) must fall inside a cited tool's window (±5 s), else `not_allowed`. Other numbers in the text are not matched against results (cut on 15 Oct); the citation and time-window checks are the grounding guarantee.
 - Tool results omit unavailable metrics, and the card says "unavailable: ball, possession, pressing", so the model has nothing to cite for them.
+- **Explanation check (build step 7).** Number matching came back for the coach-facing explanation only, where it is cheap: the facts are a few dozen numbers. `explain.check` flags a text that (1) does not name the code's cause (footage, revert, return leg, ...), (2) contradicts the decision (e.g. "not held" for a confirmation, or for a return leg that held 75 %), (3) uses a number or `mm:ss` clock that is not in the facts (with its unit: %, s, fps, readings), (4) mentions ball, possession, pressing or a confidence score, (5) cites a ref that does not exist, or (6) is longer than 2 sentences / 300 characters. A flagged text, an LLM error or a spent budget gives the code template, which is built from the same facts and passes the same check (tested for every cause). The check does not verify that a number sits in the very ref it is cited to (manual review on the 14 real candidates: all did).
 - **Coach report** (`agent/report.py`): one call per match, inputs are decided events plus segment summaries. Every sentence that contains a number or time cites `[evt_004]` or `[seg 1260–1530]`. A failed check gets one retry, then a deterministic template.
+  **As built (step 7, 17 Oct):** inputs = the decided events (code reason, explanation, before/after line, depth, width and own-box share of the same typical windows as the evidence panels) + the timeline segments (first pass); candidates the agent did not check are listed and cannot be cited. Citations are `[evt_003]` or `[seg 16:30-17:30]` (a run of consecutive segments allowed). `check_report`: every sentence with a number or `mm:ss` cites a decided event or a segment run, its numbers and clocks appear in the cited items, every bracket is a valid source, each "may have fixed" and each of exactly 3 recommendations rests on a cited number or time, both teams appear in the story, no ball / possession / pressing / confidence. The template passes the same check (tested). Prompt worked on dev seed 45 (5 runs, 3 prompt versions, 1 accepted); the 900–1260 s report ran once: Nova failed the check twice (second attempt only on a `[match.note]` citation; its content was grounded but tactically weak), so the **template** report is the one published (`outputs/agent_video_step7/report_w900_1260.md`, $0.0035). FAILURE_LOG 2026-10-17.
 
 ---
 
@@ -401,7 +404,7 @@ Phase 3 has a CLI for the coach (`py -m gaffer.agent.alerts --approve|--reject <
 
 ## 10. Workflow diagram
 
-Rendered to `docs/agent_workflow.png` in build step 7 with `npx -y @mermaid-js/mermaid-cli` (MIT), or exported by hand from mermaid.live if Node is missing.
+Rendered to `docs/agent_workflow.png` in build step 7 (17 Oct) with mermaid-cli 11.17.0 (MIT) through npx, using the local Chrome (no browser download): extract this block to `agent_workflow.mmd`, then `npx -y @mermaid-js/mermaid-cli@11.17.0 -i agent_workflow.mmd -o docs/agent_workflow.png -b white -s 2 -p puppeteer.json` with `{"executablePath": "<path to chrome.exe>"}` in `puppeteer.json`. Updated in step 7 to the as-built flow: `record_decision` before `render_evidence`, the footage branch without a second look (16 Oct), and the checked explanation step (§2, §5).
 
 ```mermaid
 flowchart TD
@@ -414,16 +417,19 @@ flowchart TD
   D --> L
   L -- "check_frame_quality" --> Q["OpenCV: line error, camera motion,<br/>zoom, cuts, player coverage"]
   Q -- "camera moved / cut" --> U1["Uncertain: geometry invalid<br/>no alert"]
+  Q -- "clip ends inside the 60 s look-ahead" --> U3["Uncertain: not enough footage<br/>no alert"]
   Q -- "ok, second look needed" --> R["reanalyse_window<br/>OpenCV re-run at 4-6 fps<br/>+ tactics on the window"]
   R -- "over budget" --> R
   R --> K{"Rules: coverage · persistence · revert"}
   K -- "reverted / not held" --> RJ["Rejected + reason"]
   K -- "inconclusive" --> U2["Uncertain + reason<br/>no alert"]
-  K -- "held" --> E["render_evidence<br/>OpenCV frame + before/after shapes"]
+  K -- "held" --> E["record_decision: confirmed<br/>render_evidence: OpenCV frame<br/>+ before/after shapes"]
   E --> A["propose_alert<br/>status: pending"]
   A --> CO{"Coach"}
   CO -- "Approve" --> AP[("alerts.jsonl: approved")]
   CO -- "Reject" --> AR[("alerts.jsonl: rejected")]
+  RJ & U1 & U2 & U3 & E -.-> X["Explanation: Nova words the code reason<br/>checked: cause, numbers, no contradiction<br/>else code template"]
+  X -. "text of the alert" .-> A
   L -. "every step" .-> TR[("agent_trace.jsonl")]
 ```
 
@@ -459,7 +465,7 @@ flowchart TD
 ## 13. Decisions (answered by the user, 15 Oct)
 
 1. **Look-ahead: yes.** Verification waits for 60 s of play after detection (alerts ~100 s after the change instead of ~42 s).
-2. **Side view: capped.** Side candidates are at most "uncertain: experimental camera". No side re-analysis confirmation.
+2. **Side view: capped.** Side candidates are at most "uncertain: experimental camera". No side re-analysis confirmation. (Step 7: the recorded reason of an uncertain side candidate now starts with exactly that, the evidence follows as detail; `Toolbox.recorded_reason`.)
 3. **Real clips:** reported as decision tables + pipeline-vs-oracle decision agreement; no false-alert / miss rates on real footage.
 4. **Bedrock quota: unknown**, and no Service Quotas permission will be added. The step 4 spike measures what we get; the quota-exhausted rules fallback and `--resume` stay as designed. Throttling is reported to the user.
 5. **Rules-only arm: published**, even if it shows the LLM adds little to decisions.
@@ -490,4 +496,18 @@ Judged as written in §8: bar (≤ 16 false alerts AND ≥ 30 / 38) **met**, unc
 
 1. **OpenCV result changes the next call AND the decision, on real frames:** only the **simulated pan/zoom** (real drone frames, synthetic camera motion): `check_frame_quality` measures 190 px/s, 30 % zoom, lines fit 33 % → refuse → no re-analysis → uncertain, where the first pass alone says reject. **No genuinely real case exists:** on 14 real candidates the decision always equals the first pass alone. The closest: demo evt_003, where low first-pass coverage (52 %) makes the second look run at the highest rate (6 fps instead of 4): the next call's arguments change, the decision (confirm) does not.
 2. **Re-analysis contradicts a first-pass finding on a real clip:** eval evt_001 (away 3-5-2 → 4-4-2, 26:35): first pass "reverted after 55 s"; the second look at 4 fps and at 6 fps finds no revert but the new shape in only 17 % of windows → still rejected, with a different reason. Decision unchanged, reason changed.
-3. **Confirmed alert with an evidence image on real footage: yes, one** (demo window evt_003, `outputs/agent_video_taskE/evidence/teamtrack_top_w900_1260/evt_003.jpg`), in a window chosen with the oracle, so it is a demonstration; its "before" panel shows a likely set piece (FAILURE_LOG). On the eval / eval2 sets no candidate is confirmed. Confirmed alerts with evidence otherwise exist on synthetic matches (41 in the final run, shape panels only) and on generated frames (tests).
+3. **Confirmed alert with an evidence image on real footage: yes, one** (demo window evt_003, `outputs/agent_video_taskE/evidence/teamtrack_top_w900_1260/evt_003.jpg`), in a window chosen with the oracle, so it is a demonstration; its "before" panel showed a likely set piece (FAILURE_LOG), re-rendered in step 7 with a typical 4-4-2 (`outputs/agent_video_step7/evidence/teamtrack_top_w900_1260/evt_003.jpg`). On the eval / eval2 sets no candidate is confirmed. Confirmed alerts with evidence otherwise exist on synthetic matches (41 in the final run, shape panels only) and on generated frames (tests).
+
+### Build step 7 (17 Oct): presentation and explanation only, decisions unchanged
+
+| item | before | after |
+|---|---|---|
+| Real-footage explanations (14 candidates, decisions replayed from the traces and asserted equal, both arms) | 7 / 14 wrong (contradict the decision or name another cause); 12 / 14 under a strict rubric (a number or claim not in the cited result) | **0 / 14 wrong** (strict: 0 / 14; 1 vague); Nova's text kept 13 / 14, template 1 (a false flag); 15 calls, $0.0049 |
+| "held 20 s" in explanations | 31 / 41 synthetic alerts (final run, not re-run) | the explanation step never sees the engine's evidence string; dev seed 45: 0 / 10 |
+| 16:30 evidence "before" panel | 15:15–15:45, 45 % of White's positions inside its own penalty area (likely set piece) | 15:05–15:35, 20 % (most confident window with ≤ 25 %; else an "ATYPICAL" note) |
+| Side eval2 recorded reason | "no verdict after the evidence budget: …" | "uncertain: experimental camera (side view, never alerted); detail: second look refused, over budget (…); first pass: …" |
+| Coach report (`agent/report.py`) | not built | built; the 900–1260 s report is the **code template** (Nova's version failed the grounding check twice, $0.0035); `outputs/agent_video_step7/report_w900_1260.md` |
+| Workflow diagram | Mermaid source only | `docs/agent_workflow.png` (as-built flow) |
+| Trace excerpts | in reports only | `docs/AGENT_TRACE_EXAMPLES.md`: situations (a) confirm with evidence, (b) second look contradicts the first pass, (c) refusal |
+
+Bedrock spent in step 7 (from `outputs/llm_calls.jsonl`): real explanations $0.0049 (15 calls) + explanation prompt work on dev seed 45 $0.0117 (4 runs, 39 calls) + real report $0.0035 (2 calls) + report prompt work on dev seed 45 $0.0382 (5 runs, 3 prompt versions, 10 calls) = **$0.058**. Config fingerprint unchanged (`ca4ff9bbf7b01c6c`): all new settings live in `presentation:`.

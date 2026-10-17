@@ -51,7 +51,7 @@ from gaffer.agent.vision import (
     write_image,
 )
 from gaffer.config import repo_path
-from gaffer.perception.pitch import PitchModel
+from gaffer.perception.pitch import Markings, PitchModel
 from gaffer.tactics.formation import UNCERTAIN, WindowResult, build_template, fit_template
 from gaffer.tactics.metrics import possession_share, span_metrics
 
@@ -256,7 +256,11 @@ class CandidateState:
     reanalysis: dict[str, Any] | None = None  # last reanalyse_window summary (for reports)
     decision: Decision | None = None
     reason: str = ""  # code-written (verify.decision_reason): the primary reason everywhere
-    explanation: str = ""  # the model's own text for the decision, shown apart from `reason`
+    decision_text: str = ""  # the `reason` text of the record_decision call (trace only)
+    explanation: str = ""  # coach-facing, from agent/explain.py: checked model text or template
+    explanation_source: str = ""  # "agent" | "template"
+    explanation_flags: list[str] = field(default_factory=list)  # why a model text was replaced
+    results: dict[str, dict[str, Any]] = field(default_factory=dict)  # result summary per ref
     verdict_ref: str = "R0"  # ref of the last result that updated the verdict
     citations: list[dict[str, Any]] = field(default_factory=list)
     evidence_image: str | None = None
@@ -413,6 +417,8 @@ class Toolbox:
         except _ToolFailure as exc:
             return self._err(st, ref, name, None, exc.code, str(exc), exc.extra)
         st.refs[ref] = RefInfo(name, window, True)
+        st.results[ref] = {k: v for k, v in result.items()
+                           if k not in ("rules", "labels", "candidates_in_window")}
         if name in ("check_frame_quality", "reanalyse_window"):
             st.verdict_ref = ref
         return {"ref": ref, **result}
@@ -424,6 +430,7 @@ class Toolbox:
     def _err(self, st: CandidateState, ref: str, name: str, window: Any, code: str, msg: str,
              extra: dict[str, Any] | None = None) -> dict[str, Any]:
         st.refs[ref] = RefInfo(name, window, False)
+        st.results[ref] = {"error": code, "message": msg[:300], **(extra or {})}
         return {"ref": ref, "error": code, "message": msg[:300], **(extra or {})}
 
     def _window(self, a: float, b: float, max_s: float | None = None) -> tuple[float, float]:
@@ -688,7 +695,7 @@ class Toolbox:
         Raises VisionError when the video cannot be read."""
         panels = self.shape_panels(c, data)
         img = self.render_shapes(c, panels)
-        shows = [p["caption"] for p in panels]
+        shows = [p["caption"] + (f"; {p['note']}" if p.get("note") else "") for p in panels]
         frame_t = None
         if self.ctx.backend == "video":
             vb = self._need_video()
@@ -740,42 +747,86 @@ class Toolbox:
                 lines.append(lp[np.argsort(lp[:, 1])])
         return float(f.t), players, lines
 
+    def family_windows(self, data: PassData, team: str, label: str, lo: float, hi: float
+                       ) -> list[WindowResult]:
+        """Confident windows ending in [lo, hi] whose label is in `label`'s family."""
+        fam = self.ctx.fam(label)
+        return [w for w in data.windows[team] if lo - 1e-6 <= w.t <= hi + 1e-6
+                and w.label != UNCERTAIN and self.ctx.fam(w.label) == fam]
+
     def best_window(self, data: PassData, team: str, label: str, lo: float, hi: float
                     ) -> WindowResult | None:
         """The most confident window ending in [lo, hi] whose label is in `label`'s family."""
-        fam = self.ctx.fam(label)
-        ws = [w for w in data.windows[team] if lo - 1e-6 <= w.t <= hi + 1e-6
-              and w.label != UNCERTAIN and self.ctx.fam(w.label) == fam]
+        ws = self.family_windows(data, team, label, lo, hi)
         return max(ws, key=lambda w: (w.confidence, w.t)) if ws else None
 
+    def own_box_share(self, data: PassData, team: str, w: WindowResult) -> float:
+        """Share of the team's outfield positions inside its own penalty area in window `w`
+        (frames with enough players; attacking-direction normalised: own goal line at x = 0).
+        High = defending deep or a set piece, not the team's usual shape."""
+        mk = Markings.from_config(self.ctx.cfg)
+        half = self.ctx.tcfg.pitch_width_m / 2
+        pts = [f.outfield for f in data.frames[team] if w.t - w.window_s <= f.t <= w.t
+               and len(f.outfield) >= self.ctx.tcfg.min_players]
+        if not pts:
+            return 0.0
+        p = np.vstack(pts)
+        inside = ((p[:, 0] <= mk.penalty_area_depth_m)
+                  & (np.abs(p[:, 1] - half) <= mk.penalty_area_width_m / 2))
+        return float(inside.mean())
+
+    def _panel_window(self, team: str, label: str, lo: float, hi: float, data: PassData
+                      ) -> tuple[WindowResult, PassData, float, bool] | None:
+        """(window, pass, own-box share, typical): the most confident window of the shape
+        whose own-box share is at most `presentation.evidence.max_own_box_share`, latest pass
+        first; if every window is packed, the most confident one (typical = False)."""
+        limit = float(self.ctx.cfg["presentation"]["evidence"]["max_own_box_share"])
+        fallback = None
+        for d in (data, self.ctx.first):
+            scored = [(w, self.own_box_share(d, team, w))
+                      for w in self.family_windows(d, team, label, lo, hi)]
+            ok = [x for x in scored if x[1] <= limit]
+            if ok:
+                w, s = max(ok, key=lambda x: (x[0].confidence, x[0].t))
+                return w, d, s, True
+            if scored and fallback is None:
+                w, s = max(scored, key=lambda x: (x[0].confidence, x[0].t))
+                fallback = (w, d, s, False)
+        return fallback
+
     def shape_panels(self, c: Candidate, data: PassData) -> list[dict[str, Any]]:
-        """Before / after: the team's frames in the most confident window of each shape (the
-        latest pass first, then the first pass); none -> a "low visibility" panel. Averaging
-        every frame of the span gave messy shapes when the team was partly out of view
-        (spike 15 Oct)."""
+        """Before / after: the team's frames in one window of each shape. Each panel takes the
+        most confident window of its shape in which the team is not packed in its own penalty
+        area (latest pass first, then the first pass); "before" looks back
+        `presentation.evidence.before_search_s` from the onset (step 7: in the 45 s before the
+        16:30 demo change every 4-4-2 window had the team in its own box, so the panel showed
+        a set piece). If every window is packed, the most confident one is drawn and captioned
+        as such; with no confident window the panel says "low visibility" (spike 15 Oct:
+        averaging partial frames gave messy shapes)."""
         v, name = self.ctx.vcfg, self.team_name(c.team)
-        spans = (((c.t - v.before_s, c.t), c.from_),
+        ev = self.ctx.cfg["presentation"]["evidence"]
+        spans = (((c.t - float(ev["before_search_s"]), c.t), c.from_),
                  ((c.detected_at_s, c.detected_at_s + v.lookahead_s), c.to))
         out = []
         for (lo, hi), label in spans:
-            w, src = None, data
-            for d in (data, self.ctx.first):
-                w = self.best_window(d, c.team, label, lo, hi)
-                if w is not None:
-                    src = d
-                    break
-            if w is None:
+            pick = self._panel_window(c.team, label, lo, hi, data)
+            if pick is None:
                 frames = [f for f in data.frames[c.team] if lo <= f.t <= hi]
                 out.append({"label": label, "frames": frames, "low_visibility": True,
                             "caption": f"{name} {label}: low visibility, no confident {label} "
-                                       f"window in {clock(lo)}-{clock(hi)}"})
+                                       f"window in {clock(lo)}-{clock(hi)}", "note": None})
                 continue
+            w, src, share, typical = pick
             a, b = w.t - w.window_s, w.t
             frames = [f for f in src.frames[c.team] if a <= f.t <= b
                       and len(f.outfield) >= self.ctx.tcfg.min_players]
+            note = (f"usual shape: {share:.0%} of positions in own box" if typical else
+                    f"ATYPICAL: {share:.0%} of positions in own box (deep defending or "
+                    "set piece?)")
             out.append({"label": label, "frames": frames, "low_visibility": False,
+                        "own_box_share": round(share, 2), "typical": typical,
                         "caption": f"{name} {label} {clock(a)}-{clock(b)} (most confident "
-                                   f"window, {w.confidence:.2f})"})
+                                   f"such window, {w.confidence:.2f})", "note": note})
         return out
 
     def render_shapes(self, c: Candidate, panels: list[dict[str, Any]]) -> np.ndarray:
@@ -837,6 +888,10 @@ class Toolbox:
                                cv2.LINE_AA)
         cv2.putText(img, panel["caption"], (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
                     (255, 255, 255), 1, cv2.LINE_AA)
+        if panel.get("note"):  # typical / atypical (packed in own box), step 7
+            colour = (230, 230, 230) if panel.get("typical") else (0, 215, 255)
+            cv2.putText(img, panel["note"], (8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.48, colour, 1,
+                        cv2.LINE_AA)
         cv2.putText(img, f"{len(frames)} frames", (8, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                     (230, 230, 230), 1, cv2.LINE_AA)
         return img
@@ -862,11 +917,36 @@ class Toolbox:
         cites = [c.model_dump() for c in a.citations]
         self.check_citations(st, cites, a.reason)
         st.decision, st.citations = a.decision, cites
-        st.reason = decision_reason(st.verdict, a.decision)
-        st.explanation = "" if a.reason == st.reason else a.reason
+        st.reason = self.recorded_reason(st, a.decision)
+        # the call's own text stays in the trace; what a coach reads is written afterwards by
+        # agent/explain.py from the code reason and the cited numbers (step 7)
+        st.decision_text = a.reason
         self.statuses[st.cand.id] = a.decision
         return {"ok": True, "event_status": a.decision, "recorded_reason": st.reason,
                 "next": self.next_step(st)}, None
+
+    def recorded_reason(self, st: CandidateState, decision: Decision) -> str:
+        """The code-written reason of a recorded decision (`verify.decision_reason`). On a view
+        whose decisions are capped (side: experimental camera) an uncertain decision leads with
+        the camera, which alone keeps it from ever being alerted; what the evidence showed
+        follows as detail (step 7, presentation only: the verdict is unchanged). A refusal or
+        a rejection keeps its own reason."""
+        base = decision_reason(st.verdict, decision)
+        v, view = self.ctx.vcfg, self.ctx.view
+        if (decision != "uncertain" or v.max_decision(view) == "confirmed"
+                or st.verdict.verdict == "refuse"):
+            return base
+        trust = v.views.get(view or "", {}).get("camera_trust", "experimental")
+        details = [f"second look refused, over budget ({r['message']})"
+                   for r in st.results.values() if r.get("error") == "over_budget"][-1:]
+        ev = st.latest
+        if "view" in st.verdict.failed and ev.share_new is not None:
+            details.append(f"new shape held in {ev.share_new:.0%} of {ev.confident_after} "
+                           "confident windows")
+        else:
+            details.append(("" if st.second_look else "first pass: ") + st.verdict.reason)
+        return (f"uncertain: {trust} camera ({view} view, never alerted); detail: "
+                + "; ".join(details))
 
     def check_citations(self, st: CandidateState, cites: list[dict[str, Any]], text: str
                         ) -> None:
@@ -904,12 +984,18 @@ class Toolbox:
         if not refs:
             raise _NotAllowed("the explanation must cite at least one tool result as [Rn]")
         self.check_citations(st, [{"ref": r} for r in refs], a.title + " " + a.explanation)
-        # what the coach reads first is written by code from the verdict: the title (team,
-        # shapes, clock) and the verified reason; the model's text follows, marked as its own
+        # what the coach reads is written by code or checked against the results: the title
+        # (team, shapes, clock), the verified reason, then the explanation from
+        # agent/explain.py (checked model text or template). The call's own explanation text
+        # stays in the trace (step 7: 7 of 14 real model texts were wrong, FAILURE_LOG 17 Oct)
         c = st.cand
         title = f"{self.team_name(c.team)}: {c.from_} -> {c.to} ({clock(c.t)})"
-        agent_text = REF_RE.sub("", a.explanation).strip(" .") and a.explanation
-        explanation = compose_explanation(f"{st.reason} [{st.verdict_ref}]", agent_text or None)
+        text, source = st.explanation, st.explanation_source or "template"
+        if not text:
+            from gaffer.agent import explain
+
+            text, source = explain.template(explain.facts(self, st)), "template"
+        explanation = compose_explanation(f"{st.reason} [{st.verdict_ref}]", text, source)
         try:
             alert = self.store.create(self.ctx.match.match_id, c.id, c.t, title, explanation,
                                       a.suggestion, st.evidence_image)

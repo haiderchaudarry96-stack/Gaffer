@@ -6,16 +6,20 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import boto3
+import numpy as np
 import pytest
 from botocore.config import Config
 from botocore.stub import ANY, Stubber
 
-from gaffer.agent.alerts import AlertError, AlertStore, split_explanation
+from gaffer.agent import explain
+from gaffer.agent.alerts import AlertError, AlertStore, split_explanation, split_explanation_source
 from gaffer.agent.context import MatchContext
+from gaffer.agent.explain import Explainer
 from gaffer.agent.loop import (
     AgentRunner,
     Budget,
@@ -290,10 +294,13 @@ class FakeLLM:
 
 
 def _runner(ctx, toolbox, llm, tmp_path, **kw) -> AgentRunner:
+    # the orchestration scripts here have no explanation turns: template explanations unless a
+    # test passes its own explainer (the explanation step is its own conversation)
     return AgentRunner(ctx, toolbox, arm=kw.pop("arm", "llm"), llm=llm,
                        budget=kw.pop("budget", make_budget(ctx.cfg)),
                        limiter=RateLimiter(1000, sleep=lambda s: None),
-                       trace=TraceWriter(tmp_path / "trace.jsonl"), run_id="test", **kw)
+                       trace=TraceWriter(tmp_path / "trace.jsonl"), run_id="test",
+                       explainer=kw.pop("explainer", Explainer(ctx.cfg)), **kw)
 
 
 def _trace(tmp_path) -> list[dict[str, Any]]:
@@ -343,7 +350,8 @@ def test_situation_b_low_coverage_second_look_confirms_then_alert(ctx, toolbox, 
 def test_alert_never_shows_a_reason_that_contradicts_the_rules_verdict(ctx, toolbox, tmp_path):
     """Problem 1 (spike 15 Oct): the model's text can contradict its own cited results. The
     alert title, the alert's primary reason and the verified timeline are written by code from
-    the verdict; the model's text survives only as the separated "explanation"."""
+    the verdict; since step 7 the model's orchestration text (record_decision / propose_alert)
+    stays in the trace only, and the alert's explanation comes from agent/explain.py."""
     _patch_evidence(ctx, ev(coverage_after=0.4), ev(source="reanalysis"))
     c, a, b = _span(ctx)
     lie = "Re-analysis shows the shape reverted after 30 s"
@@ -360,16 +368,19 @@ def test_alert_never_shows_a_reason_that_contradicts_the_rules_verdict(ctx, tool
     out = r.run()[0]
     verdict = evaluate(ev(source="reanalysis"), ctx.vcfg, second_look=True)
     assert verdict.verdict == "confirm" and out.decision == "confirmed"
-    assert out.reason == verdict.reason and out.explanation == lie
+    assert out.reason == verdict.reason
+    assert out.explanation_source == "template" and lie not in out.explanation
     alert = AlertStore(tmp_path / "alerts.jsonl").get(out.alert_id)
-    rules, agent = split_explanation(alert.explanation)
+    rules, text, source = split_explanation_source(alert.explanation)
     assert rules == f"{verdict.reason} [R1]" and "reverted" not in rules
-    assert agent is not None and lie in agent
+    assert source == "template" and text == out.explanation and lie not in alert.explanation
+    assert split_explanation(alert.explanation) == (rules, text)
     assert alert.title == f"{toolbox.team_name(c.team)}: {c.from_} -> {c.to} ({clock(c.t)})"
     ver = r.verified_timeline([out])["events"][0]["verification"]
     assert ver["reason"] == verdict.reason
     dec = [x for x in _trace(tmp_path) if x["kind"] == "decision"][0]
-    assert (dec["reason"], dec["explanation"]) == (verdict.reason, lie)
+    assert (dec["reason"], dec["decision_text"]) == (verdict.reason, lie)
+    assert dec["explanation"] == out.explanation
 
 
 def test_decision_reason_restates_the_verdict_and_marks_caution(vcfg):
@@ -381,6 +392,276 @@ def test_decision_reason_restates_the_verdict_and_marks_caution(vcfg):
     assert decision_reason(rej, "rejected") == rej.reason
     nm = evaluate(ev(share_new=0.5), vcfg)
     assert decision_reason(nm, "uncertain").startswith("no verdict")
+
+
+# --------------------------------------------------------------------------- explain.py
+
+
+def _decided(ctx, toolbox, first: PassEvidence, second: PassEvidence, decision: str):
+    """A candidate decided through the toolbox on patched evidence (quality check, second look,
+    record_decision), as the loop leaves it before the explanation step."""
+    _patch_evidence(ctx, first, second)
+    c, a, b = _span(ctx)
+    st = toolbox.new_state(c)
+    toolbox.run(st, "check_frame_quality", {"start_s": a, "end_s": b, "why": "q"})
+    toolbox.run(st, "reanalyse_window", {"start_s": a, "end_s": b, "sample_fps": 4,
+                                         "event_id": c.id, "why": "second look"})
+    r = toolbox.run(st, "record_decision", {"event_id": c.id, "decision": decision,
+                                             "reason": "x", "citations": [{"ref": "R2"}]})
+    assert r.get("ok"), r
+    return st
+
+
+EXPLAIN_CASES = {  # cause -> first pass, second look, decision
+    "held": (ev(coverage_after=0.4), ev(source="reanalysis", share_new=0.91, confident_after=11),
+             "confirmed"),
+    "revert": (ev(coverage_after=0.4),
+               ev(source="reanalysis", share_new=0.17, reverted_after_s=55.0), "rejected"),
+    "return_leg": (ev(return_of="evt_000"),
+                   ev(source="reanalysis", share_new=0.75, return_of="evt_000"), "rejected"),
+    "persistence": (ev(coverage_after=0.4),
+                    ev(source="reanalysis", share_new=0.27, confident_after=11), "rejected"),
+    "footage": (ev(footage_frac=0.5), ev(source="reanalysis", footage_frac=0.5), "uncertain"),
+    "inconclusive": (ev(coverage_after=0.4),
+                     ev(source="reanalysis", share_new=0.57, confident_after=7), "uncertain"),
+}
+
+
+@pytest.mark.parametrize("cause", sorted(EXPLAIN_CASES))
+def test_template_names_the_code_cause_and_passes_its_own_check(ctx, toolbox, cause):
+    first, second, decision = EXPLAIN_CASES[cause]
+    st = _decided(ctx, toolbox, first, second, decision)
+    f = explain.facts(toolbox, st)
+    assert f["cause"] == cause and f["code_reason"] == st.reason
+    assert "held 20s" not in explain.prompt(f) and "engine evidence" not in explain.prompt(f)
+    text = explain.template(f)
+    assert explain.check(text, f, ctx.cfg) == [], text
+    assert re.search(r"\[R\d\]", text)
+
+
+def test_check_flags_the_17_oct_failure_texts(ctx, toolbox):
+    """The wrong real-footage explanations of 17 Oct (FAILURE_LOG) are all caught."""
+    def flags(cause, text):
+        first, second, decision = EXPLAIN_CASES[cause]
+        st = _decided(ctx, toolbox, first, second, decision)
+        return explain.check(text, explain.facts(toolbox, st), ctx.cfg)
+
+    # a return leg that held 75 %: "no transition occurred" (eval2 evt_003)
+    f1 = flags("return_leg", "Re-analysis shows formation held as 4-4-2 throughout window; "
+                             "no transition to 3-4-3 occurred [R2]")
+    assert any("did not hold" in x for x in f1) and any("cause" in x for x in f1)
+    # footage-limited explained as engine confidence (eval2 evt_005)
+    f2 = flags("footage", "Vision quality sufficient but engine confidence alone insufficient "
+                          "for confirmation [R0][R1]")
+    assert any("confidence" in x for x in f2) and any("cause (footage)" in x for x in f2)
+    # the false flag of the 17 Oct real run ("... is recorded") names the cause since then
+    assert flags("footage", "We can't say for sure: not all of the next minute is recorded "
+                            "[R0].") == []
+    # the engine's persistence rule copied into a confirmed alert (31 of 41 synthetic alerts)
+    f3 = flags("held", "Home changed shape, held for over 20 seconds with good visibility [R2].")
+    assert any("20 s" in x for x in f3)
+    # numbers must be copied as written; unavailable data is never mentioned
+    assert any("0.91" in x for x in flags("held", "The shape held in 0.91 of readings [R2]."))
+    assert any("unavailable" in x for x in flags("held", "It held in 91% of readings and the "
+                                                         "pressing improved [R2]."))
+    assert any("do not exist" in x for x in flags("held", "It held in 91% of readings [R9]."))
+    assert flags("held", "Blue kept the 3-5-2: it showed in 91% of 11 clear readings over the "
+                         "next 60 s [R2].") == []
+    assert flags("persistence", "The 3-5-2 did not last: it showed in only 27% of 11 clear "
+                                "readings [R2].") == []
+
+
+def test_flagged_model_explanation_is_replaced_and_decisions_do_not_move(ctx, toolbox,
+                                                                         tmp_path):
+    _patch_evidence(ctx, ev(coverage_after=0.4),
+                    ev(source="reanalysis", share_new=0.91, confident_after=11))
+    c, a, b = _span(ctx)
+
+    def orchestration():
+        return FakeLLM([
+            [("reanalyse_window", {"start_s": a, "end_s": b, "sample_fps": 4, "event_id": c.id,
+                                   "why": "second look"})],
+            [("record_decision", {"event_id": c.id, "decision": "confirmed", "reason": "held",
+                                  "citations": [{"ref": "R1"}]})],
+            [("render_evidence", {"event_id": c.id, "why": "proof"})],
+            [("propose_alert", {"event_id": c.id, "title": "t", "explanation": "held [R1]",
+                                "suggestion": "s"})]])
+
+    bad = FakeLLM(["The new shape held for 20 seconds [R1]."])
+    out = _runner(ctx, toolbox, orchestration(), tmp_path,
+                  explainer=Explainer(ctx.cfg, llm=bad)).run()[0]
+    assert out.decision == "confirmed" and out.explanation_source == "template"
+    assert any("20 s" in x for x in out.explanation_flags) and out.explain_calls == 1
+    assert len(bad.calls) == 1 and bad.calls[0]["tool_choice"] is None  # its own conversation
+    ex = [x for x in _trace(tmp_path) if x["kind"] == "explanation"][-1]
+    assert ex["replaced_text"].startswith("The new shape held for 20 seconds")
+    alert = AlertStore(tmp_path / "alerts.jsonl").get(out.alert_id)
+    assert split_explanation_source(alert.explanation)[1:] == (out.explanation, "template")
+
+    good_text = (f"{toolbox.team_name(c.team)} kept the {c.to} after {clock(c.t)}: it showed in "
+                 "91% of 11 clear readings over the next 60 s [R1].")
+    good = FakeLLM([good_text])
+    tb2 = Toolbox(ctx, AlertStore(tmp_path / "alerts2.jsonl"), tmp_path / "evidence2")
+    out2 = _runner(ctx, tb2, orchestration(), tmp_path,
+                   explainer=Explainer(ctx.cfg, llm=good)).run()[0]
+    assert (out2.explanation_source, out2.explanation) == ("agent", good_text)
+    assert (out2.decision, out2.reason, out2.tool_calls) == (out.decision, out.reason,
+                                                             out.tool_calls)
+
+
+def test_explainer_budget_and_errors_fall_back_without_raising(ctx, toolbox):
+    first, second, decision = EXPLAIN_CASES["revert"]
+    f = explain.facts(toolbox, _decided(ctx, toolbox, first, second, decision))
+    idle = FakeLLM([])
+    e = Explainer(ctx.cfg, llm=idle, max_cost_usd=0.0).explain(f)
+    assert e.source == "template" and "budget" in e.flags[0] and idle.calls == []
+    broken = FakeLLM([BedrockCallError("ValidationException: boom")])
+    e = Explainer(ctx.cfg, llm=broken).explain(f)
+    assert e.source == "template" and e.flags[0].startswith("llm error")
+    assert Explainer(ctx.cfg, llm=FakeLLM(["x"])).explain(f, use_llm=False).source == "template"
+
+
+def test_before_panel_skips_windows_with_the_team_packed_in_its_own_box(ctx, toolbox,
+                                                                        monkeypatch):
+    """Step 7: the 16:30 demo alert's "before" panel showed a set piece (team in its own box).
+    The panel takes the most confident window that is not packed; if all are, it says so."""
+    c = ctx.candidates[0]
+    lo = c.t - float(ctx.cfg["presentation"]["evidence"]["before_search_s"])
+    ws = toolbox.family_windows(ctx.first, c.team, c.from_, lo, c.t)
+    assert len(ws) >= 2
+    best = max(ws, key=lambda w: (w.confidence, w.t))
+    span = f"{clock(best.t - best.window_s)}-{clock(best.t)}"
+    monkeypatch.setattr(toolbox, "own_box_share", lambda d, team, w: 0.6 if w is best else 0.1)
+    before = toolbox.shape_panels(c, ctx.first)[0]
+    assert before["typical"] and before["note"].startswith("usual shape")
+    assert span not in before["caption"] and before["own_box_share"] == 0.1
+    monkeypatch.setattr(toolbox, "own_box_share", lambda d, team, w: 0.6)
+    before = toolbox.shape_panels(c, ctx.first)[0]
+    assert not before["typical"] and before["note"].startswith("ATYPICAL")
+    assert span in before["caption"]
+
+
+def test_own_box_share_counts_positions_inside_the_own_penalty_area(ctx, toolbox):
+    from types import SimpleNamespace
+
+    from gaffer.agent.context import PassData
+    from gaffer.tactics.common import TeamFrame
+
+    pts = np.array([[10.0, 34.0]] * 8 + [[40.0, 34.0]] * 2)  # 8 in the box, 2 at 40 m
+    frames = [TeamFrame(t=float(t), outfield=pts, n_visible=11, ball=None, possession=None)
+              for t in range(31)]
+    data = PassData({"home": [], "away": []}, [], {"home": frames, "away": []}, (0.0, 30.0), 1.0)
+    w = SimpleNamespace(t=30.0, window_s=30.0)
+    assert toolbox.own_box_share(data, "home", w) == pytest.approx(0.8)
+    wide = pts.copy()
+    wide[:, 1] = 5.0  # same depth, outside the box width (34 +- 20.16 m)
+    data.frames["home"] = [TeamFrame(t=float(t), outfield=wide, n_visible=11, ball=None,
+                                     possession=None) for t in range(31)]
+    assert toolbox.own_box_share(data, "home", w) == 0.0
+
+
+def test_side_reason_leads_with_the_experimental_camera(match, agent_cfg, tmp_path):
+    """Step 7: the side eval2 candidate's recorded reason said "no verdict after the evidence
+    budget" although the camera alone keeps it below an alert. Presentation only: the verdict
+    and the decision are unchanged."""
+    side = MatchContext(match, agent_cfg, view="side")
+    tb = Toolbox(side, AlertStore(tmp_path / "a.jsonl"), tmp_path / "ev")
+    _patch_evidence(side, ev(share_new=0.57, confident_after=7), ev(share_new=0.57))
+    c = side.candidates[0]
+    st = tb.new_state(c)
+    assert st.verdict.verdict == "need_more"
+    tb._err(st, st.next_ref(), "reanalyse_window", None, "over_budget",
+            "estimated 1568 s of OpenCV > 360 s for 140 s at 4 fps")
+    st.exhausted = True
+    r = tb.run(st, "record_decision", {"event_id": c.id, "decision": "uncertain",
+                                        "reason": "x", "citations": [{"ref": "R0"}]})
+    assert r["ok"] and st.decision == "uncertain" and st.verdict.verdict == "need_more"
+    assert st.reason.startswith("uncertain: experimental camera (side view, never alerted)")
+    assert st.reason.index("over budget (estimated 1568 s") < st.reason.index(
+        "first pass: new shape held in 57% of windows (inconclusive)")
+    assert r["recorded_reason"] == st.reason
+    f = explain.facts(tb, st)
+    assert f["cause"] == "experimental_camera"
+    assert explain.check(explain.template(f), f, agent_cfg) == []
+    # held but capped by the view: the camera first, the share as detail
+    _patch_evidence(side, ev(), ev())
+    held = tb.new_state(c)
+    tb.run(held, "check_frame_quality", {"start_s": c.t - 45, "end_s": c.detected_at_s + 60,
+                                         "why": "q"})
+    assert held.verdict.verdict == "uncertain" and held.verdict.failed == ["view"]
+    tb.run(held, "record_decision", {"event_id": c.id, "decision": "uncertain", "reason": "x",
+                                     "citations": [{"ref": "R1"}]})
+    assert held.reason == ("uncertain: experimental camera (side view, never alerted); "
+                           "detail: new shape held in 100% of 12 confident windows")
+    # a top-view uncertain decision keeps the plain reason
+    assert not decision_reason(evaluate(ev(share_new=0.57), side.vcfg), "uncertain").startswith(
+        "uncertain: experimental")
+
+
+# --------------------------------------------------------------------------- report.py
+
+
+def _report_inputs(ctx):
+    from gaffer.agent import report
+
+    c = ctx.candidates[0]
+    decided = [{"event_id": c.id, "decision": "confirmed",
+                "reason": "new shape held in 100% of 12 confident windows over 60 s, no revert",
+                "explanation": "Blue kept the 3-5-2 [R1].", "new_shape_pct": 100}]
+    return report.build_inputs(ctx, decided, note="Synthetic test match.")
+
+
+def test_template_report_is_grounded_and_passes_its_own_check(ctx):
+    from gaffer.agent import report
+
+    inp = _report_inputs(ctx)
+    assert [e["id"] for e in inp["events"]] == [ctx.candidates[0].id]
+    assert inp["events"][0]["before"]["window"] and inp["events"][0]["after"]["width_m"]
+    rep = report.template_report(inp)
+    assert report.check_report(rep, inp, ctx.cfg) == []
+    assert len(rep["recommendations"]) == 3 and rep["changes"][0]["event"] == "evt_001"
+    md = report.render_markdown(rep, inp, "code template")
+    assert "## Three recommendations" in md and "Synthetic test match." in md
+
+
+def test_report_check_catches_uncited_and_invented_claims(ctx):
+    from gaffer.agent import report
+
+    inp = _report_inputs(ctx)
+    good = report.template_report(inp)
+
+    def probs(**change):
+        rep = copy.deepcopy(good)
+        for k, v in change.items():
+            rep[k] = v
+        return report.check_report(rep, inp, ctx.cfg)
+
+    seg = inp["segments"][0]["seg"]
+    assert any("no citation" in p for p in probs(formation_story=[
+        f"Blue lined up in a 4-4-2 until {seg.split('-')[1]}."]))
+    assert any("not in the cited items" in p for p in probs(formation_story=[
+        f"Blue's line sat 99.9 m from goal [seg {seg}]."]))
+    assert any("not a source" in p for p in probs(limits=["Demo window [match.note]."]))
+    assert any("not 3" in p for p in probs(recommendations=good["recommendations"][:2]))
+    assert any("unavailable" in p for p in probs(limits=["We could not see the ball."]))
+    assert any("not a decided event" in p for p in probs(not_alerted=["Gone at 1:00 [evt_099]."]))
+    assert any("no cited number" in p for p in probs(recommendations=[
+        "Work harder.", *good["recommendations"][1:]]))
+    assert any("says nothing about" in p for p in probs(formation_story=["Fine [seg " + seg
+                                                                         + "]."]))
+
+
+def test_reporter_retries_once_then_uses_the_template(ctx):
+    from gaffer.agent import report
+
+    inp = _report_inputs(ctx)
+    bad = FakeLLM(["not json", '{"formation_story": "one string"}'])
+    res = report.Reporter(ctx.cfg, bad).generate(inp)
+    assert res["source"] == "code template" and len(bad.calls) == 2
+    assert res["template_problems"] == [] and len(res["attempts"]) == 2
+    good = FakeLLM(["```json\n" + json.dumps(report.template_report(inp)) + "\n```"])
+    res = report.Reporter(ctx.cfg, good).generate(inp)
+    assert res["source"] == "Nova 2 Lite (checked)" and len(good.calls) == 1
 
 
 def test_rules_block_names_the_next_step(ctx, toolbox):

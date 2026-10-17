@@ -31,6 +31,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from gaffer.agent import explain
 from gaffer.agent.alerts import AlertStore
 from gaffer.agent.context import MatchContext
 from gaffer.agent.tools import VISION_TOOLS, CandidateState, Toolbox, clock, tool_specs
@@ -187,7 +188,11 @@ class Outcome:
     decided_by: str
     reason: str  # code-written from the rules verdict (primary)
     verdict: str
-    explanation: str = ""  # the model's own text, shown apart from the reason
+    explanation: str = ""  # coach-facing (agent/explain.py): checked model text or template
+    explanation_source: str = ""  # "agent" | "template"
+    explanation_flags: list[str] = field(default_factory=list)  # why a model text was replaced
+    explain_calls: int = 0  # LLM calls of the explanation step (not in llm_calls / cost_usd)
+    explain_cost_usd: float = 0.0
     llm_calls: int = 0
     tool_calls: list[str] = field(default_factory=list)
     guard_blocks: int = 0
@@ -229,7 +234,8 @@ class AgentRunner:
     def __init__(self, ctx: MatchContext, toolbox: Toolbox, *, arm: str = "llm",
                  llm: LLM | None = None, budget: Budget | None = None,
                  limiter: RateLimiter | None = None, trace: TraceWriter | None = None,
-                 run_id: str | None = None, cfg: dict[str, Any] | None = None) -> None:
+                 run_id: str | None = None, cfg: dict[str, Any] | None = None,
+                 explainer: explain.Explainer | None = None) -> None:
         if arm not in ("llm", "rules"):
             raise ValueError("arm must be 'llm' or 'rules'")
         if arm == "llm" and llm is None:
@@ -250,6 +256,10 @@ class AgentRunner:
         self.llm_down: str | None = None  # reason the LLM is unusable for the rest of the run
         self.throttled = 0
         self.specs = tool_specs()
+        # coach-facing text after each decision: its own conversation and budget, so it cannot
+        # change an orchestration step or a decision (rules arm: template only)
+        self.explainer = explainer or explain.Explainer(
+            self.cfg, llm=llm if arm == "llm" else None, limiter=self.limiter)
 
     # ---------------------------------------------------------------- match
     def run(self, candidates: list[Candidate] | None = None) -> list[Outcome]:
@@ -267,6 +277,11 @@ class AgentRunner:
                           "decided_by": dict(Counter(o.decided_by for o in outcomes)),
                           "llm_calls": self.budget.calls, "tokens": dict(self.budget.tokens),
                           "cost_usd": round(self.budget.cost, 5),
+                          "explain": {"calls": sum(o.explain_calls for o in outcomes),
+                                      "cost_usd": round(sum(o.explain_cost_usd
+                                                            for o in outcomes), 5),
+                                      "sources": dict(Counter(o.explanation_source
+                                                              for o in outcomes))},
                           "guard_blocks": sum(o.guard_blocks for o in outcomes),
                           "throttled": self.throttled, "llm_down": self.llm_down,
                           "tool_choice_any_ok": self.tool_choice_any_ok})
@@ -297,6 +312,8 @@ class AgentRunner:
             self._rules_policy(st, out, base)
         out.decision = st.decision or "uncertain"
         out.reason, out.explanation = st.reason, st.explanation
+        out.explanation_source = st.explanation_source
+        out.explanation_flags = list(st.explanation_flags)
         out.verdict = st.verdict.verdict
         out.tool_calls = list(st.tool_calls)
         out.alert_id, out.evidence_image = st.alert_id, st.evidence_image
@@ -306,6 +323,9 @@ class AgentRunner:
         self.trace.write({**base, "step": self._step + 1, "actor": "code", "kind": "decision",
                           "decision": out.decision, "decided_by": out.decided_by,
                           "reason": out.reason, "explanation": out.explanation or None,
+                          "explanation_source": out.explanation_source or None,
+                          "explanation_flags": out.explanation_flags or None,
+                          "decision_text": st.decision_text or None,
                           "citations": st.citations,
                           "verdict": st.verdict.as_dict(), "alert_id": out.alert_id,
                           "llm_calls": out.llm_calls, "guard_blocks": out.guard_blocks,
@@ -334,7 +354,31 @@ class AgentRunner:
         self.trace.write(rec)
         if res.get("ref"):
             self._last_ref = res["ref"]
+        if name == "record_decision" and err is None:
+            self._explain(st, out, base)
         return res
+
+    def _explain(self, st: CandidateState, out: Outcome, base: dict[str, Any]) -> None:
+        """Coach-facing explanation of the decision just recorded (agent/explain.py): written
+        before any alert exists, so the alert carries it. Never raises."""
+        try:
+            f = explain.facts(self.tb, st)
+            # the explainer's own LLM, if it has one (rules arm by default: none -> template)
+            e = self.explainer.explain(f, use_llm=self.llm_down is None,
+                                       purpose=f"explain:{self.ctx.match.match_id}:{st.cand.id}")
+        except Exception as exc:  # presentation must never break a decision run
+            e = explain.Explanation(st.reason, "template",
+                                    [f"explanation step failed: {type(exc).__name__}: {exc}"])
+        st.explanation, st.explanation_source = e.text, e.source
+        st.explanation_flags = list(e.flags)
+        if e.llm is not None:
+            out.explain_calls += 1
+            out.explain_cost_usd += e.cost_usd
+        self._step += 1
+        self.trace.write({**base, "step": self._step, "actor": "llm" if e.llm else "code",
+                          "kind": "explanation", "source": e.source, "text": e.text,
+                          "flags": e.flags or None, "replaced_text": e.raw, "llm": e.llm,
+                          "cost_usd": round(e.cost_usd, 6)})
 
     def _blocked(self, st: CandidateState, out: Outcome, base: dict[str, Any], name: str,
                  args: dict[str, Any], msg: str, llm_info: dict[str, Any] | None
@@ -655,7 +699,8 @@ def main(argv: list[str] | None = None) -> int:
     for o in outcomes:
         print(f"{o.event_id} {o.decision:9s} by {o.decided_by:28s} llm {o.llm_calls} "
               f"blocks {o.guard_blocks}  {o.reason[:90]}"
-              + (f"\n      explanation (agent): {o.explanation[:110]}" if o.explanation else ""))
+              + (f"\n      explanation ({o.explanation_source}): {o.explanation[:110]}"
+                 if o.explanation else ""))
     out = repo_path(f"outputs/{ctx.match.match_id}"
                     f"{cfg['agent']['outputs']['timeline_suffix']}")
     out.write_text(json.dumps(runner.verified_timeline(outcomes)), encoding="utf-8")

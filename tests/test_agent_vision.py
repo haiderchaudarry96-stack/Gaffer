@@ -328,5 +328,5 @@ def test_low_visibility_before_panel_is_labelled(video_match, cfg, tmp_path):
     ctx.first = blind
     before, after = tb.shape_panels(c, blind)
     assert before["low_visibility"] and "low visibility" in before["caption"]
-    assert not after["low_visibility"] and "most confident window" in after["caption"]
+    assert not after["low_visibility"] and "most confident such window" in after["caption"]
     assert tb.render_shapes(c, [before, after]).shape[1] > 1000

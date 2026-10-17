@@ -108,11 +108,19 @@ Footage: **TeamTrack** `soccer_top` (main) and `soccer_side` (fisheye), see `doc
 - `docs/agent_workflow.png` — perception → decision → action diagram (required for the award)
 
 **Acceptance**
-- [ ] A trace shows an OpenCV tool result changing the agent's next call
-- [ ] At least one candidate rejected because re-analysis did not confirm it
-- [ ] Alerts wait for coach approval; decisions logged
-- [ ] Measured difference between one-shot and agent written into `CLAUDE.md`
-- [ ] Agent logic tested with a mocked LLM
+- [x] A trace shows an OpenCV tool result changing the agent's next call — `docs/AGENT_TRACE_EXAMPLES.md`: (a) the camera check and the 6 fps re-analysis set the path to confirm → evidence → pending alert; (c) a camera check that measures pan/zoom stops the re-analysis and the alert (simulated motion on real frames)
+- [x] At least one candidate rejected because re-analysis did not confirm it — real drone footage: eval evt_001 rejected on the OpenCV re-analysis (new shape in 17 % of 12 readings); 8 real rejections in all (7 on the eval sets, 1 in the demo window), each decided on the re-analysed pass; caveat below
+- [x] Alerts wait for coach approval; decisions logged — `outputs/alerts.jsonl` store (pending → approved / rejected, append-only, CLI), the 16:30 real alert is pending; every decision in `agent_trace.jsonl` and the verified timeline
+- [x] Measured difference between one-shot and agent written into `CLAUDE.md` — seeds 110–119, run once: one-shot 34 / 38 alerted with 34 false alerts, agent 32 / 38 with 9
+- [x] Agent logic tested with a mocked LLM — scripted fake LLM and botocore Stubber, autouse no-network guard (`tests/test_agent*.py`)
+
+**Status 17 Oct (build step 7 done): all five ticked; not committed yet (the user commits). Honest caveats, not hidden:**
+- On real footage no OpenCV result changed a *decision* (0 of 14 candidates: the first pass alone gives the same decision); OpenCV changes the next call, the reason (eval evt_001) and the evidence. The decision-changing case uses synthetic camera motion on real frames (the simulated pan).
+- The LLM adds nothing to decisions (68 / 68 synthetic and 14 / 14 real equal the rules arm); its role is orchestration and text, and the text is now checked (explanations wrong 7 / 14 → 0 / 14).
+- `report.py`: Nova's report did not pass the grounding check on the real window; the code template is the published report (FAILURE_LOG 2026-10-17).
+- The one confirmed real alert sits in a window chosen with the ground truth (a demonstration, not a sample); a real 4-2-3-1 change at 18:50 is missed by the return-leg rule.
+- The real clip is reported as decision tables, not one-shot-vs-agent error rates (decided 15 Oct: no tactical ground truth on real footage).
+- Alert suggestions are still unchecked model text (the 16:30 alert's suggestion is tactically wrong).
 
 ---
 

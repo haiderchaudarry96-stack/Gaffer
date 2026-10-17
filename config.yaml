@@ -474,3 +474,30 @@ agent:
     alerts: outputs/alerts.jsonl
     evidence_dir: outputs/evidence
     timeline_suffix: _timeline_verified.json
+
+# --------------------------------------------------------------------------- Phase 3: presentation
+# Coach-facing text and pictures only: no decision rule reads this block. It sits outside `agent`
+# on purpose, so the frozen decision fingerprint (agent/tactics/bedrock/synthetic/formations,
+# ca4ff9bbf7b01c6c) does not change for presentation work (build step 7, 17 Oct).
+presentation:
+  explain:                        # agent/explain.py: Nova words the code's decision, then a check
+    use_llm: true                 # false: the code template for every decision (no LLM call)
+    max_sentences: 2
+    max_chars: 300
+    max_tokens: 200               # output tokens per explanation call
+    temperature: 0.0
+    time_slack_s: 5.0             # an mm:ss clock in the text must be this close to one in the facts
+    max_cost_usd_per_run: 0.50    # explanation calls only (orchestration keeps its own caps)
+  evidence:                       # render_evidence shape panels (Toolbox.shape_panels)
+    before_search_s: 120.0        # "before" panel: old-shape windows ending in [onset - this, onset]
+                                  # (was agent.verify.before_s = 45 s: only set-piece windows there
+                                  # on the 16:30 demo alert)
+    max_own_box_share: 0.25       # a window with more of the team's outfield positions inside its
+                                  # own penalty area shows deep defending or a set piece, not the
+                                  # usual shape: skipped, or captioned as such if nothing else fits
+                                  # (demo 16:30: 15:15-15:45 had 45 %, open play 16:45-20:55 0-9 %)
+  report:                         # agent/report.py: coach report, one call per match
+    max_tokens: 1500
+    temperature: 0.0
+    retries: 1                    # a failed citation check gets one retry, then the template
+    max_cost_usd: 0.10
