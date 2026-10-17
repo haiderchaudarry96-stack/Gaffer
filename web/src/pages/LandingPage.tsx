@@ -1,22 +1,15 @@
-import { useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { m, useMotionValueEvent, useScroll, useTransform } from 'motion/react'
 import Nav from '../components/layout/Nav'
-import Footer from '../components/layout/Footer'
 import Hero from '../components/landing/Hero'
 import ProductShot from '../components/landing/ProductShot'
-import Steps from '../components/landing/Steps'
-import VerifiedStory from '../components/landing/VerifiedStory'
-import BeforeAfter from '../components/landing/BeforeAfter'
-import Results from '../components/landing/Results'
-import Tech from '../components/landing/Tech'
-import Limits from '../components/landing/Limits'
-import Faq from '../components/landing/Faq'
-import Reveal from '../components/ui/Reveal'
-import { ButtonLink } from '../components/ui/Button'
 import { useLenis } from '../components/landing/useLenis'
 import { usePrefersReducedMotion } from '../lib/hooks'
 
 // must match --bg in index.css: :root (dark) and .theme-light
+// below-the-fold sections load as their own chunk, after the hero
+const LandingBody = lazy(() => import('../components/landing/LandingBody'))
+
 const DARK_BG = '#070d0a'
 const LIGHT_BG = '#f3f5ef'
 
@@ -43,29 +36,11 @@ export default function LandingPage() {
         <Hero />
         <div className="theme-light">
           <ProductShot ref={firstLight} />
-          <Steps />
-          <VerifiedStory />
-          <BeforeAfter />
-          <Results />
-          <Tech />
-          <Limits />
-          <Faq />
-          <section aria-labelledby="cta-title" className="py-28">
-            <Reveal className="mx-auto flex max-w-3xl flex-col items-center px-4 text-center">
-              <h2 id="cta-title" className="text-4xl font-bold text-text sm:text-6xl">
-                Watch it check its own eyes.
-              </h2>
-              <p className="mt-5 text-lg text-muted">Six minutes of real tracked play.</p>
-              <ButtonLink to="/app" size="lg" className="mt-8">
-                Open the demo
-              </ButtonLink>
-            </Reveal>
-          </section>
+          <Suspense fallback={<div className="min-h-screen bg-bg" />}>
+            <LandingBody />
+          </Suspense>
         </div>
       </main>
-      <div className="theme-light">
-        <Footer />
-      </div>
     </>
   )
 }

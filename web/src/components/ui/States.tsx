@@ -8,8 +8,7 @@ export function Skeleton({ className = '' }: { className?: string }) {
 export function PageSkeleton() {
   return (
     <div className="min-h-screen bg-bg p-6" role="status" aria-live="polite">
-      <span className="sr-only">Loading the analyst desk…</span>
-      <Skeleton className="mb-6 h-12 w-full" />
+      <p className="mb-6 font-display text-lg font-semibold text-muted">Loading the analyst desk…</p>
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr_360px]">
         <Skeleton className="h-72" />
         <Skeleton className="h-72" />

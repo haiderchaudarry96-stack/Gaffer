@@ -93,7 +93,10 @@ export default function FormationTimeline({
         <h2 id="timeline-title" className="font-sans text-base font-semibold tracking-normal text-text">
           Shape timeline
         </h2>
-        <p className="text-xs text-muted">Diamonds mark shape changes. Click one to jump.</p>
+        <p className="text-xs text-muted">
+          <span className="hidden sm:inline">Diamonds mark shape changes. Click one to jump.</span>
+          <span className="sm:hidden">Tap a change below to jump there.</span>
+        </p>
       </div>
 
       {sides.map((side) => {
@@ -109,7 +112,13 @@ export default function FormationTimeline({
               <div className="relative h-7">
                 {own.map((e) => (
                   <div key={e.event.id} className="absolute top-0 -translate-x-1/2" style={{ left: pct(e.event.t) }}>
-                    <Marker e={e} name={timeline.teamNames[side]} selected={selected === e.event.id} onSelect={onSelect} />
+                    {/* buttons from 640 px up; on narrow screens the diamonds are decoration and the list below is the control */}
+                    <div className="hidden sm:block">
+                      <Marker e={e} name={timeline.teamNames[side]} selected={selected === e.event.id} onSelect={onSelect} />
+                    </div>
+                    <span className="grid size-7 place-items-center sm:hidden" aria-hidden="true">
+                      <span className={`size-2.5 rotate-45 border-2 ${e.pending ? 'border-warn bg-warn' : MARKER[e.status]}`} />
+                    </span>
                   </div>
                 ))}
               </div>
@@ -158,14 +167,13 @@ export default function FormationTimeline({
 
       {/* narrow screens: the changes as a readable list instead of tiny bar labels */}
       <ul className="mt-3 space-y-1 sm:hidden" aria-label="Shape changes">
-        {events
-          .filter((e) => e.status !== 'candidate' || e.pending)
-          .map((e) => (
+        {events.map((e) => (
             <li key={e.event.id}>
               <button
                 type="button"
                 onClick={() => onSelect(e.event)}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-surface-2"
+                aria-pressed={selected === e.event.id}
+                className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-surface-2 ${selected === e.event.id ? 'bg-surface-2' : ''}`}
               >
                 <span className={`size-2.5 rotate-45 border-2 ${e.pending ? 'border-warn bg-warn' : MARKER[e.status]}`} aria-hidden="true" />
                 <span className="font-mono text-muted">{formatClock(e.event.t)}</span>
@@ -173,7 +181,7 @@ export default function FormationTimeline({
                   {timeline.teamNames[e.event.team]} <span className="whitespace-nowrap">{e.event.from}</span> →{' '}
                   <span className="whitespace-nowrap">{e.event.to}</span>
                 </span>
-                <span className="ml-auto text-xs whitespace-nowrap text-muted">{e.pending ? 'checking' : e.status === 'confirmed' ? 'verified' : e.status}</span>
+                <span className="ml-auto text-xs whitespace-nowrap text-muted">{e.pending ? 'checking' : e.status === 'confirmed' ? 'verified' : e.status === 'candidate' ? 'not checked' : e.status}</span>
               </button>
             </li>
           ))}

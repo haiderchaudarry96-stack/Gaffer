@@ -4,10 +4,11 @@
 //        npm run screenshots -- --product   (only regenerates public/product/app-desk.jpg; rebuild after)
 // Env: CHROMIUM_PATH (default /opt/pw-browsers/chromium-1194/chrome-linux/chrome), BASE_URL (skip the preview server).
 import { spawn } from 'node:child_process'
-import { mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chromium } from 'playwright-core'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright-core'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const out = resolve(here, '..', 'screenshots')
@@ -76,14 +77,16 @@ const SHOTS = [
   { name: 'app-375-default', path: '/app?t=1000&paused=1', width: 375, height: 812, fullPage: true },
 ]
 
+
 const server = await startPreview()
-const browser = await chromium.launch({ executablePath })
+let browser
 const errors = []
 const watch = (page, name) => {
   page.on('console', (m) => m.type() === 'error' && errors.push(`${name}: ${m.text()}`))
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
 }
 try {
+  browser = await chromium.launch({ executablePath })
   if (productOnly) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     const page = await ctx.newPage()
@@ -112,29 +115,49 @@ try {
       await ctx.close()
     }
     if (!only.length || only.includes('video')) {
-      // a short recording of scrolling the landing page (wheel events, so Lenis smooth-scrolls)
-      const tmp = join(out, '_video')
+      // Scroll recording: Chrome screencast frames (CDP) encoded to WebM with the system ffmpeg.
+      // Wheel events, so Lenis smooth-scrolls as it would for a visitor.
+      const FPS = 25
+      const tmp = join(out, '_frames')
       rmSync(tmp, { recursive: true, force: true })
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: tmp, size: { width: 1280, height: 720 } } })
+      mkdirSync(tmp)
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } })
       const page = await ctx.newPage()
       watch(page, 'video')
       await page.goto(server.url + '/', { waitUntil: 'networkidle' })
-      await page.waitForTimeout(3500)
+      const cdp = await ctx.newCDPSession(page)
+      const frames = []
+      cdp.on('Page.screencastFrame', async (f) => {
+        frames.push({ data: f.data, t: f.metadata.timestamp })
+        await cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {})
+      })
+      await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 80, maxWidth: 1280, maxHeight: 720 })
+      await page.waitForTimeout(3000)
       await page.mouse.move(640, 400)
-      for (let i = 0; i < 110; i++) {
-        await page.mouse.wheel(0, 120)
-        await page.waitForTimeout(140)
+      for (let i = 0; i < 120; i++) {
+        await page.mouse.wheel(0, 110)
+        await page.waitForTimeout(120)
       }
-      await page.waitForTimeout(800)
+      await page.waitForTimeout(1000)
+      await cdp.send('Page.stopScreencast')
       await ctx.close()
-      const file = readdirSync(tmp).find((f) => f.endsWith('.webm'))
-      renameSync(join(tmp, file), join(out, 'landing-scroll.webm'))
+      // constant frame rate: output frame k shows the last captured frame at time t0 + k / FPS
+      let n = 0
+      const t0 = frames[0].t
+      for (let i = 0; i < frames.length; i++) {
+        const until = Math.round(((frames[i + 1]?.t ?? frames[i].t + 1 / FPS) - t0) * FPS)
+        const buf = Buffer.from(frames[i].data, 'base64')
+        while (n < until) writeFileSync(join(tmp, `${String(n++).padStart(5, '0')}.jpg`), buf)
+      }
+      const dest = join(out, 'landing-scroll.webm')
+      const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', join(tmp, '%05d.jpg'), '-c:v', 'libvpx-vp9', '-b:v', '1500k', '-pix_fmt', 'yuv420p', dest])
       rmSync(tmp, { recursive: true, force: true })
-      console.log(`saved screenshots/landing-scroll.webm (${(statSync(join(out, 'landing-scroll.webm')).size / 1e6).toFixed(1)} MB)`)
+      if (ff.status !== 0) throw new Error(`ffmpeg failed: ${ff.stderr}`)
+      console.log(`saved screenshots/landing-scroll.webm (${(n / FPS).toFixed(1)} s, ${(statSync(dest).size / 1e6).toFixed(1)} MB)`)
     }
   }
 } finally {
-  await browser.close()
+  await browser?.close()
   server.stop()
 }
 if (errors.length) {

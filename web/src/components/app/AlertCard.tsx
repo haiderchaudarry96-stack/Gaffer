@@ -89,8 +89,9 @@ export default function AlertCard({
 
   return (
     <m.article
-      initial={{ opacity: 0, y: 16, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      // transform only: the text can paint at once (no opacity fade)
+      initial={{ y: 16, scale: 0.98 }}
+      animate={{ y: 0, scale: 1 }}
       transition={{ type: 'spring', stiffness: 260, damping: 26 }}
       aria-labelledby={`alert-${alert.alert_id}`}
       className={`overflow-hidden rounded-(--radius-card) border bg-surface ${status === 'pending' ? 'border-accent/60 glow-accent-strong' : 'border-line'}`}

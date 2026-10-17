@@ -45,7 +45,8 @@ function LiveHud({ clock, tl }: { clock: PlaybackClock; tl: FormationTimeline | 
                 {names[side]} {side === 'home' ? '→' : '←'}
               </dt>
               <dd className="font-mono text-2xl font-semibold text-text tabular">{shown?.formation ?? '—'}</dd>
-              {shown?.holding && <dd className="text-[11px] text-warn">holding</dd>}
+              {/* the line is always there (empty when not holding) so the box never changes height */}
+              <dd className="h-4 text-[11px] text-warn">{shown?.holding ? 'holding' : ''}</dd>
             </div>
           )
         })}
@@ -71,11 +72,12 @@ function ChangeTicker({ tl, reduced }: { tl: FormationTimeline | null; reduced: 
     return () => clearInterval(id)
   }, [reduced, items.length])
   const it = items[i % Math.max(1, items.length)]
-  if (!it) return <div className="h-8" />
+  // same box before and after the data arrives: no layout shift
   return (
     <div className="mt-6 flex h-8 items-center gap-3 overflow-hidden font-mono text-[13px] whitespace-nowrap sm:text-base" aria-live="off">
-      <span className="text-muted">{it.clock}</span>
+      {!it ? null : <span className="text-muted">{it.clock}</span>}
       <AnimatePresence mode="wait" initial={false}>
+        {it && (
         <m.span
           key={it.id}
           initial={{ y: '100%', opacity: 0 }}
@@ -91,6 +93,7 @@ function ChangeTicker({ tl, reduced }: { tl: FormationTimeline | null; reduced: 
             {STATUS_WORD[it.status]}
           </span>
         </m.span>
+        )}
       </AnimatePresence>
     </div>
   )
@@ -150,14 +153,14 @@ export default function Hero() {
         aria-hidden="true"
       />
 
-      <div className="mx-auto w-full max-w-7xl px-4 pt-28 pb-64 sm:px-6 sm:pb-40">
+      <div className="mx-auto w-full max-w-7xl px-4 pt-24 pb-52 sm:px-6 sm:pt-28 sm:pb-40">
         <h1 id="hero-title" className="max-w-4xl font-display text-[2.7rem] leading-[1.02] font-bold text-text sm:text-6xl lg:text-7xl xl:text-[5.25rem]">
           {words.map((w, i) => (
             <span key={i} className="inline-block overflow-hidden pb-1 align-bottom">
               <m.span
                 className="inline-block"
-                initial={{ y: '105%', opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
+                initial={{ y: '105%' }}
+                animate={{ y: 0 }}
                 transition={{ duration: 0.6, ease: EASE, delay: 0.1 + i * 0.07 }}
               >
                 {w}
@@ -169,16 +172,16 @@ export default function Hero() {
         <ChangeTicker tl={timeline} reduced={reduced} />
         <m.p
           className="mt-4 max-w-xl text-lg text-muted sm:text-xl"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ y: 16 }}
+          animate={{ y: 0 }}
           transition={{ duration: 0.6, ease: EASE, delay: 0.6 }}
         >
           {TAGLINE}
         </m.p>
         <m.div
           className="mt-9 flex flex-wrap gap-3"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ y: 16 }}
+          animate={{ y: 0 }}
           transition={{ duration: 0.6, ease: EASE, delay: 0.75 }}
         >
           <ButtonLink to="/app" size="lg">
