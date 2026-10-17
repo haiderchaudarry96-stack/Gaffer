@@ -1,15 +1,19 @@
 /**
- * Upload-for-analysis flow (contract in web/README.md, "Backend API").
+ * Upload-for-analysis flow (contract in docs/API.md).
  *
  *   uploadVideo(file)                -> POST /api/analyses              (multipart "video")
- *   startAnalysis(id, pitchPoints)   -> POST /api/analyses/{id}/start   (JSON)
+ *        -> queued (known TeamTrack drone clip), needs_confirmation (OpenCV found the pitch:
+ *           show pitch.preview_url) or needs_corners (not sure: the coach marks 4 corners)
+ *   confirmPitch(id)                 -> POST /api/analyses/{id}/pitch   {confirmed: true}
+ *   setPitchPoints(id, points)       -> POST /api/analyses/{id}/pitch   {pitch_points}
+ *   startAnalysis(id, pitchPoints)   -> POST /api/analyses/{id}/start   (JSON, same as above)
  *   getAnalysisStatus(id)            -> GET  /api/analyses/{id}
  *   loadAnalysisResult(id)           -> GET  /api/analyses/{id}/result
  *
  * Without VITE_API_URL every call throws ApiNotConfigured: the UI must say the server is not
  * connected and never show progress or results it did not get from the server.
  */
-import { apiGet, apiPost, apiUpload, type ApiOptions } from './api'
+import { apiGet, apiPost, apiUpload, apiUrl, type ApiOptions } from './api'
 import type { Alert, CoachReport, FormationTimeline, MatchState, TacticalTimeline, TraceStep } from './types'
 import { arr, DataError, num, obj, oneOf, str, validateAlert, validateCoachReport, validateMatchState, validateTraceStep } from './validate'
 
@@ -37,15 +41,33 @@ export const STAGE_LABELS: Record<AnalysisStage, string> = {
   done: 'Done',
 }
 
+export const ANALYSIS_STATES = ['uploaded', 'needs_confirmation', 'needs_corners', 'queued', 'running', 'done', 'failed'] as const
+export type AnalysisState = (typeof ANALYSIS_STATES)[number]
+
+/** The pitch step of an upload (docs/API.md "Pitch step"); corners are video pixels TL, TR, BR, BL. */
+export interface PitchInfo {
+  state: string
+  /** detected (needs_confirmation) or applied corners */
+  corners: [number, number][] | null
+  /** needs_corners: OpenCV's best guess, only to preload the 4-point screen (never used unconfirmed) */
+  suggested_corners: [number, number][] | null
+  /** JPEG of the frame with the outline the corners give */
+  preview_url: string | null
+  message: string | null
+}
+
 export interface AnalysisStatus {
   id: string
-  status: 'uploaded' | 'queued' | 'running' | 'done' | 'failed'
+  status: AnalysisState
   stage: AnalysisStage
   /** overall progress 0..1, as reported by the server */
   progress: number
   /** server's estimate of the remaining seconds, if it has one */
   eta_s: number | null
   error: string | null
+  pitch: PitchInfo | null
+  /** the uploaded video as the server read it */
+  video: { width: number; height: number; duration_s: number } | null
 }
 
 export interface AnalysisResult {
@@ -65,15 +87,56 @@ export function estimateProcessingSeconds(videoSeconds: number): number {
   return Math.round(videoSeconds * SECONDS_PER_VIDEO_SECOND)
 }
 
-function validateStatus(raw: unknown): AnalysisStatus {
+function corners(v: unknown, path: string): [number, number][] | null {
+  if (v === null || v === undefined) return null
+  const a = arr(v, path)
+  if (a.length !== 4) throw new DataError(`${path}: expected 4 corners, got ${a.length}`)
+  return a.map((c, i) => {
+    const xy = arr(c, `${path}[${i}]`)
+    return [num(xy[0], `${path}[${i}][0]`), num(xy[1], `${path}[${i}][1]`)]
+  })
+}
+
+function validatePitch(raw: unknown): PitchInfo | null {
+  if (raw === null || raw === undefined) return null
+  const p = obj(raw, 'analysis.pitch')
+  return {
+    state: typeof p.state === 'string' ? p.state : 'unknown',
+    corners: corners(p.corners, 'analysis.pitch.corners'),
+    suggested_corners: corners(p.suggested_corners, 'analysis.pitch.suggested_corners'),
+    preview_url: typeof p.preview_url === 'string' ? p.preview_url : null,
+    message: typeof p.message === 'string' ? p.message : null,
+  }
+}
+
+export function validateStatus(raw: unknown): AnalysisStatus {
   const s = obj(raw, 'analysis')
   str(s.id, 'analysis.id')
-  oneOf(s.status, ['uploaded', 'queued', 'running', 'done', 'failed'], 'analysis.status')
+  oneOf(s.status, ANALYSIS_STATES, 'analysis.status')
   oneOf(s.stage, STAGES, 'analysis.stage')
   const p = num(s.progress, 'analysis.progress')
   if (p < 0 || p > 1) throw new DataError(`analysis.progress: expected 0..1, got ${p}`)
   if (s.eta_s !== null && s.eta_s !== undefined) num(s.eta_s, 'analysis.eta_s')
-  return { id: s.id as string, status: s.status as AnalysisStatus['status'], stage: s.stage as AnalysisStage, progress: p, eta_s: (s.eta_s as number | null) ?? null, error: typeof s.error === 'string' ? s.error : null }
+  let video: AnalysisStatus['video'] = null
+  if (s.video && typeof s.video === 'object') {
+    const v = obj(s.video, 'analysis.video')
+    video = { width: num(v.width, 'analysis.video.width'), height: num(v.height, 'analysis.video.height'), duration_s: typeof v.duration_s === 'number' ? v.duration_s : 0 }
+  }
+  return {
+    id: s.id as string,
+    status: s.status as AnalysisState,
+    stage: s.stage as AnalysisStage,
+    progress: p,
+    eta_s: (s.eta_s as number | null) ?? null,
+    error: typeof s.error === 'string' ? s.error : null,
+    pitch: validatePitch(s.pitch),
+    video,
+  }
+}
+
+/** The status needs the coach before the analysis can start (pitch step). */
+export function needsPitchStep(s: AnalysisStatus): boolean {
+  return s.status === 'needs_confirmation' || s.status === 'needs_corners'
 }
 
 export function validateTacticalTimeline(raw: unknown): TacticalTimeline {
@@ -139,6 +202,23 @@ export async function uploadVideo(file: File, onProgress?: (fraction: number) =>
 export async function startAnalysis(id: string, request: PitchPointsRequest, opts?: ApiOptions): Promise<AnalysisStatus> {
   if (request.points.length !== 4) throw new DataError('startAnalysis: exactly 4 pitch points are needed')
   return validateStatus(await apiPost(`/api/analyses/${encodeURIComponent(id)}/start`, request, 'Start analysis', opts))
+}
+
+/** "Yes, looks right": analyse with the corners OpenCV found. */
+export async function confirmPitch(id: string, opts?: ApiOptions): Promise<AnalysisStatus> {
+  return validateStatus(await apiPost(`/api/analyses/${encodeURIComponent(id)}/pitch`, { confirmed: true }, 'Confirm the pitch', opts))
+}
+
+/** The coach's 4 corners (top-left, top-right, bottom-right, bottom-left) in pixels of the server's reference frame. */
+export async function setPitchPoints(id: string, points: PixelPoint[], opts?: ApiOptions): Promise<AnalysisStatus> {
+  if (points.length !== 4) throw new DataError('setPitchPoints: exactly 4 pitch points are needed')
+  const pitch_points = points.map((p) => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10])
+  return validateStatus(await apiPost(`/api/analyses/${encodeURIComponent(id)}/pitch`, { pitch_points }, 'Mark the pitch', opts))
+}
+
+/** The server's reference frame (the frame the 4 corners are measured on). */
+export function analysisFrameUrl(id: string, opts?: ApiOptions): string {
+  return apiUrl(`/api/analyses/${encodeURIComponent(id)}/frame`, opts)
 }
 
 export async function getAnalysisStatus(id: string, opts?: ApiOptions): Promise<AnalysisStatus> {

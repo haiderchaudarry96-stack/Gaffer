@@ -5,7 +5,8 @@ import Badge from '../ui/Badge'
 import Cited from '../ui/Cited'
 import { Button } from '../ui/Button'
 import Dialog from './Dialog'
-import { evidenceImageUrl, type Alert, type ReportEvent } from '../../data'
+import { decideAlert, evidenceImageUrl, type Alert, type ReportEvent } from '../../data'
+import { apiConfigured } from '../../data/api'
 import { splitAlertExplanation } from '../../data/alerts'
 import type { LivePhase, LivePlan } from '../../data/live'
 import { formatClock } from '../../data/time'
@@ -13,6 +14,13 @@ import { STEP_NAMES } from './stepNames'
 import Mascot from '../mascot/Mascot'
 
 type LocalDecision = { status: 'approved' | 'rejected'; at: Date } | null
+
+/** A decision the server already holds for this alert (this visitor's, for the demo). */
+function serverDecision(alert: Alert): LocalDecision {
+  if (alert.status === 'pending') return null
+  const at = alert.decided_utc ? new Date(alert.decided_utc) : new Date()
+  return { status: alert.status, at }
+}
 
 
 function evidenceAlt(alert: Alert, event: ReportEvent | undefined, team: string): string {
@@ -38,6 +46,7 @@ export default function AlertCard({
   live,
   onOpenTrace,
   onJump,
+  scope = 'demo',
 }: {
   alert: Alert
   event: ReportEvent | undefined
@@ -45,8 +54,33 @@ export default function AlertCard({
   live: LiveState | null
   onOpenTrace: (ref?: string) => void
   onJump: (t: number) => void
+  /** demo: the shared demo match (a decision counts for this visitor only); upload: an analysis of the coach's own video */
+  scope?: 'demo' | 'upload'
 }) {
-  const [decision, setDecision] = useState<LocalDecision>(null)
+  const connected = apiConfigured()
+  const [decision, setDecision] = useState<LocalDecision>(() => (connected ? serverDecision(alert) : null))
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const decide = async (approve: boolean) => {
+    if (!connected) {
+      setDecision({ status: approve ? 'approved' : 'rejected', at: new Date() })
+      return
+    }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      setDecision(serverDecision(await decideAlert(alert.alert_id, approve)))
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+  const savedWhere = !connected
+    ? 'Saved in this tab only.'
+    : scope === 'demo'
+      ? 'Saved for you only: other visitors of this demo still see it waiting.'
+      : 'Saved on the analysis server.'
   const [zoom, setZoom] = useState(false)
   const text = splitAlertExplanation(alert.explanation)
   const img = evidenceImageUrl(alert)
@@ -148,21 +182,30 @@ export default function AlertCard({
           <div className="flex flex-wrap items-center justify-between gap-2" role="status">
             <p className="text-base text-text">
               You {decision.status} it at {decision.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
-              <span className="block text-xs text-muted">Saved in this tab only.</span>
+              <span className="block text-xs text-muted">{savedWhere}</span>
             </p>
-            <Button variant="ghost" size="sm" onClick={() => setDecision(null)}>
-              <RotateCcw className="size-3.5" aria-hidden="true" /> Undo
-            </Button>
+            {!connected && (
+              <Button variant="ghost" size="sm" onClick={() => setDecision(null)}>
+                <RotateCcw className="size-3.5" aria-hidden="true" /> Undo
+              </Button>
+            )}
           </div>
         ) : (
-          <div className="flex gap-3">
-            <Button size="lg" className="flex-1" onClick={() => setDecision({ status: 'approved', at: new Date() })}>
-              <Check className="size-5" aria-hidden="true" /> Approve
-            </Button>
-            <Button variant="ghost" size="lg" className="flex-1" onClick={() => setDecision({ status: 'rejected', at: new Date() })}>
-              <X className="size-5" aria-hidden="true" /> Reject
-            </Button>
-          </div>
+          <>
+            <div className="flex gap-3">
+              <Button size="lg" className="flex-1" disabled={saving} onClick={() => void decide(true)}>
+                {saving ? <Loader2 className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-5" aria-hidden="true" />} Approve
+              </Button>
+              <Button variant="ghost" size="lg" className="flex-1" disabled={saving} onClick={() => void decide(false)}>
+                <X className="size-5" aria-hidden="true" /> Reject
+              </Button>
+            </div>
+            {saveError && (
+              <p className="text-sm text-danger" role="alert">
+                {saveError}
+              </p>
+            )}
+          </>
         )}
         <button
           type="button"

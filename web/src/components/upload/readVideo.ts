@@ -8,6 +8,13 @@ export interface LocalVideoInfo {
   /** JPEG data URL of the frame at `frameT` seconds */
   frameUrl: string
   frameT: number
+  /** false: this browser cannot decode it (no frame, size or duration); the server can still read it */
+  previewable: boolean
+}
+
+/** A file the browser cannot decode (e.g. an MPEG-4 Part 2 or HEVC codec): upload-only. */
+export function unreadableVideo(file: File): LocalVideoInfo {
+  return { file, url: URL.createObjectURL(file), duration: 0, width: 0, height: 0, frameUrl: '', frameT: 0, previewable: false }
 }
 
 const OK_TYPES = ['video/mp4', 'video/quicktime']
@@ -40,7 +47,7 @@ export function readVideo(file: File): Promise<LocalVideoInfo> {
       c.width = Math.round(v.videoWidth * scale)
       c.height = Math.round(v.videoHeight * scale)
       c.getContext('2d')!.drawImage(v, 0, 0, c.width, c.height)
-      resolve({ file, url, duration: v.duration, width: v.videoWidth, height: v.videoHeight, frameUrl: c.toDataURL('image/jpeg', 0.85), frameT: v.currentTime })
+      resolve({ file, url, duration: v.duration, width: v.videoWidth, height: v.videoHeight, frameUrl: c.toDataURL('image/jpeg', 0.85), frameT: v.currentTime, previewable: true })
     }
     v.src = url
   })

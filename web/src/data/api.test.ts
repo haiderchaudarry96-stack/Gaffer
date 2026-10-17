@@ -2,9 +2,12 @@
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { ApiError, ApiNotConfigured, apiConfigured, type Http } from './api'
+import { ApiError, ApiNotConfigured, apiBase, apiConfigured, apiUrl, type Http } from './api'
 import {
+  analysisFrameUrl,
+  confirmPitch,
   estimateProcessingSeconds,
+  setPitchPoints,
   getAnalysisStatus,
   loadAnalysisResult,
   startAnalysis,
@@ -109,6 +112,70 @@ describe('analysis API client', () => {
     const bad = { ...points, points: points.points.slice(0, 3) } as unknown as PitchPointsRequest
     await expect(startAnalysis('an_1', bad, { http, base: BASE })).rejects.toThrow(/4 pitch points/)
     expect(http.calls).toEqual([])
+  })
+
+  it('treats "/" and "same-origin" as the server that serves the site (relative URLs)', () => {
+    for (const v of ['/', 'same-origin', ' SAME-ORIGIN ']) {
+      expect(apiConfigured(v)).toBe(true)
+      expect(apiBase(v)).toBe('')
+      expect(apiUrl('/api/demo', { base: v })).toBe('/api/demo')
+    }
+    expect(apiBase('http://localhost:8000/')).toBe('http://localhost:8000')
+    expect(analysisFrameUrl('an 1', { base: '/' })).toBe('/api/analyses/an%201/frame')
+    expect(apiConfigured('  ')).toBe(false)
+    expect(() => apiUrl('/api/demo', { base: '' })).toThrow(ApiNotConfigured)
+  })
+
+  it('sends the visitor cookie on every call (credentials: include)', async () => {
+    const http = fakeHttp({ 'GET /api/analyses/a': () => json(status({ id: 'a' })) })
+    await getAnalysisStatus('a', { http, base: BASE })
+    expect(http.fetch).toHaveBeenCalledWith(`${BASE}/api/analyses/a`, expect.objectContaining({ credentials: 'include' }))
+  })
+
+  it('reads the pitch step: needs_confirmation -> confirm, needs_corners -> 4 points', async () => {
+    const corners = [
+      [90.6, 70],
+      [870, 72],
+      [868, 540],
+      [92, 538],
+    ]
+    const pitch = { state: 'detected', corners, preview_url: 'http://x/api/analyses/an_1/pitch-preview', message: 'found it' }
+    const video = { filename: 'm.mp4', width: 960, height: 600, fps: 8, frames: 480, duration_s: 60 }
+    const http = fakeHttp(
+      {
+        'POST /api/analyses/an_1/pitch': (init) => {
+          expect(JSON.parse(String(init?.body))).toEqual({ confirmed: true })
+          return json(status({ status: 'queued', stage: 'uploading', progress: 0, pitch: { ...pitch, state: 'confirmed' } }))
+        },
+        'POST /api/analyses/an_2/pitch': (init) => {
+          expect(JSON.parse(String(init?.body))).toEqual({ pitch_points: [[10.1, 20], [900, 20], [900, 580], [10, 580]] })
+          return json(status({ id: 'an_2', status: 'queued', stage: 'uploading', progress: 0 }))
+        },
+      },
+      status({ status: 'needs_confirmation', stage: 'uploading', progress: 0, pitch, video }),
+    )
+    const file = new File([new Uint8Array(8)], 'm.mp4', { type: 'video/mp4' })
+    const up = await uploadVideo(file, undefined, { http, base: BASE })
+    expect(up.status).toBe('needs_confirmation')
+    expect(up.pitch?.corners).toEqual(corners)
+    expect(up.pitch?.preview_url).toBe(pitch.preview_url)
+    expect(up.video).toEqual({ width: 960, height: 600, duration_s: 60 })
+    expect((await confirmPitch('an_1', { http, base: BASE })).status).toBe('queued')
+    const pts = [
+      { x: 10.12, y: 20 },
+      { x: 900, y: 20 },
+      { x: 900, y: 580 },
+      { x: 10, y: 580 },
+    ]
+    expect((await setPitchPoints('an_2', pts, { http, base: BASE })).status).toBe('queued')
+    await expect(setPitchPoints('an_2', pts.slice(0, 3), { http, base: BASE })).rejects.toThrow(/4 pitch points/)
+    // needs_corners carries a best guess for preloading, and no confirmed corners
+    const guess = await uploadVideo(file, undefined, {
+      http: fakeHttp({}, status({ status: 'needs_corners', stage: 'uploading', progress: 0, pitch: { state: 'needs_corners', corners: null, suggested_corners: corners } })),
+      base: BASE,
+    })
+    expect(guess.pitch?.corners).toBeNull()
+    expect(guess.pitch?.suggested_corners).toEqual(corners)
   })
 
   it('estimates processing from the measured 1.2 s per second of video', () => {

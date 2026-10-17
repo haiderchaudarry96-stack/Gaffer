@@ -168,7 +168,8 @@ export default function AppPage() {
     const win: [number, number] = [frames[0]?.t ?? 0, (frames.at(-1)?.t ?? 0) + 0.5]
     const tlView = timelineFromContract(result.timeline)
     setUploaded({ result, index: new PositionIndex(result.match_state), timeline: tlView, window: win })
-    setLocalVideo(videoFrom(v, win[0]))
+    // a video this browser cannot decode is analysed by the server but not played here
+    setLocalVideo(v.previewable ? videoFrom(v, win[0]) : null)
     setSelected(tlView.events.find((e) => e.status === 'confirmed')?.id ?? tlView.events[0]?.id ?? '')
     setLive(false)
     setUploadOpen(false)
@@ -203,6 +204,7 @@ export default function AppPage() {
           live={liveState}
           onOpenTrace={(ref) => setDrawer({ open: true, ref: ref ?? null })}
           onJump={transport.seek}
+          scope={uploaded ? 'upload' : 'demo'}
         />
       )
     } else {
@@ -273,7 +275,7 @@ export default function AppPage() {
       </header>
 
       <main id="main" className="mx-auto grid max-w-[1600px] gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_440px] xl:gap-8 xl:p-8">
-        <h1 className="sr-only">Gaffer analyst desk: TeamTrack drone match, 15:00 to 21:00</h1>
+        <h1 className="sr-only">{uploaded ? `Gaffer analyst desk: ${uploaded.result.label}` : 'Gaffer analyst desk: TeamTrack drone match, 15:00 to 21:00'}</h1>
         {loadError && loadError.status === 'error' && (
           <div className="xl:col-span-2">
             <ErrorState title="Some match data could not be loaded" detail={loadError.error} />
@@ -335,7 +337,7 @@ export default function AppPage() {
             <div className="rounded-xl border border-warn/40 bg-warn/5 px-4 py-3 text-sm">
               <p className="font-semibold text-warn">Suggestion (unchecked model text)</p>
               <p className="mt-1 text-muted">“{alert.suggestion}”</p>
-              <p className="mt-1 text-muted">Known to be weak: 4-4-2 → 3-4-3 adds a forward, not a central midfielder.</p>
+              {!uploaded && <p className="mt-1 text-muted">Known to be weak: 4-4-2 → 3-4-3 adds a forward, not a central midfielder.</p>}
             </div>
           )}
         </div>
