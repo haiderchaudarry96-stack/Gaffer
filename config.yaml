@@ -579,7 +579,11 @@ api:
     arm: auto                     # auto: Nova arm when Bedrock is configured, else rules; llm; rules
     max_cost_usd_per_analysis: 0.30   # orchestration calls (explanations + report have their own caps)
     prior_s_per_video_s: 1.2      # ETA before the first frames are timed (laptop, drone, 4 fps)
-    prior_s_per_candidate: 200    # ETA of one agent check before one is timed (step 5-6 runs)
+    prior_s_per_candidate: 200    # ETA of one agent check before any frame is timed (4K drone)
+    eta_frames_per_candidate: 755 # one agent check ~ this many tracked frames of OpenCV (camera
+                                  # check ~30 + 145 s re-analysis at ~5 fps), at the upload's own
+                                  # measured s/frame: 4K drone ~0.3 s -> ~226 s (Phase 3: 104-252 s
+                                  # + 8-13 s check); 960 px generated clip 0.02 s -> ~16 s (15 s)
     prior_candidates_per_min: 1.3 # candidates per minute of drone video before the engine has run
                                   # (Phase 2: 4 in 240 s eval, 6 in 270 s eval2)
     max_queued: 3                 # more waiting uploads -> refused ("try again later")

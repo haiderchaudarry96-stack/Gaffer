@@ -1,0 +1,21 @@
+# Build context for deploy/Dockerfile: only what the image needs.
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.env
+.env.*
+outputs
+models
+data/teamtrack
+data/synthetic
+web/node_modules
+web/screenshots
+web/public/sample
+tests
+docs
+scripts
+*.mp4
+*.mov

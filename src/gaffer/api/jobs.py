@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import queue
 import threading
 import time
@@ -39,6 +40,7 @@ STAGE_LABELS = {"uploading": "Uploading", "detecting": "Detecting players (OpenC
                 "done": "Done"}
 STATUSES = ("uploaded", "needs_confirmation", "needs_corners", "queued", "running", "done",
             "failed")
+log = logging.getLogger("gaffer.api.jobs")
 RESULT_FILES = ("status.json", "upload.json", "match_state.json", "match_state.teams.json",
                 "timeline.json", "trace.jsonl", "explanations.json", "run_rows.json",
                 "report.json", "report.md", "pitch_preview.jpg", "first_frame.jpg",
@@ -81,6 +83,7 @@ class Progress:
         j = cfg["api"]["jobs"]
         self.prior_s_per_video_s = float(j["prior_s_per_video_s"])
         self.prior_s_per_candidate = float(j["prior_s_per_candidate"])
+        self.frames_per_candidate = float(j["eta_frames_per_candidate"])
         self.prior_candidates_per_min = float(j["prior_candidates_per_min"])
         self.max_agent_opencv_s = float(cfg["agent"]["vision"]["max_opencv_s_per_match"])
         self.duration_s = float(duration_s)
@@ -146,9 +149,18 @@ class Progress:
             teams_left = max(0.0, teams_est - (in_stage if self.stage == "teams" else 0.0))
         n = (self.cands_total if self.cands_total is not None
              else round(self.prior_candidates_per_min * self.duration_s / 60))
-        per_c = (sum(self.cand_s) / len(self.cand_s)) if self.cand_s else self.prior_s_per_candidate
-        if self.stage == "agent" and self.cand_s:
-            basis = "measured"
+        # one agent check ~ `eta_frames_per_candidate` tracked frames of OpenCV (camera check +
+        # a ~145 s re-analysis at 4-6 fps), timed at THIS video's measured s per frame
+        s_per_frame = None
+        if self.stage == "detecting" and self.frames_done >= 5:
+            s_per_frame = in_stage / self.frames_done
+        elif self.detect_s and self.frames_total:
+            s_per_frame = self.detect_s / self.frames_total
+        per_c = (sum(self.cand_s) / len(self.cand_s) if self.cand_s
+                 else self.frames_per_candidate * s_per_frame if s_per_frame
+                 else self.prior_s_per_candidate)
+        if self.stage == "agent" and (self.cand_s or s_per_frame):
+            basis = "measured"  # this video's own timings (frames, then checked candidates)
         left_c = max(0, n - self.cands_done)
         agent_left = min(left_c * per_c, self.max_agent_opencv_s + 20.0 * left_c)
         if self.stage == "agent" and not self.cand_s:
@@ -319,6 +331,7 @@ class JobManager:
             self.update(aid, status="failed", error=str(exc), error_detail=exc.detail[:2000],
                         eta_s=None)
         except Exception as exc:  # unforeseen: say so plainly, keep the trace for the log
+            log.exception("analysis %s failed", aid)
             self.update(aid, status="failed", eta_s=None,
                         error="The analysis stopped because of an internal error. The details "
                               "are in the server log.",

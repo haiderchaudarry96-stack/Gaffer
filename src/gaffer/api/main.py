@@ -90,10 +90,20 @@ class ChatRequest(BaseModel):
 
 
 def _bedrock_factory(cfg: dict[str, Any]) -> Any:
+    """Bedrock client factory. A configured profile that does not exist on this machine (EC2,
+    Docker: no ~/.aws) falls back to the default credential chain, i.e. the IAM instance role;
+    no keys are ever read from config or the image."""
+
     def make() -> Any:
+        import boto3
+
         from gaffer.llm.bedrock_client import BedrockClient
 
-        return BedrockClient(cfg)
+        c = cfg
+        prof = cfg["aws"].get("profile")
+        if prof and prof not in boto3.session.Session().available_profiles:
+            c = {**cfg, "aws": {**cfg["aws"], "profile": None}}
+        return BedrockClient(c)
 
     return make
 
