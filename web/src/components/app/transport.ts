@@ -5,6 +5,12 @@ import type { PlaybackClock } from '../../lib/clock'
 export interface VideoSource {
   el: HTMLVideoElement
   offset: number
+  /** Optional global clock and controls for a playlist spanning multiple video files. */
+  now?: () => number
+  seekMatch?: (matchTimeS: number) => void
+  play?: () => void
+  pause?: () => void
+  setRate?: (rate: number) => void
 }
 
 /**
@@ -38,17 +44,22 @@ export function useTransport(clock: PlaybackClock, video: VideoSource | null) {
     rate,
     toggle() {
       if (video) {
-        if (video.el.paused) void video.el.play()
+        if (video.el.paused) {
+          if (video.play) video.play()
+          else void video.el.play()
+        } else if (video.pause) video.pause()
         else video.el.pause()
       } else if (clock.playing) clock.pause()
       else clock.play()
     },
     seek(t: number) {
-      if (video) seekVideo(video.el, Math.max(0, t - video.offset))
+      if (video?.seekMatch) video.seekMatch(t)
+      else if (video) seekVideo(video.el, Math.max(0, t - video.offset))
       else clock.seek(t)
     },
     setRate(r: number) {
-      if (video) setVideoRate(video.el, r)
+      if (video?.setRate) video.setRate(r)
+      else if (video) setVideoRate(video.el, r)
       else clock.setRate(r)
     },
   }

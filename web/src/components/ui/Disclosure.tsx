@@ -11,11 +11,13 @@ export default function Disclosure({
   children,
   className = '',
   summaryClassName = '',
+  title,
 }: {
   summary: ReactNode
   children: ReactNode
   className?: string
   summaryClassName?: string
+  title?: string
 }) {
   const [open, setOpen] = useState(false)
   const id = useId()
@@ -25,6 +27,7 @@ export default function Disclosure({
         type="button"
         aria-expanded={open}
         aria-controls={id}
+        title={title}
         onClick={() => setOpen((o) => !o)}
         className={`flex w-full items-center justify-between gap-4 text-left ${summaryClassName}`}
       >

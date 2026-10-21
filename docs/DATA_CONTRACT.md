@@ -7,6 +7,12 @@ This is the backbone of Gaffer. **Freeze it in Phase 1 and do not change it afte
 > 2. The detector's "detected at" time stays **engine-internal** (used for detection delay in eval); it is not part of `events`.
 > 3. Synthetic ground truth carries two extra keys, `noise_events` (set pieces, counter-attacks, flickers) and `visibility` (broadcast-window stretches). Only eval scripts read them.
 
+The N2 replay adds `verification_match_time_s` to the separate persisted event schema 1.1, using
+SQLite migration 2. This is the match-clock endpoint of a complete recorded verifier re-analysis
+window, used only to reveal the stored decision during recorded playback. It is not a change to the
+frozen `MatchState` or `TacticalTimeline` v1.0 contracts, and it is never derived from
+`verification_time_utc`.
+
 Three producers emit `MatchState`, identically:
 - `scripts/make_synthetic_match.py` (no video, has ground truth) → `source: "synthetic"`
 - `src/gaffer/perception/pipeline.py` (real video, OpenCV 5) → `source: "video"`
@@ -226,4 +232,73 @@ One JSON object per line:
 
 ## Versioning
 
-All files carry `"contract_version": "1.0"`. If the contract must change, bump it and make the loader reject mismatched versions with a clear message.
+Files described by this contract carry `"contract_version": "1.0"`. If this contract must
+change, bump it and make the loader reject mismatched versions with a clear message.
+
+## Persisted event record v1.0 (separate schema)
+
+The API's queryable event database uses its own `schema_version: "1.0"`; it is not a change to
+`MatchState`, `TacticalTimeline`, or `Alert` v1.0. Its event payload stores the event id/type/team,
+estimated onset (`candidate_time_s`), when OpenCV could detect it (`detection_time_s`), before/after
+formation metrics and quality/coverage, verification decision/reason and its UTC time, evidence and
+trace references, agent status/result/completion time, posture/recommendation lifecycle states, and
+an append-only coach-decision history with UTC decision times. Times ending in `_s` are match-clock
+seconds; UTC fields are wall-clock times.
+
+SQLite `PRAGMA user_version` and `schema_migrations` version the database independently. Migration
+1 creates the event and coach-decision tables and indexes. Startup applies missing migrations
+transactionally and refuses a database created by a newer application. Existing JSON artifacts and
+`alerts.jsonl` are not rewritten or automatically imported; reprocessing a video writes its
+OpenCV-derived events to the database. Store video/evidence artifacts through the existing storage
+interface, not in SQLite.
+
+### Event record v1.1 and N3 posture lifecycle
+
+Event record schema 1.1 adds the nullable `verification_match_time_s` replay boundary. Posture uses
+the existing distinct `posture_status` and `posture_result` fields; N3 does not bump that record
+schema or the frozen MatchState/TacticalTimeline v1.0 contracts. The result contains its own
+`schema_version: "1.0"`, posture enum, bounded evidence-strength value, explanation, exact metric
+citations (path/value/unit/match-clock window), limitations, `source` (`bedrock` or
+`deterministic_fallback`), analysis time, model id when available, trace id, and metered usage.
+
+Only a persisted event whose deterministic verifier state is `confirmed` can be assessed. An
+unverified event stays `not_requested`; `pending`, `completed`, `unavailable`, and `failed` are
+separate lifecycle states. A completed `unclear` assessment is not an error state. Reprocessing an
+analysis preserves existing posture data and trace refs. A repeat CLI command does not re-call
+Bedrock; an operator must pass `--retry` explicitly. The posture attempt ledger enforces the
+separate per-event/per-match call and cost caps. A `pending` attempt is not stolen while active;
+explicit retry may reclaim it only after the configured stale-pending age.
+
+The model receives bounded metrics from the persisted OpenCV event, never TeamTrack annotation or
+ground-truth data. If it requests more visual evidence, the worker may perform one bounded second
+OpenCV pass on the original source video, only strictly after onset and no later than the stored
+verification match-time boundary. A second model assessment may use those metric values with
+`opencv_reanalysis.after.*` citation paths. The stored verification result, reason, evidence
+boundary, and append-only coach decisions remain unchanged. Migration 3 adds the posture-attempt
+ledger; migration 4 adds recommendation snapshots and separate append-only recommendation decisions.
+The event record stays schema 1.1.
+
+### N4 recommendation lifecycle
+
+The event's existing `recommendation_status` and `recommendation` fields hold the latest N4 result;
+N4 does not bump the persisted event, MatchState, or TacticalTimeline schemas. Each recommendation
+has its own `schema_version: "1.0"`, stable id, event/record ids, exact coach side/objective/available
+roles, context/evidence hashes, posture trace reference, status (`ready` or `withheld`), condition,
+role-level action when ready, rationale, exact copied N3 citations, evidence strength, and creation
+time. Evidence strength is not a calibrated probability. A missing objective/side/role or unsupported
+posture produces a persisted withheld outcome with no action.
+
+Recommendations are deterministic; they do not make another Bedrock call. A ready result requires a
+confirmed event, completed Bedrock posture other than `unclear`, at least two well-formed N3 metric
+citations within the verification match-clock boundary, and a documented role/objective rule. The
+current rules cover an opponent's supported defensive posture while chasing a goal (attacker available)
+and an opponent's supported attacking posture while protecting a lead (defender available). Own-team
+events and balanced objectives are withheld by these rules. Advice is conditional; it never names a
+player or triggers a substitution.
+
+SQLite migration 4 stores recommendation snapshots by event/context/evidence key and coach responses
+in `recommendation_decisions`, with no-update/no-delete guards. These responses are separate from the
+existing `coach_decisions` table, which remains the append-only history for formation-alert approval
+or rejection. An identical response is idempotent; a conflicting second response is rejected. A saved
+response locks that recommendation against replacement by a different context. Event upsert retries
+preserve both N3 posture and N4 recommendation state.

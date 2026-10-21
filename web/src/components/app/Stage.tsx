@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, CheckCircle2, Pause, Play, X } from 'lucide-react'
 import UploadButton from '../upload/UploadButton'
 import PitchCanvas from '../pitch/PitchCanvas'
@@ -10,6 +10,8 @@ import { displayFormation } from '../../data/timeline'
 import { formatClock } from '../../data/time'
 import { Skeleton } from '../ui/States'
 import type { Transport, VideoSource } from './transport'
+import { TeamTrackVideoSource } from './teamTrackPlayer'
+import type { TeamTrackReplay } from '../../data/teamtrack'
 
 /** A video the coach picked from their disk; it stays in the browser. */
 export interface LocalVideo {
@@ -72,6 +74,7 @@ export default function Stage({
   verifiedFor,
   onVideo,
   video: file,
+  replay = null,
   onRemoveVideo,
   onUpload,
 }: {
@@ -84,24 +87,40 @@ export default function Stage({
   verifiedFor: (side: TeamSide, t: number) => string | null
   onVideo: (v: VideoSource | null) => void
   video: LocalVideo | null
+  replay?: TeamTrackReplay | null
   onRemoveVideo: () => void
   onUpload: () => void
 }) {
   const t = useClockTime(clock, 8)
   const rangeId = useId()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [activeClip, setActiveClip] = useState<string | null>(null)
+  const [replayError, setReplayError] = useState<{ source: TeamTrackReplay; message: string } | null>(null)
   const names = timeline?.teamNames ?? { home: 'White', away: 'Blue' }
 
   useEffect(() => {
     const el = videoRef.current
-    if (!file || !el) return
-    clock.attachSource(() => file.offset + el.currentTime)
-    onVideo({ el, offset: file.offset })
+    if (!el) return
+    if (replay) {
+      const source = new TeamTrackVideoSource(el, replay.clips, (clip) => setActiveClip(clip.id),
+        (message) => setReplayError({ source: replay, message }))
+      clock.attachSource(source.now)
+      onVideo(source)
+      return () => {
+        source.dispose()
+        clock.attachSource(null)
+        onVideo(null)
+      }
+    }
+    if (!file) return
+    const source: VideoSource = { el, offset: file.offset }
+    clock.attachSource(() => source.offset + el.currentTime)
+    onVideo(source)
     return () => {
       clock.attachSource(null)
       onVideo(null)
     }
-  }, [file, clock, onVideo])
+  }, [file, replay, clock, onVideo])
 
   const pitch = match ? (
     <PitchCanvas
@@ -129,8 +148,34 @@ export default function Stage({
         <FormationChip side="away" name={names.away} timeline={timeline} t={t} confirmedId={verifiedFor('away', t)} />
       </div>
 
-      <div className="relative mx-auto mt-3 aspect-[110/73] w-[calc(100%-1.5rem)] max-w-[calc(40vh*110/73)] sm:w-[calc(100%-2rem)]">
-        {file ? (
+      <div className={replay
+        ? 'mx-auto mt-3 grid w-[calc(100%-1.5rem)] grid-cols-1 gap-3 sm:w-[calc(100%-2rem)] xl:grid-cols-2'
+        : 'relative mx-auto mt-3 aspect-[110/73] w-[calc(100%-1.5rem)] max-w-[calc(40vh*110/73)] sm:w-[calc(100%-2rem)]'}>
+        {replay ? (
+          <>
+            <div className="min-w-0 overflow-hidden rounded-xl border border-line bg-black">
+              <div className="aspect-video">
+                <video
+                  key="teamtrack-replay"
+                  ref={videoRef}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="size-full bg-black object-contain"
+                  aria-label={`Recorded TeamTrack match video, ${activeClip ?? 'loading segment'}`}
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-surface px-3 py-2 text-xs text-muted">
+                <span>{replay.label}</span>
+                <span className="font-mono tabular">Clip {activeClip ?? 'loading'}</span>
+              </div>
+              {replayError?.source === replay && <p role="alert" className="bg-danger/10 px-3 py-2 text-sm text-danger">{replayError.message}</p>}
+            </div>
+            <div className="aspect-[110/73] min-w-0 overflow-hidden rounded-xl border border-line bg-bg" aria-label="Synchronized tactical map">
+              {pitch}
+            </div>
+          </>
+        ) : file ? (
           <>
             <video
               ref={videoRef}
@@ -186,7 +231,7 @@ export default function Stage({
             </button>
           ))}
         </div>
-        {file ? (
+        {file && !replay ? (
           <button
             type="button"
             onClick={onRemoveVideo}

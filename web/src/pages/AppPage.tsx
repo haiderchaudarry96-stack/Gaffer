@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Radio } from 'lucide-react'
+import { ArrowLeft, FileText, Radio, Video } from 'lucide-react'
 import Logo from '../components/ui/Logo'
 import { Button } from '../components/ui/Button'
 import { ErrorState, Skeleton } from '../components/ui/States'
@@ -12,6 +12,7 @@ import { PositionIndex } from '../components/pitch/positions'
 import FormationTimeline, { type ShownEvent } from '../components/app/FormationTimeline'
 import AlertCard, { type LiveState } from '../components/app/AlertCard'
 import CandidateCard from '../components/app/CandidateCard'
+import RecordedEventCard from '../components/app/RecordedEventCard'
 import TracePanel from '../components/app/TracePanel'
 import ChatFab from '../components/app/ChatFab'
 import ReportDialog from '../components/app/ReportDialog'
@@ -29,6 +30,8 @@ import { livePhase, livePlan } from '../data/live'
 import { timelineFromContract, type AnalysisResult } from '../data/analysis'
 import { suggestedQuestions } from '../data/suggestions'
 import type { FormationTimeline as TimelineView } from '../data'
+import { loadPersistedEvents, loadTeamTrackReplay, replayEventStateAt,
+  requestRoleRecommendation, type CoachContext, type PersistedEvent, type TeamTrackReplay } from '../data/teamtrack'
 
 /** An analysis returned by the backend for an uploaded video, ready for the same views. */
 interface Uploaded {
@@ -49,9 +52,19 @@ export default function AppPage() {
   const reduced = usePrefersReducedMotion()
   const [params] = useSearchParams()
   const [uploaded, setUploaded] = useState<Uploaded | null>(null)
+  const [recordedReplay, setRecordedReplay] = useState<TeamTrackReplay | null>(null)
+  const [persistedEvents, setPersistedEvents] = useState<PersistedEvent[]>([])
+  const [liveAnalysisOpen, setLiveAnalysisOpen] = useState(false)
+  const [liveAnalysisLoading, setLiveAnalysisLoading] = useState(false)
+  const [liveAnalysisError, setLiveAnalysisError] = useState<string | null>(null)
+  const [coachSide, setCoachSide] = useState<TeamSide | ''>('')
+  const [matchObjective, setMatchObjective] = useState('')
+  const [availableRoles, setAvailableRoles] = useState<Array<'attacker' | 'midfielder' | 'defender'>>([])
+  const [recommendationErrors, setRecommendationErrors] = useState<Record<string, string>>({})
+  const recommendationAttempts = useRef(new Set<string>())
   const [w0, w1] = uploaded?.window ?? DEFAULT_MATCH.window
   const startT = uploaded ? uploaded.start : Number(params.get('t') ?? APP_START_S)
-  const clock = useMemo(() => new PlaybackClock({ min: w0, max: w1 - 0.5, start: startT, rate: 1 }), [w0, w1, startT])
+  const clock = useMemo(() => new PlaybackClock({ min: w0, max: w1, start: startT, rate: 1 }), [w0, w1, startT])
   const [video, setVideo] = useState<VideoSource | null>(null)
   const [localVideo, setLocalVideo] = useState<LocalVideo | null>(null)
   const [uploadOpen, setUploadOpen] = useState(params.get('upload') === '1')
@@ -76,9 +89,9 @@ export default function AppPage() {
 
   // play once the positions are in; never auto-play with reduced motion or ?paused=1
   useEffect(() => {
-    if (index && !reduced && params.get('paused') !== '1') clock.play()
+    if (index && !recordedReplay && !reduced && params.get('paused') !== '1') clock.play()
     return () => clock.pause()
-  }, [index, reduced, clock, params])
+  }, [index, reduced, clock, params, recordedReplay])
 
   useEffect(() => {
     document.title = 'Analyst desk — Gaffer'
@@ -87,13 +100,94 @@ export default function AppPage() {
     }
   }, [])
 
+  const posturePending = persistedEvents.some((event) => event.posture_status === 'pending')
+  useEffect(() => {
+    const matchId = recordedReplay?.match_id
+    if (!matchId || !posturePending) return
+    let active = true
+    let remainingPolls = 24
+    let timer: number | undefined
+    const poll = async () => {
+      if (!active || remainingPolls <= 0) return
+      remainingPolls -= 1
+      try {
+        const latest = await loadPersistedEvents(matchId)
+        if (!active) return
+        setPersistedEvents(latest)
+        if (latest.some((event) => event.posture_status === 'pending') && remainingPolls > 0) {
+          timer = window.setTimeout(() => void poll(), 5000)
+        }
+      } catch {
+        if (active && remainingPolls > 0) timer = window.setTimeout(() => void poll(), 5000)
+      }
+    }
+    timer = window.setTimeout(() => void poll(), 5000)
+    return () => {
+      active = false
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [recordedReplay?.match_id, posturePending])
+
+  useEffect(() => {
+    if (!recordedReplay) return
+    const context: CoachContext = {
+      coach_side: coachSide || null,
+      objective: matchObjective === 'chase' || matchObjective === 'protect'
+        || matchObjective === 'balanced' ? matchObjective : null,
+      available_substitute_roles: [...availableRoles].sort(),
+    }
+    const contextKey = JSON.stringify(context)
+    for (const event of persistedEvents) {
+      if (event.status !== 'confirmed' || event.verification_match_time_s === null
+          || t < event.verification_match_time_s
+          || event.posture_status === 'pending') continue
+      const old = event.recommendation
+      const sameContext = old?.context.coach_side === context.coach_side
+        && old.context.objective === context.objective
+        && [...old.context.available_substitute_roles].sort().join(',')
+          === context.available_substitute_roles.join(',')
+      if (old?.coach_response) continue
+      if (old && sameContext
+          && old.posture_status_at_creation === event.posture_status
+          && old.posture_trace_id === (event.posture_result?.trace_id ?? null)) continue
+      const attemptKey = `${event.record_id}:${contextKey}`
+      if (recommendationAttempts.current.has(attemptKey)) continue
+      recommendationAttempts.current.add(attemptKey)
+      void requestRoleRecommendation(event.record_id, context)
+        .then(() => loadPersistedEvents(recordedReplay.match_id))
+        .then((latest) => {
+          setPersistedEvents(latest)
+          setRecommendationErrors((current) => {
+            const next = { ...current }
+            delete next[event.record_id]
+            return next
+          })
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : ''
+          if (message.includes('HTTP 409')
+              && message.includes('Coach context cannot replace advice that already has a saved response.')) {
+            void loadPersistedEvents(recordedReplay.match_id).then(setPersistedEvents)
+            return
+          }
+          setRecommendationErrors((current) => ({
+            ...current,
+            [event.record_id]: error instanceof Error
+              ? error.message : 'Could not prepare role advice.',
+          }))
+        })
+    }
+  }, [recordedReplay, persistedEvents, coachSide, matchObjective, availableRoles, t])
+
   const onVideo = useCallback((v: VideoSource | null) => setVideo(v), [])
 
   const tl = uploaded?.timeline ?? (timeline.status === 'ready' ? timeline.data : null)
   const names = tl?.teamNames ?? { home: 'White', away: 'Blue' }
   const allTrace: TraceStep[] = useMemo(() => (uploaded ? uploaded.result.trace : trace.status === 'ready' ? trace.data : []), [trace, uploaded])
   const alertList = uploaded ? uploaded.result.alerts : alerts.status === 'ready' ? alerts.data : null
-  const chatMatchId = uploaded ? uploaded.result.id : (matchState?.match_id ?? DEFAULT_MATCH.id)
+  // the API knows the demo by its sample id (config api.demo.id = DEFAULT_MATCH.id), not by the
+  // match_state's own match_id (teamtrack_top_w900_1260): sending that gave HTTP 404 in chat
+  const chatMatchId = uploaded ? uploaded.result.id : DEFAULT_MATCH.id
 
   // live replay timing per decided event, read from its trace
   const plans = useMemo(() => {
@@ -106,23 +200,58 @@ export default function AppPage() {
     return out
   }, [tl, allTrace])
 
-  const shownEvents: ShownEvent[] = (tl?.events ?? [])
-    .map((e) => {
-      if (!live) return { event: e, status: e.status, pending: false }
-      if (t < e.t) return null // live: a marker appears when its time is reached
-      const plan = plans.get(e.id)
-      if (!plan) return { event: e, status: e.status, pending: false }
-      const ph = livePhase(plan, t)
-      return ph.phase === 'decided' ? { event: e, status: e.status, pending: false } : { event: e, status: 'candidate' as const, pending: true }
-    })
-    .filter((x): x is ShownEvent => x !== null)
+  const shownEvents: ShownEvent[] = recordedReplay
+    ? persistedEvents.flatMap((record) => {
+        const state = replayEventStateAt(record, t)
+        if (state.kind === 'upcoming') return []
+        const event: TimelineEvent = {
+          id: record.event_id,
+          team: record.team,
+          t: record.candidate_time_s,
+          from: record.from_formation ?? 'unknown',
+          to: record.to_formation ?? 'unknown',
+          status: state.kind === 'decided' ? state.status : 'candidate',
+          reason: null,
+        }
+        return [{ event, status: event.status, pending: state.kind === 'checking' }]
+      })
+    : (tl?.events ?? [])
+        .map((e) => {
+          if (!live) return { event: e, status: e.status, pending: false }
+          if (t < e.t) return null // live: a marker appears when its time is reached
+          const plan = plans.get(e.id)
+          if (!plan) return { event: e, status: e.status, pending: false }
+          const ph = livePhase(plan, t)
+          return ph.phase === 'decided' ? { event: e, status: e.status, pending: false } : { event: e, status: 'candidate' as const, pending: true }
+        })
+        .filter((x): x is ShownEvent => x !== null)
 
   const verifiedFor = (side: TeamSide, at: number) => {
     const done = shownEvents.filter((e) => e.event.team === side && e.event.t <= at && !e.pending && e.status !== 'candidate').at(-1)
     return done && done.status === 'confirmed' ? done.event.id : null
   }
 
-  const selectedEvent = tl?.events.find((e) => e.id === selected)
+  const replayHistory = recordedReplay ? persistedEvents.filter((event) => event.candidate_time_s <= t) : []
+  const replayLatestTime = replayHistory.at(-1)?.candidate_time_s
+  const replayLatestGroup = replayHistory.filter((event) => event.candidate_time_s === replayLatestTime)
+  const currentPersisted = recordedReplay
+    ? persistedEvents.find((event) => event.event_id === selected && event.candidate_time_s <= t)
+      ?? replayLatestGroup.find((event) => event.team === coachSide)
+      ?? replayLatestGroup.at(-1)
+    : undefined
+  const selectedEvent: TimelineEvent | undefined = recordedReplay
+    ? currentPersisted ? {
+        id: currentPersisted.event_id,
+        team: currentPersisted.team,
+        t: currentPersisted.candidate_time_s,
+        from: currentPersisted.from_formation ?? 'unknown',
+        to: currentPersisted.to_formation ?? 'unknown',
+        status: replayEventStateAt(currentPersisted, t).kind === 'decided'
+          ? (replayEventStateAt(currentPersisted, t) as { kind: 'decided'; status: 'confirmed' | 'rejected' | 'uncertain' }).status
+          : 'candidate',
+        reason: null,
+      } : undefined
+    : tl?.events.find((e) => e.id === selected)
   const alert = alertList?.find((a) => a.event_id === selected)
   const steps = traceForEvent(allTrace, selected)
   // run rows and explanations are read for the stored demo analysis only; an upload's result
@@ -146,6 +275,8 @@ export default function AppPage() {
     transport.seek(e.t)
   }
   const toggleLive = () => {
+    setRecordedReplay(null)
+    setPersistedEvents([])
     const next = !live
     setLive(next)
     if (next) {
@@ -153,6 +284,27 @@ export default function AppPage() {
       transport.seek(APP_START_S)
       transport.setRate(4)
       if (!reduced) clock.play()
+    }
+  }
+  const startLiveAnalysis = async () => {
+    setLiveAnalysisLoading(true)
+    setLiveAnalysisError(null)
+    try {
+      const source = await loadTeamTrackReplay()
+      const events = await loadPersistedEvents(source.match_id)
+      setUploaded(null)
+      setLocalVideo(null)
+      setLive(false)
+      setPersistedEvents(events)
+      setRecordedReplay(source)
+      setSelected('')
+      clock.pause()
+      clock.seek(source.start_s)
+      setLiveAnalysisOpen(false)
+    } catch (error) {
+      setLiveAnalysisError(error instanceof Error ? error.message : 'Could not load the recorded TeamTrack replay.')
+    } finally {
+      setLiveAnalysisLoading(false)
     }
   }
   const loadError = uploaded ? undefined : [matchRes, timeline, alerts, trace].find((r) => r.status === 'error')
@@ -164,10 +316,14 @@ export default function AppPage() {
   })
   const openDemoWith = (v: LocalVideoInfo) => {
     setUploaded(null)
+    setRecordedReplay(null)
+    setPersistedEvents([])
     setLocalVideo(videoFrom(v, DEFAULT_MATCH.window[0]))
     setUploadOpen(false)
   }
   const showResult = (result: AnalysisResult, v: LocalVideoInfo) => {
+    setRecordedReplay(null)
+    setPersistedEvents([])
     const frames = result.match_state.frames
     const win: [number, number] = [frames[0]?.t ?? 0, (frames.at(-1)?.t ?? 0) + 0.5]
     const tlView = timelineFromContract(result.timeline)
@@ -183,8 +339,39 @@ export default function AppPage() {
   }
   const verdict = alert ? splitAlertExplanation(alert.explanation).verified : (selectedEvent?.reason ?? null)
 
+  const replayState = currentPersisted ? replayEventStateAt(currentPersisted, t) : null
+  const savedRecommendation = currentPersisted?.recommendation
+  const currentRoles = [...availableRoles].sort().join(',')
+  const savedRoles = [...(savedRecommendation?.context.available_substitute_roles ?? [])].sort().join(',')
+  const recommendationNotice = savedRecommendation?.coach_response
+    && (savedRecommendation.context.coach_side !== (coachSide || null)
+      || savedRecommendation.context.objective !== (matchObjective || null)
+      || savedRoles !== currentRoles)
+    ? 'This advice already has a saved coach response. Its original team, objective, and available roles stay linked to that decision; changing setup cannot replace it.'
+    : undefined
+
   let card = <Skeleton className="h-[34rem]" />
-  if (tl && alertList && !selectedEvent) {
+  if (recordedReplay && !currentPersisted) {
+    card = (
+      <article className="rounded-(--radius-card) border border-line bg-surface p-6" aria-live="polite">
+        <p className="text-sm text-muted">Recorded TeamTrack footage · replay, not a live camera</p>
+        <h2 className="mt-2 font-display text-2xl font-semibold text-text">
+          {persistedEvents.length === 0 ? 'No OpenCV event records are stored' : 'Watching the match'}
+        </h2>
+        <p className="mt-3 text-muted">
+          {persistedEvents.length === 0
+            ? 'The video and map are available, but this replay has no persisted OpenCV events to show. No event has been fabricated.'
+            : 'Formation-change candidates will appear when playback reaches their recorded match time.'}
+        </p>
+      </article>
+    )
+  } else if (recordedReplay && currentPersisted && replayState && replayState.kind !== 'upcoming') {
+    card = <RecordedEventCard event={currentPersisted} state={replayState} coachSide={coachSide}
+      matchTimeS={t} onRefresh={() => {
+        if (recordedReplay) void loadPersistedEvents(recordedReplay.match_id).then(setPersistedEvents)
+      }} recommendationError={recommendationErrors[currentPersisted.record_id]}
+        recommendationNotice={recommendationNotice} />
+  } else if (!recordedReplay && tl && alertList && !selectedEvent) {
     card = (
       <article className="rounded-(--radius-card) border border-line bg-surface p-6">
         <h2 className="font-display text-2xl font-semibold text-text">No shape changes found</h2>
@@ -192,11 +379,11 @@ export default function AppPage() {
       </article>
     )
   }
-  if (tl && alertList && selectedEvent) {
+  if (!recordedReplay && tl && alertList && selectedEvent) {
     if (liveState && liveState.phase === 'before') {
       card = (
         <article className="rounded-(--radius-card) border border-line bg-surface p-6" aria-live="polite">
-          <p className="text-sm text-muted">Live replay</p>
+          <p className="text-sm text-muted">Match replay</p>
           <h2 className="mt-2 font-display text-3xl font-semibold text-text">Watching both shapes…</h2>
           <p className="mt-3 text-lg text-muted">No change spotted yet.</p>
         </article>
@@ -248,7 +435,13 @@ export default function AppPage() {
             id="match-select"
             className="order-last h-9 w-full rounded-full border border-line bg-surface px-3 text-sm text-text sm:order-none sm:w-auto"
             value={uploaded ? uploaded.result.id : DEFAULT_MATCH.id}
-            onChange={(e) => e.target.value === DEFAULT_MATCH.id && setUploaded(null)}
+            onChange={(e) => {
+              if (e.target.value === DEFAULT_MATCH.id) {
+                setUploaded(null)
+                setRecordedReplay(null)
+                setPersistedEvents([])
+              }
+            }}
           >
             {uploaded && <option value={uploaded.result.id}>{uploaded.result.label}</option>}
             {MATCHES.map((m) => (
@@ -257,10 +450,13 @@ export default function AppPage() {
               </option>
             ))}
           </select>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
             <Link to="/" className="hidden items-center gap-1 rounded-full px-3 py-2 text-sm text-muted hover:text-text lg:inline-flex">
               <ArrowLeft className="size-4" aria-hidden="true" /> Story
             </Link>
+            <Button variant="ghost" size="sm" onClick={() => { clock.pause(); setLiveAnalysisError(null); setLiveAnalysisOpen(true) }}>
+              <Video className="size-4" aria-hidden="true" /> Live analysis
+            </Button>
             <button
               type="button"
               role="switch"
@@ -269,7 +465,7 @@ export default function AppPage() {
               className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm ${live ? 'border-warn text-text' : 'border-line text-muted hover:text-text'}`}
             >
               <Radio className={`size-4 ${live ? 'text-warn' : ''}`} aria-hidden="true" />
-              Live replay
+              Match replay
               <span className={`relative h-4 w-7 rounded-full border transition-colors ${live ? 'border-warn bg-warn' : 'border-line bg-surface-2'}`} aria-hidden="true">
                 <span className={`absolute top-px left-0 size-3 rounded-full bg-surface shadow transition-transform ${live ? 'translate-x-3' : 'translate-x-px'}`} />
               </span>
@@ -299,6 +495,7 @@ export default function AppPage() {
             verifiedFor={verifiedFor}
             onVideo={onVideo}
             video={localVideo}
+            replay={recordedReplay}
             onRemoveVideo={() => setLocalVideo(null)}
             onUpload={() => setUploadOpen(true)}
           />
@@ -310,6 +507,55 @@ export default function AppPage() {
           <FormationTimeline clock={clock} timeline={tl} events={shownEvents} selected={selected} onSelect={selectEvent} />
         </div>
       </main>
+
+      <Dialog open={liveAnalysisOpen} onClose={() => setLiveAnalysisOpen(false)} title="Set up Live analysis" wide>
+        <div className="space-y-5 p-5 sm:p-7">
+          <div className="rounded-xl border border-line bg-bg px-4 py-3 text-sm text-muted">
+            This demo replays recorded TeamTrack footage. It is not a live camera feed, and no camera is connected. A live-camera setup would need a fixed elevated position, the entire pitch in view, and clearly different jerseys for each team.
+          </div>
+          <label className="block space-y-2 text-sm font-medium text-text" htmlFor="coach-side">
+            <span>Which demo side are you coaching?</span>
+            <select id="coach-side" value={coachSide} onChange={(event) => setCoachSide(event.target.value as TeamSide)} className="h-11 w-full rounded-xl border border-line bg-surface px-3">
+              <option value="">Select a side</option>
+              <option value="home">{names.home}</option>
+              <option value="away">{names.away}</option>
+            </select>
+          </label>
+          <label className="block space-y-2 text-sm font-medium text-text" htmlFor="match-objective">
+            <span>Match objective</span>
+            <select id="match-objective" value={matchObjective} onChange={(event) => setMatchObjective(event.target.value)} className="h-11 w-full rounded-xl border border-line bg-surface px-3">
+              <option value="">No objective selected</option>
+              <option value="chase">Chase a goal</option>
+              <option value="protect">Protect a lead</option>
+              <option value="balanced">Balanced</option>
+            </select>
+          </label>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-text">Available substitute roles</legend>
+            <p className="text-xs text-muted">Select only roles actually available. No player names are needed.</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {(['attacker', 'midfielder', 'defender'] as const).map((role) => (
+                <label key={role} className="flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-sm capitalize text-text">
+                  <input type="checkbox" checked={availableRoles.includes(role)}
+                    onChange={(event) => setAvailableRoles((roles) => event.target.checked
+                      ? [...roles, role] : roles.filter((item) => item !== role))} />
+                  {role}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          {liveAnalysisError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-danger">{liveAnalysisError}</p>}
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button variant="ghost" onClick={() => setLiveAnalysisOpen(false)}>Cancel</Button>
+            <Button variant="primary" disabled={liveAnalysisLoading} onClick={() => {
+              if (recordedReplay) setLiveAnalysisOpen(false)
+              else void startLiveAnalysis()
+            }}>
+              {liveAnalysisLoading ? 'Loading replay…' : recordedReplay ? 'Save context and resume' : 'Start recorded match analysis'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog
         open={drawer.open}

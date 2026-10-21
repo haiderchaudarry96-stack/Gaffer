@@ -533,3 +533,19 @@ Delete this section before submitting.
 - Change detector firing on a short tactical moment (a counter-attack), not a real shape change
 - Agent confirming a change it should have rejected (and vice versa)
 - Bedrock throttling or timeouts; tool call with malformed arguments
+
+### [2026-10-21] Concurrent status polling briefly blocks atomic status replacement on Windows
+**Stage:** local upload/analysis progress polling
+**Severity:** recoverable local integration failure
+
+**What happened:** During the connected browser upload flow, a poll reader briefly held `status.json` while the worker attempted to replace it. `Path.replace` raised `PermissionError: [WinError 5] Access is denied`; the worker stopped before completing the upload analysis.
+
+**Fix:** `LocalStorage.write_bytes` retries transient `PermissionError` up to six times with bounded exponential delay while preserving the temporary-file atomic replace. A regression test simulates two transient locks; repeated real status polling and the upload E2E then completed.
+
+### [2026-10-21] Saved advice response looked like a tactical failure after coach context changed
+**Stage:** replaying an event with persisted N4 advice
+**Severity:** coach-facing confusion
+
+**What happened:** An unfamiliar walkthrough changed the setup context after an advice response had already been saved. The API correctly returned HTTP 409 rather than replace a response associated with another coach side/objective/available-role set, but the card displayed `Tactical advice failed`, which did not explain the saved decision.
+
+**Fix:** When the event already has a coach response, the UI keeps its original suggestion and response visible. If the current setup differs, it explains that the saved response stays linked to its original context and cannot be overwritten. Browser E2E against the persisted-response/context-mismatch case passed. The stranger has been asked to confirm the revised copy; do not count that final confirmation until received.

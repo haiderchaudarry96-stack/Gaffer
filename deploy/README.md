@@ -29,7 +29,10 @@ was built).
 Without Docker, the same combined app on the laptop is one command after the build above:
 `uvicorn gaffer.api.main:app` (http://localhost:8000/).
 `outputs/` is mounted so analyses, alerts (`outputs/alerts.jsonl`) and the daily usage counters
-survive a restart.
+survive a restart. The SQLite event DB defaults to `outputs/api/events.sqlite3` and is controlled
+by `api.event_store.path` in `config.yaml`; keep that path inside the mounted durable directory.
+If `api.storage.backend: s3` is selected, the event DB still stays on local persistent storage;
+S3 stores analysis artifacts and does not replace the SQLite database.
 
 Optional, Bedrock from the laptop container (read-only mount of your own AWS config; the image
 itself stays key-free):
@@ -65,5 +68,8 @@ curl.exe http://localhost:8000/api/analyses/<id>
   automatically (`api/main.py _bedrock_factory`).
 - Region `ap-southeast-2`. CPU only: a 6-min 4K drone clip is ~7 min of OpenCV on the laptop CPU;
   measure on the instance before sizing it.
+- Put `api.event_store.path` on an EBS-backed directory and mount that volume at the same container
+  path on every restart/redeploy. For a consistent backup, stop the app or use SQLite's backup API;
+  do not copy a live DB file by itself.
 - Limits for a public demo live in `config.yaml` → `api.chat`, `api.bedrock_daily`
   (300 Bedrock calls and $1.00 per UTC day for the whole API by default).

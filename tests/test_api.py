@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from gaffer.agent.alerts import AlertStore
 from gaffer.api.chat import SAFE_ANSWER, check_answer
+from gaffer.api.event_store import EventRecordV1_1, EventStore
 from gaffer.api.jobs import Progress, rules_fingerprint
 from gaffer.api.main import create_app
 from gaffer.api.storage import LocalStorage, StorageError
@@ -40,7 +41,8 @@ def _no_network(monkeypatch):
 
     def guard(self, address):
         host = address[0] if isinstance(address, tuple) else address
-        if self.family == getattr(socket, "AF_UNIX", None) or host in ("127.0.0.1", "::1", "localhost"):
+        if (self.family == getattr(socket, "AF_UNIX", None)
+                or host in ("127.0.0.1", "::1", "localhost")):
             return real(self, address)
         raise RuntimeError(f"network access is disabled in tests ({address})")
 
@@ -109,8 +111,10 @@ def make_client(tmp_path: Path, cfg: dict[str, Any], llm: Any = None, **kw: Any
         cfg = {**cfg, "api": {**cfg["api"], "web_dist": str(tmp_path / "no_web_dist")}}
     usage = Usage(cfg, str(tmp_path / "usage.json"))
     factory = (lambda: llm) if llm is not None else kw.pop("llm_factory", None)
+    event_store = kw.pop("event_store", EventStore(tmp_path / "events.sqlite3"))
     app = create_app(cfg, storage=LocalStorage(tmp_path / "api"), llm_factory=factory,
                      usage=usage, alerts_path=tmp_path / "alerts.jsonl",
+                     event_store=event_store,
                      start_worker=kw.pop("start_worker", False),
                      chat_trace=tmp_path / "chat_trace.jsonl", **kw)
     return TestClient(app)
@@ -362,6 +366,68 @@ def test_worker_thread_runs_queued_analyses(tmp_path, base_cfg, videos) -> None:
     assert c.get(f"/api/analyses/{aid}/result").status_code == 200
 
 
+def test_role_recommendation_api_persists_context_and_separate_coach_response(client) -> None:
+    event = EventRecordV1_1(
+        record_id="record_n4_evt_1", analysis_id="analysis_n4", match_id="match_n4",
+        event_id="evt_001", event_type="shape_change", team="home", team_name="White",
+        from_formation="4-4-2", to_formation="3-4-3", candidate_time_s=100.0,
+        detection_time_s=110.0, status="confirmed", verification_match_time_s=180.0,
+        verification={"decision": "confirmed"}, posture_status="completed",
+        posture_result={"schema_version": "1.0", "posture": "defensive", "source": "bedrock",
+            "analysis_time_utc": "2026-10-21T08:00:00Z", "model_id": "fake",
+            "trace_id": "posture-trace", "evidence_strength": 0.8,
+            "explanation": "The defensive line moved back and width reduced.",
+            "citations": [
+                {"metric_path": "opencv_metrics.before.defensive_line_m", "value": 48.0,
+                 "unit": "m", "match_time_window_s": [50.0, 100.0]},
+                {"metric_path": "opencv_metrics.after.defensive_line_m", "value": 42.0,
+                 "unit": "m", "match_time_window_s": [100.0, 180.0]},
+            ], "limitations": []},
+        created_utc="2026-10-21T08:00:00Z", updated_utc="2026-10-21T08:00:00Z")
+    client.app.state.event_store.upsert_analysis([event])
+    body = {"coach_side": "away", "objective": "chase",
+            "available_substitute_roles": ["attacker"]}
+    first = client.post(f"/api/events/{event.record_id}/recommendation", json=body)
+    assert first.status_code == 200, first.text
+    recommendation = first.json()["recommendation"]
+    assert recommendation["status"] == "ready"
+    second = client.post(f"/api/events/{event.record_id}/recommendation", json=body)
+    assert second.json()["recommendation"] == recommendation
+
+    response = client.post(
+        f"/api/events/{event.record_id}/recommendation/"
+        f"{recommendation['recommendation_id']}/decision",
+        json={"decision": "approved", "note": "try if the lead remains"})
+    assert response.status_code == 200
+    saved = client.get(f"/api/events/{event.record_id}").json()
+    assert saved["recommendation"]["coach_response"]["decision"] == "approved"
+    assert saved["recommendation"]["coach_response"]["note"] == "try if the lead remains"
+    assert saved["coach_decisions"] == []  # formation alert decisions stay separate
+    assert saved["verification"] == event.verification
+    assert saved["posture_result"] == event.posture_result
+
+    conflict = client.post(
+        f"/api/events/{event.record_id}/recommendation/"
+        f"{recommendation['recommendation_id']}/decision", json={"decision": "rejected"})
+    assert conflict.status_code == 409
+
+
+def test_role_recommendation_api_withholds_missing_context_and_requires_completed_posture(client):
+    event = EventRecordV1_1(
+        record_id="record_n4_missing", analysis_id="analysis_n4", match_id="match_n4",
+        event_id="evt_002", event_type="shape_change", team="home", team_name="White",
+        candidate_time_s=200.0, status="confirmed", verification_match_time_s=260.0,
+        posture_status="unavailable", posture_result={"posture": "unclear"},
+        created_utc="2026-10-21T08:00:00Z", updated_utc="2026-10-21T08:00:00Z")
+    client.app.state.event_store.upsert_analysis([event])
+    result = client.post(f"/api/events/{event.record_id}/recommendation",
+                         json={"coach_side": None, "objective": None,
+                               "available_substitute_roles": []})
+    assert result.status_code == 200
+    assert result.json()["recommendation"]["status"] == "withheld"
+    assert "Select which team" in result.json()["recommendation"]["withheld_reason"]
+
+
 def test_pipeline_failure_is_coach_readable(tmp_path, base_cfg) -> None:
     p = tmp_path / "car_park.mp4"
     w = cv2.VideoWriter(str(p), cv2.VideoWriter_fourcc(*"mp4v"), 10, (960, 600))
@@ -392,6 +458,21 @@ def test_upload_end_to_end_agent_confirms_a_real_change(tmp_path, base_cfg) -> N
     hit = [e for e in ex if e["team_side"] == "home" and e["change"] == "4-4-2 -> 3-5-2"]
     assert hit and hit[0]["decision"] == "confirmed"
     assert hit[0]["evidence_image"].startswith("http://testserver/api/analyses/")
+    event_response = c.get("/api/events", params={"match_id": f"up_{aid}"})
+    assert event_response.status_code == 200, event_response.text
+    events = event_response.json()["events"]
+    event = next(e for e in events if e["event_id"] == hit[0]["event_id"])
+    assert event["candidate_time_s"] < event["detection_time_s"]
+    assert event["status"] == "confirmed" and event["verification_time_utc"]
+    assert event["schema_version"] == "1.1"
+    assert event["verification_match_time_s"] == event["opencv_metrics"]["reanalysis"]["window"][1]
+    assert event["agent_completed_utc"] == event["verification_time_utc"]
+    assert event["agent_status"] in ("completed", "fallback")
+    assert event["posture_status"] == "unavailable"
+    assert event["posture_result"]["posture"] == "unclear"
+    assert event["posture_result"]["source"] == "deterministic_fallback"
+    assert event["verification"]["decision"] == "confirmed"
+    assert c.get(f"/api/events/{event['record_id']}").json()["record_id"] == event["record_id"]
     calls = [s.get("tool") for s in res["trace"] if s.get("kind") == "tool_call"]
     assert "check_frame_quality" in calls and "reanalyse_window" in calls
     alert = res["alerts"][0]
@@ -401,6 +482,21 @@ def test_upload_end_to_end_agent_confirms_a_real_change(tmp_path, base_cfg) -> N
     r = c.post(f"/api/alerts/{alert['alert_id']}/approve", json={"note": "seen it"})
     assert r.status_code == 200 and r.json()["status"] == "approved"
     assert c.get(f"/api/analyses/{aid}/result").json()["alerts"][0]["status"] == "approved"
+    saved = c.get(f"/api/events/{event['record_id']}").json()
+    assert len(saved["coach_decisions"]) == 1
+    assert saved["coach_decisions"][0]["decision"] == "approved"
+    assert saved["coach_decisions"][0]["note"] == "seen it"
+    assert saved["coach_decisions"][0]["decided_at_utc"]
+
+    # A newly-created app/store over the same file can still query the saved event.
+    restarted_store = EventStore(c.app.state.event_store.path)
+    restarted = make_client(tmp_path, base_cfg, event_store=restarted_store)
+    after_restart = restarted.get("/api/events", params={"match_id": f"up_{aid}"}).json()
+    assert after_restart["total"] == len(events)
+    assert after_restart["events"][0]["candidate_time_s"] <= \
+        after_restart["events"][-1]["candidate_time_s"]
+    assert restarted.get(f"/api/events/{event['record_id']}").json()["coach_decisions"] == \
+        saved["coach_decisions"]
 
 
 # --------------------------------------------------------------------------- alerts
@@ -645,6 +741,25 @@ def test_local_storage_rejects_bad_keys(tmp_path) -> None:
         with pytest.raises(StorageError):
             s.read_bytes(bad)
     assert s.list_ids() == ["abcdef123456"]
+
+
+def test_local_storage_retries_transient_status_file_lock(tmp_path, monkeypatch) -> None:
+    original_replace = Path.replace
+    attempts = 0
+
+    def briefly_locked(path: Path, target: Path) -> Path:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise PermissionError("transient Windows reader lock")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", briefly_locked)
+    storage = LocalStorage(tmp_path)
+    storage.write_bytes("abcdef123456/status.json", b'{"stage": "agent"}')
+
+    assert attempts == 3
+    assert storage.read_bytes("abcdef123456/status.json") == b'{"stage": "agent"}'
 
 
 class FakeS3:
