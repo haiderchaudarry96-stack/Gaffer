@@ -42,6 +42,29 @@ The 21:40–24:00 window of the drone clip (eval2 evt_001, Blue 3-4-3 → 4-4-2)
 
 The only real-frame case where the OpenCV result changes both the next call (the re-analysis is skipped) and the decision (uncertain where the first pass alone says reject). The camera motion is synthetic.
 
+## (d) N3 posture read: persisted event → evidence check → optional OpenCV follow-up
+
+This is an **illustrative trace shape from mocked Bedrock tests**, not a live AWS call or a new
+measurement from the TeamTrack footage. The normal worker path starts only after a confirmed event
+is stored. The formation change stays the primary event; posture is a separate advisory field.
+
+| trace step | key data | next action |
+|---|---|---|
+| `event_retrieved` | record id, match/event id, `verification_status=confirmed`, current posture state | load that record's compact OpenCV snapshot |
+| `evidence_supplied` | formation transition, before/after metric windows, quality/coverage, verifier boundary, evidence digest | one bounded Bedrock request |
+| `opencv_reanalysis` (only if requested and a real evidence gap exists) | bounded post-onset window, allowed sample rate, OpenCV metric result and quality | add cited `opencv_reanalysis.after.*` metrics |
+| `reassessment_step` | digest/size of the updated compact evidence | one follow-up Bedrock request; no further visual requests accepted |
+| `model_decision` | posture, exact citations, validation reason, output hash, token/cost totals | validate against stored metrics and save separately |
+| `validated_result_saved` or `fallback` | lifecycle status, source (`bedrock` or `deterministic_fallback`), trace reference | preserve verifier state and coach-decision history |
+
+For the checked N3 test fixture, the mock starts from a deliberately incomplete post-event window,
+asks OpenCV for 990–1035 seconds at 5 fps, receives paired line-depth/width metrics, and then returns
+an attacking classification with citations to the before snapshot and `opencv_reanalysis.after.*`.
+If the stored metrics already cover a useful post-event interval, the same request is rejected as
+redundant and saved as `unclear`; if no video context is available (the persisted-event CLI), it
+also stops safely without opening a second model call. The replay card still withholds any posture
+until `verification_match_time_s` on the match clock, regardless of the UTC analysis timestamp.
+
 **Missed change:** Blue 4-4-2 → 4-2-3-1 at 18:50 (demo window evt_007) is rejected by the return-leg rule (it reverses Blue's 18:00 switch), although the 6 fps second look saw 4-2-3-1 in 100 % of 12 readings and the ground truth shows it held 220 s; the tested fix added 25 false alerts on synthetic data and is off (FAILURE_LOG 2026-10-17).
 
 ## Reproduce

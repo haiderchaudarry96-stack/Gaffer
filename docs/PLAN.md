@@ -33,12 +33,12 @@ Remove the three risks that could kill the project on day one: Python environmen
 9. Anything surprising, written as a short list in `docs/DATA_NOTES.md`
 
 **Acceptance**
-- [ ] Python 3.12 venv works; `cv2.__version__` starts with `5`
-- [ ] `cv2.dnn` produces person boxes on a test image
-- [ ] `docs/DATA_NOTES.md` explains the TeamTrack format with real numbers, and the GT-box images look right
-- [ ] A real Bedrock reply comes back; tool calling works end to end (or: client fully tested against a mock and marked "blocked on AWS quota" until the increase is approved)
-- [ ] Model id and region live in `config.yaml` and `CLAUDE.md`
-- [ ] Missing AWS credentials / model not enabled → clear message, not a traceback
+- [x] Python 3.12 venv works; `cv2.__version__` starts with `5` — `5.0.0` (`opencv-contrib-python==5.0.0.93`), venv Python 3.12.10
+- [x] `cv2.dnn` produces person boxes on a test image — `scripts/smoke_test_opencv.py`: YOLOX-S, 11 persons on a side-view crop, ~115–145 ms per 640×640 inference
+- [x] `docs/DATA_NOTES.md` explains the TeamTrack format with real numbers, and the GT-box images look right — `scripts/inspect_data.py`, `outputs/eda/`
+- [x] A real Bedrock reply comes back; tool calling works end to end (or: client fully tested against a mock and marked "blocked on AWS quota" until the increase is approved) — Nova 2 Lite, 9 Oct: plain call 2.1 s, tool round trip 2 calls
+- [x] Model id and region live in `config.yaml` and `CLAUDE.md` — `global.amazon.nova-2-lite-v1:0`, ap-southeast-2
+- [x] Missing AWS credentials / model not enabled → clear message, not a traceback — `tests/test_bedrock_client.py::test_bad_credentials_map_to_credentials_error`
 
 ---
 
@@ -55,11 +55,11 @@ Remove the three risks that could kill the project on day one: Python environmen
 - `scripts/eval_synthetic.py`
 
 **Acceptance**
-- [ ] Formation accuracy printed as a number
-- [ ] Shape changes: hits / misses / false positives / mean delay printed
-- [ ] A 3-second flicker does **not** produce an event (test)
-- [ ] Full-match timeline under ~8 KB
-- [ ] Tests pass
+- [x] Formation accuracy printed as a number — `eval_synthetic.py --heldout2`: 97.7 % when confident (coverage 79.3 %)
+- [x] Shape changes: hits / misses / false positives / mean delay printed — seeds 110–119: 34 hits / 4 misses / 34 FPs / 42 s
+- [x] A 3-second flicker does **not** produce an event (test) — `tests/test_events.py::test_three_second_flicker_is_ignored`
+- [ ] Full-match timeline under ~8 KB — **not met as written**: max 14.0 KB on 110–119 (mean 6.3 KB); the limit was relaxed on 10 Oct to "compact, under 20 KB" because the agent reads the timeline through tools
+- [x] Tests pass
 
 ---
 
@@ -82,11 +82,11 @@ Footage: **TeamTrack** `soccer_top` (main) and `soccer_side` (fisheye), see `doc
 - `data/README.md` — every clip with source, licence and credit
 
 **Acceptance**
-- [ ] TeamTrack top-view clips → `match_state.json` that validates; side view after fisheye correction too
-- [ ] Tactics engine runs on it **with no code change**
-- [ ] Detection P/R, team accuracy and formation agreement vs oracle measured, per view
-- [ ] Laptop CPU FPS and homography reprojection error measured
-- [ ] At least 3 real failure cases written in `docs/FAILURE_LOG.md`
+- [x] TeamTrack top-view clips → `match_state.json` that validates; side view after fisheye correction too — side view: measured as near-rectilinear, so 2 sectioned homographies replace `cv2.fisheye` (0.53 m vs 0.86 m held-out error, FAILURE_LOG / DATA_NOTES)
+- [x] Tactics engine runs on it **with no code change**
+- [x] Detection P/R, team accuracy and formation agreement vs oracle measured, per view — `eval_tracking.py`, `eval_real.py` (CLAUDE.md Key numbers)
+- [x] Laptop CPU FPS and homography reprojection error measured — top 1.2–1.4 s per s of video at 4 fps; top 0.11 m / side 0.53 m held-out landmark error
+- [x] At least 3 real failure cases written in `docs/FAILURE_LOG.md`
 
 **Timebox:** if after about two working days nothing usable comes out, simplify (fixed camera, manual calibration only, shorter clip) — do not abandon real video.
 
@@ -147,6 +147,9 @@ Footage: **TeamTrack** `soccer_top` (main) and `soccer_side` (fisheye), see `doc
 
 
 **Status 17 Oct (integration, branch `phase4-integrate`): still none of the six can be ticked** — all need the public deploy on EC2, AWS (Budgets), a stranger test or the UI quality-bar audit, none of which happened. Done towards them: frontend and backend now run as **one app** (`VITE_API_URL=/` build served by one `uvicorn`); the desk reads the demo from the API; demo approvals are per visitor (cookie, never global); uploads go through the pitch step in the browser ("Is this your pitch?" on OpenCV's outline, or the 4-point screen preloaded with the found / guessed corners) → progress → the analysed result in the same views. Checked in the cloud sandbox only, with generated videos and Bedrock switched off (rules arm, no AWS call): Playwright walkthrough of all paths, 14 screenshots in `web/screenshots/integrate/`, no console errors; 210 Python tests + 25 web tests. Not checked: real Bedrock from the app, real non-TeamTrack footage, load time of a public URL, EC2.
+
+
+**Status 22 Oct (coach workflow N1–N5 + fix session, local only): still none of the six can be ticked.** Done towards them: the one-process app runs locally with the recorded TeamTrack replay, the SQLite event store (seeded with the real 16:30 event and its stored Bedrock posture read), conditional role advice, a sample-clip flow and a footage guide; the replay and integrate browser walkthroughs pass. One stranger test (N5) happened, and on the first pass the person took the replay for a live feed (the copy was changed; no retest), so "understands in 30 s" is not shown. No public URL, EC2, S3, CloudWatch or Budget yet (N6, `docs/dev/PLANNING.md`).
 
 ---
 

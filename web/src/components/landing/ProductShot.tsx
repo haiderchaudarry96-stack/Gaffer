@@ -1,5 +1,6 @@
 import { forwardRef, useRef } from 'react'
 import { m, useScroll, useTransform } from 'motion/react'
+import { Link } from 'react-router-dom'
 import { usePrefersReducedMotion } from '../../lib/hooks'
 
 /**
@@ -17,7 +18,12 @@ const ProductShot = forwardRef<HTMLElement>(function ProductShot(_, ref) {
     <section ref={ref} aria-label="The analyst desk" className="relative pt-16 pb-16 sm:pt-24 sm:pb-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div ref={frameRef}>
-          <m.figure style={{ y }} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_40px_120px_-30px_rgba(7,13,10,0.35)]">
+          <Link
+            to="/app"
+            aria-label="Open the analyst desk (product screenshot)"
+            className="group block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent-ink"
+          >
+          <m.figure style={{ y }} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_40px_120px_-30px_rgba(7,13,10,0.35)] transition-colors group-hover:border-accent-ink">
             <div className="flex items-center gap-2 border-b border-line px-4 py-3" aria-hidden="true">
               <span className="size-2.5 rounded-full bg-line" />
               <span className="size-2.5 rounded-full bg-line" />
@@ -34,6 +40,7 @@ const ProductShot = forwardRef<HTMLElement>(function ProductShot(_, ref) {
               alt="The Gaffer analyst desk: the pitch with White 3-4-3 marked verified, the shape timeline, and the 16:30 alert with its evidence and Approve and Reject buttons."
             />
           </m.figure>
+          </Link>
         </div>
       </div>
     </section>

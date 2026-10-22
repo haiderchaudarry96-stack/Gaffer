@@ -1,0 +1,483 @@
+{
+ "note": "Real OpenCV (TeamTrack drone, 900-1260 s) + Amazon Bedrock posture record(s) exported by scripts/export_demo_seed.py; imported once into an empty event DB.",
+ "records": [
+  {
+   "schema_version": "1.1",
+   "record_id": "85ef0b0561055003be180bb9e016f960",
+   "analysis_id": "teamtrack_demo_w900_1260",
+   "match_id": "teamtrack_top_w900_1260",
+   "event_id": "evt_003",
+   "event_type": "shape_change",
+   "team": "home",
+   "team_name": "White",
+   "from_formation": "4-4-2",
+   "to_formation": "3-4-3",
+   "candidate_time_s": 990.0,
+   "detection_time_s": 1025.0,
+   "status": "confirmed",
+   "verification_time_utc": "2026-10-19T16:46:46Z",
+   "verification": {
+    "decided_by": "rules",
+    "decision": "confirmed",
+    "fallback": null,
+    "reason": "new shape held in 91% of 11 confident windows over 60 s, no revert",
+    "tool_calls": [
+     "check_frame_quality",
+     "reanalyse_window",
+     "record_decision",
+     "render_evidence",
+     "propose_alert"
+    ],
+    "trace_id": "tr_video_rules_w900_teamtrack_top_w900_1260_evt_003",
+    "verdict": "confirm"
+   },
+   "opencv_metrics": {
+    "after": {
+     "centroid": {
+      "x": 69.5,
+      "y": 36.4
+     },
+     "compactness_m": 34.8,
+     "confidence": 0.94,
+     "defensive_line_m": 20.1,
+     "end_s": 1050.0,
+     "formation": "3-4-3",
+     "pressing_index": null,
+     "start_s": 990.0,
+     "width_m": 47.7
+    },
+    "before": {
+     "centroid": {
+      "x": 84.0,
+      "y": 33.7
+     },
+     "compactness_m": 28.8,
+     "confidence": 0.3,
+     "defensive_line_m": 11.5,
+     "end_s": 990.0,
+     "formation": "uncertain",
+     "pressing_index": null,
+     "start_s": 965.0,
+     "width_m": 22.7
+    },
+    "candidate_confidence": 1.0,
+    "candidate_evidence": "back line 4->3, front line 2->3; held 20s; 9.8/10 outfield visible",
+    "coverage": {
+     "after_share_new": 0.85,
+     "confident_after": 13,
+     "coverage_after": 1.0,
+     "coverage_before": 0.52,
+     "footage_frac": 1.0,
+     "return_of": null,
+     "reverted_after_s": null,
+     "source": "first_pass"
+    },
+    "quality": {
+     "mean_players_visible": 10.4,
+     "uncertain_fraction": 0.06,
+     "verification_window": {
+      "camera_cut": false,
+      "camera_shift_px_per_s_max": 0.4,
+      "coverage": {
+       "away": 0.97,
+       "home": 0.84
+      },
+      "homography_ok_share": 1.0,
+      "line_error_m_median": 0.084,
+      "opencv_ms": 12464.3,
+      "problems": [],
+      "zoom_change_max": 0.002
+     },
+     "warnings": []
+    },
+    "reanalysis": {
+     "cache": "hit",
+     "coverage": {
+      "away": 0.96,
+      "home": 0.84
+     },
+     "frames": 840,
+     "processing_s": 252.0,
+     "sample_fps": 6.0,
+     "vs_event": {
+      "after_share_new": 0.91,
+      "confident_after": 11,
+      "coverage_after": 1.0,
+      "coverage_before": 0.51,
+      "covers_required_span": true,
+      "event_id": "evt_003",
+      "footage_frac": 1.0,
+      "return_of": null,
+      "reverted_after_s": null
+     },
+     "window": [
+      945.0,
+      1085.0
+     ]
+    }
+   },
+   "evidence_refs": [
+    "outputs/agent_video_teamtrack_replay/evidence/teamtrack_top_w900_1260/evt_003.jpg"
+   ],
+   "trace_refs": [
+    "outputs/agent_video_teamtrack_replay/trace_rules.jsonl#tr_video_rules_w900_teamtrack_top_w900_1260_evt_003",
+    "outputs/api/posture_trace.jsonl#posture_ba323570ea734d78"
+   ],
+   "agent_status": "completed",
+   "agent_completed_utc": "2026-10-19T16:46:46Z",
+   "agent_result": {
+    "cost_usd": 0.0,
+    "decided_by": "rules",
+    "explanation": "White kept the 3-4-3 after 16:30: it showed in 91% of 11 clear formation readings over the next 60 s, with no return to 4-4-2 (second look with OpenCV at 6 fps) [R2].",
+    "explanation_source": "template",
+    "llm_calls": 0,
+    "tokens_in": 0,
+    "tokens_out": 0
+   },
+   "posture_status": "completed",
+   "posture_result": {
+    "analysis_time_utc": "2026-10-21T18:34:24Z",
+    "citations": [
+     {
+      "match_time_window_s": [
+       965.0,
+       990.0
+      ],
+      "metric_path": "opencv_metrics.before.defensive_line_m",
+      "unit": "m (attacking-direction-normalized)",
+      "value": 11.5
+     },
+     {
+      "match_time_window_s": [
+       990.0,
+       1050.0
+      ],
+      "metric_path": "opencv_metrics.after.defensive_line_m",
+      "unit": "m (attacking-direction-normalized)",
+      "value": 20.1
+     },
+     {
+      "match_time_window_s": [
+       965.0,
+       990.0
+      ],
+      "metric_path": "opencv_metrics.before.width_m",
+      "unit": "m (lateral spread)",
+      "value": 22.7
+     },
+     {
+      "match_time_window_s": [
+       990.0,
+       1050.0
+      ],
+      "metric_path": "opencv_metrics.after.width_m",
+      "unit": "m (lateral spread)",
+      "value": 47.7
+     }
+    ],
+    "evidence_strength": 0.0,
+    "explanation": "The stored shape metrics do not support a reliable directional posture label.",
+    "limitations": [
+     "weak_quality_low_segment_confidence"
+    ],
+    "model_id": "global.amazon.nova-2-lite-v1:0",
+    "posture": "unclear",
+    "schema_version": "1.0",
+    "source": "deterministic_fallback",
+    "trace_id": "posture_ba323570ea734d78",
+    "usage": {
+     "calls": 1,
+     "cost_usd": 0.0011984,
+     "input_tokens": 1528,
+     "output_tokens": 296
+    }
+   },
+   "recommendation_status": "not_requested",
+   "recommendation": null,
+   "coach_decisions": [],
+   "created_utc": "2026-10-19T16:46:46Z",
+   "updated_utc": "2026-10-21T18:34:24Z",
+   "verification_match_time_s": 1085.0
+  }
+ ],
+ "posture_traces": {
+  "posture_ba323570ea734d78": [
+   {
+    "ts": "2026-10-21T18:34:22Z",
+    "trace_id": "posture_ba323570ea734d78",
+    "step": "event_retrieved",
+    "record_id": "85ef0b0561055003be180bb9e016f960",
+    "event_id": "evt_003",
+    "match_id": "teamtrack_top_w900_1260",
+    "verification_status": "confirmed",
+    "posture_status": "not_requested"
+   },
+   {
+    "ts": "2026-10-21T18:34:22Z",
+    "trace_id": "posture_ba323570ea734d78",
+    "step": "evidence_supplied",
+    "event_id": "evt_003",
+    "evidence": {
+     "schema_version": "1.0",
+     "event": {
+      "record_id": "85ef0b0561055003be180bb9e016f960",
+      "event_id": "evt_003",
+      "match_id": "teamtrack_top_w900_1260",
+      "analysis_id": "teamtrack_demo_w900_1260",
+      "event_type": "shape_change",
+      "team": "home",
+      "team_name": "White",
+      "candidate_time_s": 990.0,
+      "formation_change": {
+       "from": "4-4-2",
+       "to": "3-4-3"
+      },
+      "verifier": {
+       "status": "confirmed",
+       "reason": "new shape held in 91% of 11 confident windows over 60 s, no revert",
+       "match_time_boundary_s": 1085.0,
+       "reanalysis": {
+        "window": [
+         945.0,
+         1085.0
+        ],
+        "sample_fps": 6.0,
+        "frames": 840,
+        "coverage": {
+         "home": 0.84,
+         "away": 0.96
+        }
+       }
+      }
+     },
+     "shape_windows": {
+      "before": {
+       "window_s": [
+        965.0,
+        990.0
+       ],
+       "formation": "uncertain",
+       "metrics": {
+        "defensive_line_m": 11.5,
+        "compactness_m": 28.8,
+        "width_m": 22.7,
+        "confidence": 0.3,
+        "pressing_index": null,
+        "centroid.x": 84.0,
+        "centroid.y": 33.7
+       }
+      },
+      "after": {
+       "window_s": [
+        990.0,
+        1050.0
+       ],
+       "formation": "3-4-3",
+       "metrics": {
+        "defensive_line_m": 20.1,
+        "compactness_m": 34.8,
+        "width_m": 47.7,
+        "confidence": 0.94,
+        "pressing_index": null,
+        "centroid.x": 69.5,
+        "centroid.y": 36.4
+       }
+      }
+     },
+     "coverage": {
+      "source": "first_pass",
+      "coverage_before": 0.52,
+      "coverage_after": 1.0,
+      "after_share_new": 0.85,
+      "confident_after": 13,
+      "reverted_after_s": null,
+      "return_of": null,
+      "footage_frac": 1.0
+     },
+     "quality": {
+      "uncertain_fraction": 0.06,
+      "mean_players_visible": 10.4,
+      "verification_window": {
+       "homography_ok_share": 1.0,
+       "line_error_m_median": 0.084,
+       "camera_shift_px_per_s_max": 0.4,
+       "zoom_change_max": 0.002,
+       "camera_cut": false,
+       "coverage": {
+        "home": 0.84,
+        "away": 0.97
+       },
+       "problems": [],
+       "opencv_ms": 12464.3
+      }
+     },
+     "coordinate_conventions": {
+      "defensive_line_m": "attacking-direction-normalized; higher is farther forward",
+      "compactness_m": "front-to-back team depth; not a direct intent label",
+      "width_m": "lateral team spread",
+      "centroid": "raw pitch x/y metres; not attacking-direction-normalized",
+      "ball_possession_pressing": "unavailable unless a valid stored metric is explicitly present"
+     },
+     "citable_metrics": [
+      {
+       "metric_path": "opencv_metrics.before.defensive_line_m",
+       "value": 11.5,
+       "unit": "m (attacking-direction-normalized)",
+       "match_time_window_s": [
+        965.0,
+        990.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.before.compactness_m",
+       "value": 28.8,
+       "unit": "m (front-to-back depth)",
+       "match_time_window_s": [
+        965.0,
+        990.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.before.width_m",
+       "value": 22.7,
+       "unit": "m (lateral spread)",
+       "match_time_window_s": [
+        965.0,
+        990.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.before.centroid.x",
+       "value": 84.0,
+       "unit": "m (raw pitch x)",
+       "match_time_window_s": [
+        965.0,
+        990.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.before.centroid.y",
+       "value": 33.7,
+       "unit": "m (raw pitch y)",
+       "match_time_window_s": [
+        965.0,
+        990.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.after.defensive_line_m",
+       "value": 20.1,
+       "unit": "m (attacking-direction-normalized)",
+       "match_time_window_s": [
+        990.0,
+        1050.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.after.compactness_m",
+       "value": 34.8,
+       "unit": "m (front-to-back depth)",
+       "match_time_window_s": [
+        990.0,
+        1050.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.after.width_m",
+       "value": 47.7,
+       "unit": "m (lateral spread)",
+       "match_time_window_s": [
+        990.0,
+        1050.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.after.centroid.x",
+       "value": 69.5,
+       "unit": "m (raw pitch x)",
+       "match_time_window_s": [
+        990.0,
+        1050.0
+       ]
+      },
+      {
+       "metric_path": "opencv_metrics.after.centroid.y",
+       "value": 36.4,
+       "unit": "m (raw pitch y)",
+       "match_time_window_s": [
+        990.0,
+        1050.0
+       ]
+      }
+     ],
+     "visual_reanalysis_available": false
+    },
+    "evidence_sha256": "4c2d0431c4b2a378f37a71e0079744ccb91daf19a4eae3f3b2eabbd178f18481",
+    "characters": 3215
+   },
+   {
+    "ts": "2026-10-21T18:34:24Z",
+    "trace_id": "posture_ba323570ea734d78",
+    "step": "model_decision",
+    "event_id": "evt_003",
+    "model_id": "global.amazon.nova-2-lite-v1:0",
+    "model_output_sha256": "24056be893c9ddd1a0b87a2641ac6a3630cc8128cec237874969ccfbd2afad94",
+    "posture": "unclear",
+    "citations": [
+     {
+      "metric_path": "opencv_metrics.before.defensive_line_m",
+      "value": 11.5,
+      "unit": "m (attacking-direction-normalized)",
+      "match_time_window_s": [
+       965.0,
+       990.0
+      ]
+     },
+     {
+      "metric_path": "opencv_metrics.after.defensive_line_m",
+      "value": 20.1,
+      "unit": "m (attacking-direction-normalized)",
+      "match_time_window_s": [
+       990.0,
+       1050.0
+      ]
+     },
+     {
+      "metric_path": "opencv_metrics.before.width_m",
+      "value": 22.7,
+      "unit": "m (lateral spread)",
+      "match_time_window_s": [
+       965.0,
+       990.0
+      ]
+     },
+     {
+      "metric_path": "opencv_metrics.after.width_m",
+      "value": 47.7,
+      "unit": "m (lateral spread)",
+      "match_time_window_s": [
+       990.0,
+       1050.0
+      ]
+     }
+    ],
+    "validation": "weak_quality_low_segment_confidence",
+    "tokens": {
+     "input": 1528,
+     "output": 296
+    },
+    "cost_usd": 0.0011984
+   },
+   {
+    "ts": "2026-10-21T18:34:24Z",
+    "trace_id": "posture_ba323570ea734d78",
+    "step": "validated_result_saved",
+    "event_id": "evt_003",
+    "status": "completed",
+    "posture": "unclear",
+    "source": "deterministic_fallback",
+    "trace_ref": "outputs/api/posture_trace.jsonl#posture_ba323570ea734d78"
+   }
+  ]
+ }
+}

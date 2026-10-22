@@ -511,3 +511,44 @@ Judged as written in §8: bar (≤ 16 false alerts AND ≥ 30 / 38) **met**, unc
 | Trace excerpts | in reports only | `docs/AGENT_TRACE_EXAMPLES.md`: situations (a) confirm with evidence, (b) second look contradicts the first pass, (c) refusal |
 
 Bedrock spent in step 7 (from `outputs/llm_calls.jsonl`): real explanations $0.0049 (15 calls) + explanation prompt work on dev seed 45 $0.0117 (4 runs, 39 calls) + real report $0.0035 (2 calls) + report prompt work on dev seed 45 $0.0382 (5 runs, 3 prompt versions, 10 calls) = **$0.058**. Config fingerprint unchanged (`ca4ff9bbf7b01c6c`): all new settings live in `presentation:`.
+
+## N3 — Event posture is advisory
+
+The upload worker persists OpenCV events and completes deterministic verification before it calls
+the separate posture analyzer. Only `confirmed` event records are eligible. Bedrock sees a bounded
+projection of the stored event (shape metrics, clock windows, coverage/quality and verifier
+summary); it does not get the raw match or annotation ground truth. It returns one of
+`attacking | defensive | hybrid | unclear` with exact citations. The server checks the cited path,
+value, unit, time window, metric quality, and whether multiple independent metric types support the
+direction. Formation labels alone never establish posture. Top-view ball, possession, pressing, and
+intent claims are not assumed.
+
+The deterministic verifier remains the only authority for event status/reason and its match-clock
+evidence boundary. The posture result, trace reference, and attempt/cost ledger are stored
+separately; coach decisions remain append-only. If a confirmed event lacks sufficient post-event
+metrics, Bedrock may request one short OpenCV window. The upload worker may execute that request
+only with the still-available original video context, after onset and before the stored verification
+boundary, within the existing video budget/cache and the posture sample/window limits. One follow-up
+Bedrock assessment can consume those new metrics; further requests stop as `unclear`. The
+persisted-event CLI has no video context and safely falls back if extra imagery is requested.
+
+There is no public posture-write endpoint and replay does not trigger model calls. A small read-only
+poll refreshes pending posture state; the UI hides the result until the match clock reaches
+`verification_match_time_s`. Missing credentials, budget/pricing limits, timeout, throttle, malformed
+responses, or invalid citations keep the verified formation event intact and save a labelled
+deterministic `unclear` fallback where a result is persisted. N3 uses event-record schema 1.1 and DB
+migration 3's call/cost attempt ledger; frozen MatchState and TacticalTimeline v1.0 are unchanged.
+
+**Fixes 21–22 Oct (audit, then fix session; no change to the verifier or the confidence floor).**
+Every real posture call before them was stored as `failed` (FAILURE_LOG 2026-10-21). Now: the
+evidence lists every citable value as `citable_metrics` (exact `metric_path`, value, unit, window)
+and the prompt states that citations are copied from it; a ```json fence is stripped before
+parsing; the banned-signal check (ball, possession, pressing / pressure, intent, opponent) reads the
+claim (`explanation`) only, so `limitations` may say what is not measured; a model `unclear` on
+weak evidence is kept as a Bedrock result with the weak-quality reason as a limitation and its
+strength capped at 0.35; the trace records the model's own label (`model_posture`) next to the
+stored one. N4 advice re-checks each cited value, unit and window against the event's stored
+`opencv_metrics` and withholds otherwise. **Real result on the demo evt_003 (22 Oct, one call,
+$0.0012):** completed / `unclear`, 4 exact citations; the code downgraded Nova's label because the
+window before 16:30 is too uncertain (confidence 0.30 < 0.45). It ships in
+`samples/w900_1260/demo_events_seed.json`.

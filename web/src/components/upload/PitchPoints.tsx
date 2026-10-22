@@ -126,8 +126,9 @@ export default function PitchPoints({
           }}
           onPointerLeave={() => dragging.current === null && setCursor(null)}
           onClick={(e) => target && place(toPx(e))}
-          className={`relative w-full overflow-hidden rounded-xl border border-line bg-[#0b1510] select-none ${next < 4 ? 'cursor-crosshair' : ''}`}
-          style={{ aspectRatio: `${width} / ${height}` }}
+          className={`relative mx-auto overflow-hidden rounded-xl border border-line bg-[#0b1510] select-none ${next < 4 ? 'cursor-crosshair' : ''}`}
+          // height-capped so the whole step (and "Start analysis") fits a 1440 x 900 screen
+          style={{ aspectRatio: `${width} / ${height}`, width: `min(100%, max(18rem, calc((90dvh - 28rem) * ${(width / height).toFixed(4)})))` }}
         >
           <img src={frameUrl} alt="" className="pointer-events-none absolute inset-0 size-full object-fill" draggable={false} />
           {/* outline of what is placed so far */}

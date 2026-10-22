@@ -36,7 +36,12 @@ Docker: `deploy/README.md`.
 | `GET /api/demo/files/{name}` | — | the exact sample file the frontend reads today (whitelist: `api.demo.files`) |
 | `GET /api/demo/alerts` | — | the demo alerts as **this visitor** sees them (as shipped, plus their own approve / reject) |
 | `GET /api/demo/evidence/{event_id}.jpg` | — | demo evidence image |
+| `GET /api/replay/teamtrack` | — | fixed 900–1260 s TeamTrack top-view clip manifest, with segment URLs and match-time ranges |
+| `GET /api/replay/teamtrack/clips/{clip_id}` | optional `Range: bytes=start-end` | allowlisted MP4 segment; supports HTTP 206 byte ranges for seeking |
 | `POST /api/analyses` | `multipart/form-data`: `video` (MP4/MOV, required), `known_source` (`true`/`false`/`auto`, optional), `pitch_points` (JSON `[[x,y]×4]` or `[{x,y}×4]`, optional) | `201` **AnalysisStatus** (`queued`, `needs_confirmation` or `needs_corners`) |
+| `GET /api/sample` | — | `{available: false}`, or `{available, label, bytes, video_url, file_name}` for the server's sample clip (`api.sample_clip.path`, made by `scripts/make_sample_clip.py`) |
+| `GET /api/sample/video` | optional `Range` | the sample clip (MP4, for the browser preview); `404` if missing |
+| `POST /api/analyses/sample` | — | like `POST /api/analyses` for the server's sample clip, as an **unknown source** (`known_source=false`: OpenCV pitch auto-detect, then "Is this your pitch?" / 4 corners); `404` if missing |
 | `POST /api/analyses/{id}/pitch` | `{"confirmed": true}` or `{"pitch_points": [[x,y]×4]}` | AnalysisStatus (`queued`) |
 | `POST /api/analyses/{id}/start` | the frontend's pitch step: `{"points": [{x,y}×4], "frame": {width, height, t_s}, "straight_down": bool}` | AnalysisStatus (`queued`) |
 | `GET /api/analyses/{id}/pitch-preview` | — | JPEG: the frame with the pitch outline, corners 1–4 and the markings a 4-corner homography puts there |
@@ -48,6 +53,27 @@ Docker: `deploy/README.md`.
 | `POST /api/alerts/{alert_id}/reject` | optional `{"note": "..."}` | the Alert, `status: rejected` |
 | `POST /api/chat` | `{"match_id", "question", "history": [{"role": "user"\|"assistant", "text"}]}`, header `X-Visitor-Id` (optional) | `{answer, citations, trace_id, sources, grounded, questions_left_today}` |
 | `GET /`, `/app`, … | — | `web/dist` (single-page app; unknown paths → `index.html`), only when built |
+
+
+### Persisted event endpoints
+
+A fresh server (empty `outputs/`, e.g. Docker / EC2) imports `api.teamtrack_replay.seed_file`
+(`samples/w900_1260/demo_events_seed.json`: the real OpenCV evt_003 record with its stored Bedrock
+posture read, exported by `scripts/export_demo_seed.py`) once into an event DB that has no row for
+the replay match. Only records of `seed_analysis_id` are accepted, so a test fixture cannot be
+shipped this way. Coach decisions and role advice are never seeded.
+
+| Method and path | Request | Response |
+|---|---|---|
+| `GET /api/events?match_id=up_<id>` | optional `analysis_id`, `team`, `status`, `start_s`, `end_s`, `limit`, `offset` | `{match_id, total, limit, offset, events}` sorted by candidate match time |
+| `POST /api/events/{record_id}/recommendation` | coach side, objective, available substitute roles | `{recommendation}`; deterministic and idempotent for the same context/evidence |
+| `POST /api/events/{record_id}/recommendation/{recommendation_id}/decision` | decision (`approved`/`rejected`) and optional note | `{recommendation_response}`; a conflicting second response returns `409` |
+| `GET /api/events/{record_id}` | — | one versioned event with verification, AI lifecycle fields, refs and coach-decision history |
+
+The TeamTrack replay manifest is read from `api.teamtrack_replay.manifest`. The API selects only
+the configured 900–1260 s top-view segments and verifies that each resolved file remains inside
+`api.teamtrack_replay.video_root`. The clip route accepts a segment id from that manifest, never a
+filesystem path. A missing clip makes the replay endpoint return a coach-readable 503.
 
 ## AnalysisStatus
 
@@ -96,6 +122,109 @@ candidate — before the first one is checked, `api.jobs.eta_frames_per_candidat
 upload's own seconds per frame (4K drone ≈ 226 s; Phase 3 measured 104–252 s + an 8–13 s camera
 check). Before any frame is timed, the priors `api.jobs.prior_s_per_video_s` (1.2) and
 `prior_s_per_candidate` (200) are used and `eta_basis` says `"prior"`.
+
+### Persisted event records (N1)
+
+The upload worker writes events only after OpenCV processing and deterministic verification finish.
+The runtime source must be `video`; annotation/ground-truth `MatchState` objects produce no rows.
+Candidate onset and detector time are separate match-clock seconds (`candidate_time_s` and
+`detection_time_s`); `verification_time_utc` is the wall-clock completion time. An event also
+contains compact before/after formation metrics, coverage/quality, verifier reason, evidence/trace
+references, agent state/result/completion time, posture and recommendation states, and any
+append-only coach decisions. N3 adds a separate posture lifecycle after persistence and deterministic
+verification: only `confirmed` video events are eligible. Rejected/uncertain events remain skipped;
+a valid `unclear` result is still a completed assessment, distinct from `unavailable` or `failed`.
+Bedrock cannot change verification status/reason, the replay evidence boundary, or coach decisions.
+
+Event schema 1.1 adds nullable `verification_match_time_s`. This is a **match-clock replay reveal
+boundary** taken from the end of the stored OpenCV re-analysis window only when that window is
+recorded and `vs_event.covers_required_span` is true. It means the required verifier evidence is
+available in the recorded match; it is not the wall-clock time verification ran. If evidence does
+not establish this boundary, the field stays null and replay leaves the event provisional.
+`verification_time_utc` remains a distinct wall-clock timestamp.
+
+Example:
+
+```powershell
+curl.exe "http://localhost:8000/api/events?match_id=up_27af4f8cb3e1&team=home&status=confirmed"
+curl.exe "http://localhost:8000/api/events/<record_id>"
+```
+
+The SQLite file defaults to `outputs/api/events.sqlite3` and is configurable with
+`api.event_store.path` in `config.yaml`. Keep it on durable local storage. For Docker/EC2, mount a
+persistent EBS-backed directory at the configured path; the S3 artifact backend does not make this
+database durable. SQLite uses WAL mode and full synchronous writes. Restarting the app reopens the
+same DB and keeps queryable rows. It does not resume an interrupted analysis: the existing job
+recovery marks interrupted work failed.
+
+Database migrations 1, 2, and 3 are applied at app startup using a transaction and recorded in both
+`PRAGMA user_version` and `schema_migrations`. Startup refuses a database whose version is newer
+than the running app. Migration 2 upgrades persisted event payloads to schema 1.1 and backfills a
+reveal boundary only from complete recorded re-analysis windows; incomplete or legacy rows remain
+null. Migration 3 adds an indexed `posture_attempts` budget ledger; event payload schema 1.1 and the
+frozen MatchState/TacticalTimeline v1.0 contracts are unchanged. Existing `timeline.json`, other
+result artifacts, and `alerts.jsonl` remain
+unchanged; historic files are not automatically imported. Reprocess an uploaded video to create
+event rows. Upload alert decisions continue to append to `alerts.jsonl` for compatibility and are
+also mirrored into the event's append-only coach-decision table when that event exists. Visitor
+specific demo decisions remain in memory and are not added to this database.
+
+### Event posture assessment (N3)
+
+After a completed video analysis persists its event records, the single worker asks Bedrock once per
+confirmed event for an `attacking`, `defensive`, `hybrid`, or `unclear` posture, using only the
+recorded compact OpenCV metrics and clock windows. Directional labels require paired independent
+metric types and exact server-checked citations. If the model requests a short additional view, the
+worker permits one OpenCV reanalysis only when the uploaded source-video context exists, the request
+starts at/after event onset, ends no later than the verifier match-clock boundary, fits configured
+window/sample-rate limits, and existing stored metrics leave a real gap. It then sends one bounded
+follow-up assessment. This cannot alter deterministic verification or coach history. TeamTrack
+annotation/ground-truth data and full-match video are not sent to Bedrock.
+
+Posture call/cost reservations use `api.posture` plus the daily API Bedrock budget. Unknown model
+pricing or insufficient reserved capacity skips the call. Model errors store an explicitly labelled
+deterministic `unclear` fallback with `unavailable` or `failed` state. Posture evidence/decisions,
+OpenCV tool results, validation, and fallback reasons append to
+`outputs/api/posture_trace.jsonl`; the event stores a trace reference. The UI may poll the existing
+read-only event API while posture is pending, but reveals any result only at the event's
+`verification_match_time_s` on the replay clock. Opening or refreshing replay never runs Bedrock.
+An event left pending by a process crash is not stolen by another worker; an operator can recover it
+with explicit `--retry` only after `api.posture.stale_pending_after_s` (default 900 seconds).
+
+To assess an already persisted confirmed event without re-running the whole video pipeline, use the
+operator CLI (repeat calls are no-ops; `--retry` is required for another paid attempt):
+
+```powershell
+py scripts\analyze_event_posture.py --match-id teamtrack_top_w900_1260 --event-id evt_003
+py scripts\analyze_event_posture.py --record-id <record_id> --retry
+```
+
+The CLI has no video backend. If the model asks for extra visual evidence during that operator path,
+the call is stopped and posture becomes `unclear`; the worker path can perform bounded reanalysis
+because it still holds the original upload's video context. There is no public billable posture-write
+endpoint and no live Bedrock smoke test is implied by these instructions.
+
+### N4 conditional role advice
+
+N4 stores the current versioned recommendation in the event record's existing
+`recommendation_status` / `recommendation` fields; event schema 1.1 and the frozen MatchState and
+TacticalTimeline contracts remain unchanged. SQLite migration 4 adds append-only recommendation
+snapshots keyed by event and the exact coach-context/evidence hash, plus a separate
+`recommendation_decisions` table. Existing `coach_decisions` remains exclusively for formation-alert
+approval/rejection. A recommendation response is attached to its recommendation when event records
+are read; a conflicting second response returns 409. A saved response prevents replacing that advice
+with a different coach context.
+
+The API applies deterministic rules and makes no Bedrock call. A ready recommendation requires a
+confirmed event, completed Bedrock posture other than `unclear`, the persisted exact metric citations,
+an explicit coach side and objective, and a compatible available substitute role. An opponent's
+supported defensive posture can support a conditional attacker option while chasing a goal; an
+opponent's supported attacking posture can support a conditional defender option while protecting a
+lead. Balanced objective, own-team events, missing roles/context, or unavailable/weak posture
+evidence produce a stored `withheld` result without an action. Every citation must be a well-formed
+OpenCV metric reference within the event's verification match-clock boundary. The replay requests
+advice only after that boundary and reveals it beside the separate verification, posture and coach
+response states.
 
 ## Upload rules (`api.uploads`)
 
@@ -226,6 +355,12 @@ Caps (all in `config.yaml`, changeable without code; restart the server):
 | tokens per question (all rounds) | `api.chat.max_tokens_per_request` (12,000), `max_tool_rounds` (4) | polite "needs more look-ups than one answer is allowed; try a narrower question" |
 | questions per visitor per UTC day | `api.chat.max_questions_per_visitor_per_day` (20); visitor = `X-Visitor-Id` header, else the visitor cookie the browser sent back, else client IP (a client without cookies is counted by IP), stored hashed | `429` "You've reached today's limit of 20 questions" |
 | Bedrock calls / cost per UTC day, whole API (chat + analyses) | `api.bedrock_daily.max_calls` (300), `max_cost_usd` (1.00), persisted in `outputs/api/usage.json` | `429` "daily limit for this demo, come back tomorrow"; analyses fall back to the rules arm |
+
+Off-topic questions (no football / analysis word, team name, formation, clock or candidate id;
+`api/chat.py off_topic`) are answered in code, with no Bedrock call and no daily question used:
+"I only answer questions about this match. Try: …" (`off_topic: true`). Each question carries a
+one-line index of the match's candidates (id, team, clock, change), and `get_decision` on an
+unknown id returns the real ones, so the model does not guess ids (FAILURE_LOG 2026-10-22).
 
 Bedrock unreachable (no credentials, network, throttling) → `503` "The analyst (Amazon Bedrock)
 can't be reached right now: …", and the question is given back to the visitor's allowance. No

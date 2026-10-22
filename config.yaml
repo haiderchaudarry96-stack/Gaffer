@@ -553,6 +553,18 @@ presentation:
 # without code (restart the server).
 api:
   storage: {backend: local, root: outputs/api}   # s3: {backend: s3, bucket: ..., prefix: ...}
+  event_store: {path: outputs/api/events.sqlite3}  # SQLite DB; keep on durable local/EBS storage
+  teamtrack_replay:                           # fixed recorded-demo source; never a request path
+    manifest: data/clips/teamtrack_top_full.clips.json
+    video_root: data/teamtrack/soccer_top/videos
+    match_id: teamtrack_top_w900_1260
+    start_s: 900
+    end_s: 1260
+    clip_duration_s: 30
+    # real OpenCV + Bedrock demo record(s), imported once into an empty DB at startup
+    # (scripts/export_demo_seed.py writes it; only records of seed_analysis_id are allowed)
+    seed_file: samples/w900_1260/demo_events_seed.json
+    seed_analysis_id: teamtrack_demo_w900_1260
   cors_origins: ["http://localhost:5173", "http://127.0.0.1:5173"]
   web_dist: web/dist              # served at / when it exists (npm run build in web/)
   demo:
@@ -578,7 +590,8 @@ api:
                                   # forgotten first; a restart forgets all); never global
   uploads:
     max_bytes: 524288000          # 500 MB (a 6 min 4K drone clip is ~130 MB)
-    max_duration_s: 360           # 6 min: ~7 min of OpenCV on the laptop CPU + agent checks
+    max_duration_s: 370           # 6 min (+10 s: 12 TeamTrack clips of 30.03 s = 360.4 s):
+                                  # ~7 min of OpenCV on the laptop CPU + agent checks
     min_duration_s: 5
     extensions: [.mp4, .mov]
     max_aspect: 2.5               # wider frames are panoramas / side cameras: refused
@@ -588,6 +601,9 @@ api:
       top_pattern: '^D_\d{8}_\d+_(\d+)_(\d+)\.mp4$'   # drone; groups = match start / end s
       side_pattern: '^F_\d{8}_\d+_\d+_\d+\.mp4$'      # fixed side camera: refused (top-down only)
       top_size: [3840, 2160]
+  sample_clip:                    # "Try it with a sample clip" (scripts/make_sample_clip.py);
+    path: data/sample_clips/teamtrack_top_sample_1080p.mp4   # hidden in the UI if missing
+    label: "TeamTrack drone clip · 30 s · 1080p"
   jobs:
     view: top                     # uploads are analysed as a top-down view (only one supported)
     arm: auto                     # auto: Nova arm when Bedrock is configured, else rules; llm; rules
@@ -615,3 +631,26 @@ api:
     max_calls: 300                # (chat + analyses); refusals are polite, the rules arm still runs
     max_cost_usd: 1.00
     usage_file: outputs/api/usage.json
+  posture:                        # advisory analysis after verified event persistence; outside frozen agent rules
+    trace_path: outputs/api/posture_trace.jsonl
+    max_rpm: 6
+    max_evidence_chars: 8000
+    max_input_tokens: 12000       # reserved upper bound; if pricing is unknown, Bedrock is not called
+    max_output_tokens: 500
+    max_calls_per_event: 4        # two assessment rounds plus at most one explicit operator retry
+    max_calls_per_match: 24
+    max_cost_usd_per_event: 0.02
+    max_cost_usd_per_match: 0.10
+    stale_pending_after_s: 900    # explicit --retry only; won't steal an active worker call
+    # AWS published Nova 2 Lite standard token rates; keep model rates explicit and reviewed.
+    # https://aws.amazon.com/bedrock/pricing/ (input/output USD per million tokens)
+    prices_per_million:
+      "global.amazon.nova-2-lite-v1:0": {input: 0.30, output: 2.50}
+    directional_delta_min_m: 2.0
+    width_delta_min_m: 3.0
+    min_segment_confidence: 0.45
+    max_uncertain_fraction: 0.50
+    min_coverage: 0.50
+    min_mean_players_visible: 6.0
+    max_reanalysis_window_s: 45.0
+    reanalysis_fps: [5]

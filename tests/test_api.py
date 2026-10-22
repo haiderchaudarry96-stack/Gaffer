@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from gaffer.agent.alerts import AlertStore
 from gaffer.api.chat import SAFE_ANSWER, check_answer
+from gaffer.api.event_store import EventRecordV1_1, EventStore
 from gaffer.api.jobs import Progress, rules_fingerprint
 from gaffer.api.main import create_app
 from gaffer.api.storage import LocalStorage, StorageError
@@ -40,7 +41,8 @@ def _no_network(monkeypatch):
 
     def guard(self, address):
         host = address[0] if isinstance(address, tuple) else address
-        if self.family == getattr(socket, "AF_UNIX", None) or host in ("127.0.0.1", "::1", "localhost"):
+        if (self.family == getattr(socket, "AF_UNIX", None)
+                or host in ("127.0.0.1", "::1", "localhost")):
             return real(self, address)
         raise RuntimeError(f"network access is disabled in tests ({address})")
 
@@ -109,8 +111,10 @@ def make_client(tmp_path: Path, cfg: dict[str, Any], llm: Any = None, **kw: Any
         cfg = {**cfg, "api": {**cfg["api"], "web_dist": str(tmp_path / "no_web_dist")}}
     usage = Usage(cfg, str(tmp_path / "usage.json"))
     factory = (lambda: llm) if llm is not None else kw.pop("llm_factory", None)
+    event_store = kw.pop("event_store", EventStore(tmp_path / "events.sqlite3"))
     app = create_app(cfg, storage=LocalStorage(tmp_path / "api"), llm_factory=factory,
                      usage=usage, alerts_path=tmp_path / "alerts.jsonl",
+                     event_store=event_store,
                      start_worker=kw.pop("start_worker", False),
                      chat_trace=tmp_path / "chat_trace.jsonl", **kw)
     return TestClient(app)
@@ -362,6 +366,73 @@ def test_worker_thread_runs_queued_analyses(tmp_path, base_cfg, videos) -> None:
     assert c.get(f"/api/analyses/{aid}/result").status_code == 200
 
 
+def test_role_recommendation_api_persists_context_and_separate_coach_response(client) -> None:
+    event = EventRecordV1_1(
+        record_id="record_n4_evt_1", analysis_id="analysis_n4", match_id="match_n4",
+        event_id="evt_001", event_type="shape_change", team="home", team_name="White",
+        from_formation="4-4-2", to_formation="3-4-3", candidate_time_s=100.0,
+        detection_time_s=110.0, status="confirmed", verification_match_time_s=180.0,
+        verification={"decision": "confirmed"}, posture_status="completed",
+        # stored metrics the citations must match (N4 re-checks them, fix session 22 Oct)
+        opencv_metrics={"before": {"start_s": 50.0, "end_s": 100.0, "defensive_line_m": 48.0},
+                        "after": {"start_s": 100.0, "end_s": 180.0, "defensive_line_m": 42.0}},
+        posture_result={"schema_version": "1.0", "posture": "defensive", "source": "bedrock",
+            "analysis_time_utc": "2026-10-21T08:00:00Z", "model_id": "fake",
+            "trace_id": "posture-trace", "evidence_strength": 0.8,
+            "explanation": "The defensive line moved back and width reduced.",
+            "citations": [
+                {"metric_path": "opencv_metrics.before.defensive_line_m", "value": 48.0,
+                 "unit": "m (attacking-direction-normalized)",
+                 "match_time_window_s": [50.0, 100.0]},
+                {"metric_path": "opencv_metrics.after.defensive_line_m", "value": 42.0,
+                 "unit": "m (attacking-direction-normalized)",
+                 "match_time_window_s": [100.0, 180.0]},
+            ], "limitations": []},
+        created_utc="2026-10-21T08:00:00Z", updated_utc="2026-10-21T08:00:00Z")
+    client.app.state.event_store.upsert_analysis([event])
+    body = {"coach_side": "away", "objective": "chase",
+            "available_substitute_roles": ["attacker"]}
+    first = client.post(f"/api/events/{event.record_id}/recommendation", json=body)
+    assert first.status_code == 200, first.text
+    recommendation = first.json()["recommendation"]
+    assert recommendation["status"] == "ready"
+    second = client.post(f"/api/events/{event.record_id}/recommendation", json=body)
+    assert second.json()["recommendation"] == recommendation
+
+    response = client.post(
+        f"/api/events/{event.record_id}/recommendation/"
+        f"{recommendation['recommendation_id']}/decision",
+        json={"decision": "approved", "note": "try if the lead remains"})
+    assert response.status_code == 200
+    saved = client.get(f"/api/events/{event.record_id}").json()
+    assert saved["recommendation"]["coach_response"]["decision"] == "approved"
+    assert saved["recommendation"]["coach_response"]["note"] == "try if the lead remains"
+    assert saved["coach_decisions"] == []  # formation alert decisions stay separate
+    assert saved["verification"] == event.verification
+    assert saved["posture_result"] == event.posture_result
+
+    conflict = client.post(
+        f"/api/events/{event.record_id}/recommendation/"
+        f"{recommendation['recommendation_id']}/decision", json={"decision": "rejected"})
+    assert conflict.status_code == 409
+
+
+def test_role_recommendation_api_withholds_missing_context_and_requires_completed_posture(client):
+    event = EventRecordV1_1(
+        record_id="record_n4_missing", analysis_id="analysis_n4", match_id="match_n4",
+        event_id="evt_002", event_type="shape_change", team="home", team_name="White",
+        candidate_time_s=200.0, status="confirmed", verification_match_time_s=260.0,
+        posture_status="unavailable", posture_result={"posture": "unclear"},
+        created_utc="2026-10-21T08:00:00Z", updated_utc="2026-10-21T08:00:00Z")
+    client.app.state.event_store.upsert_analysis([event])
+    result = client.post(f"/api/events/{event.record_id}/recommendation",
+                         json={"coach_side": None, "objective": None,
+                               "available_substitute_roles": []})
+    assert result.status_code == 200
+    assert result.json()["recommendation"]["status"] == "withheld"
+    assert "Select which team" in result.json()["recommendation"]["withheld_reason"]
+
+
 def test_pipeline_failure_is_coach_readable(tmp_path, base_cfg) -> None:
     p = tmp_path / "car_park.mp4"
     w = cv2.VideoWriter(str(p), cv2.VideoWriter_fourcc(*"mp4v"), 10, (960, 600))
@@ -392,6 +463,21 @@ def test_upload_end_to_end_agent_confirms_a_real_change(tmp_path, base_cfg) -> N
     hit = [e for e in ex if e["team_side"] == "home" and e["change"] == "4-4-2 -> 3-5-2"]
     assert hit and hit[0]["decision"] == "confirmed"
     assert hit[0]["evidence_image"].startswith("http://testserver/api/analyses/")
+    event_response = c.get("/api/events", params={"match_id": f"up_{aid}"})
+    assert event_response.status_code == 200, event_response.text
+    events = event_response.json()["events"]
+    event = next(e for e in events if e["event_id"] == hit[0]["event_id"])
+    assert event["candidate_time_s"] < event["detection_time_s"]
+    assert event["status"] == "confirmed" and event["verification_time_utc"]
+    assert event["schema_version"] == "1.1"
+    assert event["verification_match_time_s"] == event["opencv_metrics"]["reanalysis"]["window"][1]
+    assert event["agent_completed_utc"] == event["verification_time_utc"]
+    assert event["agent_status"] in ("completed", "fallback")
+    assert event["posture_status"] == "unavailable"
+    assert event["posture_result"]["posture"] == "unclear"
+    assert event["posture_result"]["source"] == "deterministic_fallback"
+    assert event["verification"]["decision"] == "confirmed"
+    assert c.get(f"/api/events/{event['record_id']}").json()["record_id"] == event["record_id"]
     calls = [s.get("tool") for s in res["trace"] if s.get("kind") == "tool_call"]
     assert "check_frame_quality" in calls and "reanalyse_window" in calls
     alert = res["alerts"][0]
@@ -401,6 +487,21 @@ def test_upload_end_to_end_agent_confirms_a_real_change(tmp_path, base_cfg) -> N
     r = c.post(f"/api/alerts/{alert['alert_id']}/approve", json={"note": "seen it"})
     assert r.status_code == 200 and r.json()["status"] == "approved"
     assert c.get(f"/api/analyses/{aid}/result").json()["alerts"][0]["status"] == "approved"
+    saved = c.get(f"/api/events/{event['record_id']}").json()
+    assert len(saved["coach_decisions"]) == 1
+    assert saved["coach_decisions"][0]["decision"] == "approved"
+    assert saved["coach_decisions"][0]["note"] == "seen it"
+    assert saved["coach_decisions"][0]["decided_at_utc"]
+
+    # A newly-created app/store over the same file can still query the saved event.
+    restarted_store = EventStore(c.app.state.event_store.path)
+    restarted = make_client(tmp_path, base_cfg, event_store=restarted_store)
+    after_restart = restarted.get("/api/events", params={"match_id": f"up_{aid}"}).json()
+    assert after_restart["total"] == len(events)
+    assert after_restart["events"][0]["candidate_time_s"] <= \
+        after_restart["events"][-1]["candidate_time_s"]
+    assert restarted.get(f"/api/events/{event['record_id']}").json()["coach_decisions"] == \
+        saved["coach_decisions"]
 
 
 # --------------------------------------------------------------------------- alerts
@@ -480,7 +581,7 @@ def test_chat_visitor_from_cookie(tmp_path, base_cfg) -> None:
     cfg = copy.deepcopy(base_cfg)
     cfg["api"]["chat"]["max_questions_per_visitor_per_day"] = 1
     c = make_client(tmp_path, cfg, llm=FakeLLM(["Ask me about a change [evt_003]."] * 3))
-    q = {"match_id": "w900_1260", "question": "hello", "history": []}
+    q = {"match_id": "w900_1260", "question": "What did White change?", "history": []}
     a, b = TestClient(c.app), TestClient(c.app)
     a.get("/api/health"), b.get("/api/health")  # each browser gets its cookie
     assert a.post("/api/chat", json=q).status_code == 200
@@ -517,6 +618,35 @@ def test_chat_grounded_answer_with_citations(tmp_path, base_cfg) -> None:
     assert log[0]["citations"] == ["R1", "evt_003"]
 
 
+def test_off_topic_question_is_answered_in_code_without_bedrock(tmp_path, base_cfg) -> None:
+    llm = FakeLLM(["should never be called"])
+    c = make_client(tmp_path, base_cfg, llm=llm)
+    r = ask(c, "What is the capital of France?")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["off_topic"]
+    assert j["answer"].startswith("I only answer questions about this match. Try:")
+    assert "White" in j["answer"] and not llm.calls  # no LLM call
+    assert ask(c, "What did White change at 16:30?").json().get("off_topic") is None
+
+
+def test_chat_unknown_event_id_lists_the_real_candidates(tmp_path, base_cfg) -> None:
+    """Fix session 21 Oct: Nova guessed evt_018 for Blue's 18:50 change; the error now names
+    the ids that exist so the next call can use the right one (evt_007)."""
+    llm = FakeLLM([[("get_decision", {"event_id": "evt_018"})],
+                   [("get_decision", {"event_id": "evt_007"})],
+                   "Blue's 18:50 change was rejected [R2] [evt_007]."])
+    c = make_client(tmp_path, base_cfg, llm=llm)
+    r = ask(c, "Why was Blue's 18:50 change rejected?")
+    assert r.status_code == 200, r.json()
+    question = llm.calls[0]["messages"][-1]["content"][0]["text"]
+    assert "evt_007 Blue 18:50 4-4-2->4-2-3-1" in question  # the index the model reads first
+    first = llm.calls[1]["messages"][-1]["content"][0]["toolResult"]["content"][0]["json"]
+    assert first["error"] == "unknown_event"
+    assert {"event_id": "evt_007", "team": "Blue", "clock": "18:50",
+            "change": "4-4-2 -> 4-2-3-1"} in first["candidates"]
+
+
 def test_chat_ungrounded_numbers_are_replaced(tmp_path, base_cfg) -> None:
     llm = FakeLLM([[("get_decision", {"event_id": "evt_003"})],
                    "White held 3-4-3 in 77% of windows [R1].",  # 77 is not in the result
@@ -524,6 +654,15 @@ def test_chat_ungrounded_numbers_are_replaced(tmp_path, base_cfg) -> None:
     c = make_client(tmp_path, base_cfg, llm=llm)
     j = ask(c, "How long did White keep it?").json()
     assert j["answer"] == SAFE_ANSWER and not j["grounded"] and j["citations"] == []
+
+
+def test_readable_ids_turns_bare_ids_into_times() -> None:
+    from types import SimpleNamespace
+
+    from gaffer.api.chat import readable_ids
+    cands = [SimpleNamespace(id="evt_005", t=1080.0), SimpleNamespace(id="evt_007", t=1130.0)]
+    out = readable_ids("It undoes what they did in evt_005 [evt_007] [R1].", cands)
+    assert out == "It undoes what they did in the 18:00 change [evt_007] [R1]."
 
 
 def test_check_answer_rules() -> None:
@@ -535,6 +674,10 @@ def test_check_answer_rules() -> None:
     assert check_answer("No number here, see [evt_003].", results, ev) == []
     assert check_answer("Held 91% of windows.", results, ev)  # numbers need a citation
     assert check_answer("At 17:45 [R1].", results, ev)  # clock not in results
+    # a clock the app gave with the question (candidate index) is grounded, other ones not
+    idx = ["evt_005 Blue 17:45 4-2-3-1->4-4-2"]
+    assert check_answer("It returned from the 17:45 change [evt_003].", results, ev, idx) == []
+    assert check_answer("At 18:10 [evt_003].", results, ev, idx)
     assert check_answer("See [R7].", results, ev)  # unknown ref
     assert check_answer("See [evt_099].", results, ev)  # unknown candidate
 
@@ -545,10 +688,10 @@ def test_chat_visitor_limit(tmp_path, base_cfg) -> None:
     llm = FakeLLM(["Ask me about a time or a change [evt_003].",
                    "Ask me about a time or a change [evt_003]."])
     c = make_client(tmp_path, cfg, llm=llm)
-    assert ask(c, "hello", visitor="a").status_code == 200
-    r = ask(c, "hello again", visitor="a")
+    assert ask(c, "What did White change?", visitor="a").status_code == 200
+    r = ask(c, "And Blue?", visitor="a")
     assert r.status_code == 429 and "limit of 1 questions" in r.json()["detail"]
-    assert ask(c, "hello", visitor="b").status_code == 200  # another visitor
+    assert ask(c, "What did White change?", visitor="b").status_code == 200  # another visitor
     usage = json.loads((tmp_path / "usage.json").read_text())
     assert "a" not in usage["visitors"] and len(usage["visitors"]) == 2  # hashed ids
 
@@ -558,8 +701,8 @@ def test_chat_global_daily_cap(tmp_path, base_cfg) -> None:
     cfg["api"]["bedrock_daily"]["max_calls"] = 1
     llm = FakeLLM(["Nothing numeric [evt_003].", "never sent"])
     c = make_client(tmp_path, cfg, llm=llm)
-    assert ask(c, "first").status_code == 200
-    r = ask(c, "second", visitor="other")
+    assert ask(c, "First shape of White?").status_code == 200
+    r = ask(c, "Second half shape?", visitor="other")
     assert r.status_code == 429 and "daily limit" in r.json()["detail"]
     assert len(llm.calls) == 1
 
@@ -569,7 +712,7 @@ def test_chat_token_budget_per_question(tmp_path, base_cfg) -> None:
     cfg["api"]["chat"]["max_tokens_per_request"] = 3000  # room for one call (1560 tokens), not two
     llm = FakeLLM([[("get_match_overview", {})], "unused"])
     c = make_client(tmp_path, cfg, llm=llm)
-    j = ask(c, "Tell me everything").json()
+    j = ask(c, "Tell me everything about this match").json()
     assert "more look-ups" in j["answer"] and len(llm.calls) == 1
 
 
@@ -577,7 +720,7 @@ def test_chat_bedrock_unreachable(tmp_path, base_cfg) -> None:
     llm = FakeLLM([BedrockCallError("Could not connect to Bedrock.", "check the network",
                                     "Connection")])
     c = make_client(tmp_path, base_cfg, llm=llm)
-    r = ask(c, "anything")
+    r = ask(c, "Any shape changes?")
     assert r.status_code == 503 and "can't be reached" in r.json()["detail"]
     usage = json.loads((tmp_path / "usage.json").read_text())
     assert sum(usage["visitors"].values()) == 0  # the question was given back
@@ -585,7 +728,7 @@ def test_chat_bedrock_unreachable(tmp_path, base_cfg) -> None:
 
 def test_chat_without_bedrock_and_bad_targets(tmp_path, base_cfg, videos) -> None:
     c = make_client(tmp_path, base_cfg)
-    r = ask(c, "anything")
+    r = ask(c, "Any shape changes?")
     assert r.status_code == 503 and "not configured" in r.json()["detail"]
     assert ask(c, "x", match_id="abcdef123456").status_code == 404
     aid = upload(c, videos["straight"]).json()["id"]
@@ -647,6 +790,25 @@ def test_local_storage_rejects_bad_keys(tmp_path) -> None:
     assert s.list_ids() == ["abcdef123456"]
 
 
+def test_local_storage_retries_transient_status_file_lock(tmp_path, monkeypatch) -> None:
+    original_replace = Path.replace
+    attempts = 0
+
+    def briefly_locked(path: Path, target: Path) -> Path:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise PermissionError("transient Windows reader lock")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", briefly_locked)
+    storage = LocalStorage(tmp_path)
+    storage.write_bytes("abcdef123456/status.json", b'{"stage": "agent"}')
+
+    assert attempts == 3
+    assert storage.read_bytes("abcdef123456/status.json") == b'{"stage": "agent"}'
+
+
 class FakeS3:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
@@ -688,3 +850,41 @@ def test_s3_storage_publishes_and_reads_back(tmp_path) -> None:
     assert s2.read_bytes("abcdef123456/status.json") == b'{"ok": 1}'
     with pytest.raises(StorageError):
         s2.read_bytes("abcdef123456/nope.json")
+
+
+def test_serve_no_bedrock_never_writes_the_real_event_db(tmp_path) -> None:
+    """Fix session 21 Oct: the Bedrock-off launcher used outputs/api/events.sqlite3."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("serve_no_bedrock",
+                                                  Path(__file__).parents[1] / "scripts"
+                                                  / "serve_no_bedrock.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    app = mod.build_app(tmp_path / "out")
+    own_db = (tmp_path / "out" / "events.sqlite3").resolve()
+    assert Path(app.state.event_store.path).resolve() == own_db
+    events = TestClient(app).get("/api/events", params={"match_id": "teamtrack_top_w900_1260"})
+    assert [e["event_id"] for e in events.json()["events"]] == ["evt_003"]  # seeded demo only
+
+
+def test_sample_clip_runs_the_unknown_source_pitch_check(tmp_path, base_cfg, videos) -> None:
+    """Fix session 21 Oct: "Try it with a sample clip" analyses a server-held file like an
+    upload of an unknown source (OpenCV pitch check), and is hidden when the file is missing."""
+    cfg = copy.deepcopy(base_cfg)
+    cfg["api"]["sample_clip"] = {"path": str(tmp_path / "missing.mp4"), "label": "x"}
+    c = make_client(tmp_path / "a", cfg)
+    assert c.get("/api/sample").json() == {"available": False}
+    assert c.post("/api/analyses/sample").status_code == 404
+    assert c.get("/api/sample/video").status_code == 404
+
+    cfg["api"]["sample_clip"] = {"path": str(videos["straight"]), "label": "Generated clip"}
+    c = make_client(tmp_path / "b", cfg)
+    info = c.get("/api/sample").json()
+    assert info["available"] and info["video_url"] == "/api/sample/video"
+    assert c.get("/api/sample/video", headers={"Range": "bytes=0-99"}).status_code == 206
+    r = c.post("/api/analyses/sample")
+    assert r.status_code == 201, r.json()
+    st = r.json()
+    assert st["status"] in ("needs_confirmation", "needs_corners")  # the full pitch check ran
+    assert st["source"]["kind"] == "upload" and st["video"]["filename"] == "gaffer_sample_clip.mp4"

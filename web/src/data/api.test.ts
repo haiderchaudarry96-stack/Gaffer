@@ -9,6 +9,7 @@ import {
   estimateProcessingSeconds,
   setPitchPoints,
   getAnalysisStatus,
+  getSampleClip,
   loadAnalysisResult,
   startAnalysis,
   timelineFromContract,
@@ -207,5 +208,15 @@ describe('chat API client', () => {
     const http = fakeHttp({})
     await expect(sendChat({ match_id: 'm', question: 'q', history: [] }, { http, base: '' })).rejects.toBeInstanceOf(ApiNotConfigured)
     expect(http.calls).toEqual([])
+  })
+})
+
+describe('sample clip client', () => {
+  it('is null when the server has no sample, and absolute when it has one', async () => {
+    expect(await getSampleClip({ http: fakeHttp({ 'GET /api/sample': () => json({ available: false }) }), base: BASE })).toBeNull()
+    const http = fakeHttp({ 'GET /api/sample': () => json({ available: true, label: 'Clip', bytes: 10,
+      video_url: '/api/sample/video', file_name: 'gaffer_sample_clip.mp4' }) })
+    expect(await getSampleClip({ http, base: BASE })).toEqual({ label: 'Clip', bytes: 10,
+      videoUrl: `${BASE}/api/sample/video`, fileName: 'gaffer_sample_clip.mp4' })
   })
 })

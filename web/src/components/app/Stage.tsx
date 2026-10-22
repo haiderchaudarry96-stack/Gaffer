@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, CheckCircle2, Pause, Play, X } from 'lucide-react'
 import UploadButton from '../upload/UploadButton'
 import PitchCanvas from '../pitch/PitchCanvas'
@@ -10,6 +10,8 @@ import { displayFormation } from '../../data/timeline'
 import { formatClock } from '../../data/time'
 import { Skeleton } from '../ui/States'
 import type { Transport, VideoSource } from './transport'
+import { TeamTrackVideoSource } from './teamTrackPlayer'
+import type { TeamTrackReplay } from '../../data/teamtrack'
 
 /** A video the coach picked from their disk; it stays in the browser. */
 export interface LocalVideo {
@@ -17,7 +19,12 @@ export interface LocalVideo {
   name: string
   /** match second at which the video starts */
   offset: number
+  /** false: this browser cannot decode it (codec); the analysis still comes from it */
+  playable?: boolean
 }
+
+/** the browser cannot show the uploaded file: said plainly, the pitch keeps its size */
+export const CANNOT_PREVIEW = 'This browser can\u2019t preview the file; the analysis below still comes from it.'
 
 const RATES = [1, 2, 4]
 
@@ -60,8 +67,10 @@ function FormationChip({
 }
 
 /**
- * The main stage: the pitch from tracked positions, or a local video with the pitch as an inset.
- * One clock drives both (the video's currentTime + start offset when a video is loaded).
+ * The main stage. With a video (the recorded TeamTrack replay, or an uploaded file) the video and
+ * the tactical pitch sit side by side at the same width (stacked below 900 px), and one transport
+ * drives both: the clock follows the video's currentTime + start offset. No native video controls
+ * (one clock) and no picture-in-picture. Without a video, the pitch alone.
  */
 export default function Stage({
   clock,
@@ -72,6 +81,7 @@ export default function Stage({
   verifiedFor,
   onVideo,
   video: file,
+  replay = null,
   onRemoveVideo,
   onUpload,
 }: {
@@ -84,24 +94,43 @@ export default function Stage({
   verifiedFor: (side: TeamSide, t: number) => string | null
   onVideo: (v: VideoSource | null) => void
   video: LocalVideo | null
+  replay?: TeamTrackReplay | null
   onRemoveVideo: () => void
   onUpload: () => void
 }) {
   const t = useClockTime(clock, 8)
   const rangeId = useId()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [activeClip, setActiveClip] = useState<string | null>(null)
+  const [replayError, setReplayError] = useState<{ source: TeamTrackReplay; message: string } | null>(null)
+  // a file the browser failed to decode at runtime (by url); it then counts as not playable
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null)
+  const filePlayable = Boolean(file && file.playable !== false && brokenUrl !== file.url)
   const names = timeline?.teamNames ?? { home: 'White', away: 'Blue' }
 
   useEffect(() => {
     const el = videoRef.current
-    if (!file || !el) return
-    clock.attachSource(() => file.offset + el.currentTime)
-    onVideo({ el, offset: file.offset })
+    if (!el) return
+    if (replay) {
+      const source = new TeamTrackVideoSource(el, replay.clips, (clip) => setActiveClip(clip.id),
+        (message) => setReplayError({ source: replay, message }))
+      clock.attachSource(source.now)
+      onVideo(source)
+      return () => {
+        source.dispose()
+        clock.attachSource(null)
+        onVideo(null)
+      }
+    }
+    if (!file || !filePlayable) return
+    const source: VideoSource = { el, offset: file.offset }
+    clock.attachSource(() => source.offset + el.currentTime)
+    onVideo(source)
     return () => {
       clock.attachSource(null)
       onVideo(null)
     }
-  }, [file, clock, onVideo])
+  }, [file, filePlayable, replay, clock, onVideo])
 
   const pitch = match ? (
     <PitchCanvas
@@ -129,26 +158,63 @@ export default function Stage({
         <FormationChip side="away" name={names.away} timeline={timeline} t={t} confirmedId={verifiedFor('away', t)} />
       </div>
 
-      <div className="relative mx-auto mt-3 aspect-[110/73] w-[calc(100%-1.5rem)] max-w-[calc(40vh*110/73)] sm:w-[calc(100%-2rem)]">
-        {file ? (
-          <>
-            <video
-              ref={videoRef}
-              src={file.url}
-              controls
-              muted
-              playsInline
-              className="size-full rounded-xl bg-black object-contain"
-              aria-label={`Your video ${file.name}, starting at match time ${formatClock(file.offset)}`}
-            />
-            <div className="absolute right-3 bottom-14 w-1/3 overflow-hidden rounded-lg border border-line bg-surface shadow-lg">
-              <div className="aspect-[110/73]">{pitch}</div>
+      {replay || file ? (
+        <div data-layout="side-by-side"
+          className="mx-auto mt-3 grid w-[calc(100%-1.5rem)] grid-cols-1 gap-3 sm:w-[calc(100%-2rem)] min-[900px]:grid-cols-2">
+          <div data-panel="video" className="min-w-0 overflow-hidden rounded-xl border border-line bg-black">
+            <div className="aspect-video">
+              {replay ? (
+                <video
+                  key="teamtrack-replay"
+                  ref={videoRef}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="size-full bg-black object-contain"
+                  aria-label={`Recorded TeamTrack match video, ${activeClip ?? 'loading segment'}`}
+                />
+              ) : file && filePlayable ? (
+                <video
+                  key={file.url}
+                  ref={videoRef}
+                  src={file.url}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  onError={() => setBrokenUrl(file.url)}
+                  className="size-full bg-black object-contain"
+                  aria-label={`Your video ${file.name}, starting at match time ${formatClock(file.offset)}`}
+                />
+              ) : (
+                <div role="status" className="grid size-full place-items-center bg-surface-2 p-6 text-center text-sm text-muted">
+                  {CANNOT_PREVIEW}
+                </div>
+              )}
             </div>
-          </>
-        ) : (
-          pitch
-        )}
-      </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-surface px-3 py-2 text-xs text-muted">
+              {replay ? (
+                <>
+                  <span>{replay.label}</span>
+                  <span className="font-mono tabular">Clip {activeClip ?? 'loading'}</span>
+                </>
+              ) : file ? (
+                <>
+                  <span className="min-w-0 truncate">Your video · {file.name}</span>
+                  <span className="font-mono tabular">from {formatClock(file.offset)}</span>
+                </>
+              ) : null}
+            </div>
+            {replay && replayError?.source === replay && <p role="alert" className="bg-danger/10 px-3 py-2 text-sm text-danger">{replayError.message}</p>}
+          </div>
+          <div data-panel="pitch" className="aspect-[110/73] min-w-0 overflow-hidden rounded-xl border border-line bg-bg" aria-label="Synchronized tactical map">
+            {pitch}
+          </div>
+        </div>
+      ) : (
+        <div data-layout="pitch-only" className="relative mx-auto mt-3 aspect-[110/73] w-[calc(100%-1.5rem)] max-w-[calc(40vh*110/73)] sm:w-[calc(100%-2rem)]">
+          {pitch}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
         <button
@@ -186,7 +252,7 @@ export default function Stage({
             </button>
           ))}
         </div>
-        {file ? (
+        {file && !replay ? (
           <button
             type="button"
             onClick={onRemoveVideo}

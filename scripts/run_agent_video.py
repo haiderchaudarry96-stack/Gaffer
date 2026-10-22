@@ -40,6 +40,7 @@ from gaffer.agent.loop import AgentRunner, TraceWriter
 from gaffer.agent.tools import Toolbox, clock
 from gaffer.agent.verify import DECISION_OF
 from gaffer.agent.vision import VideoBackend, VisionConfig, VisionError, write_image
+from gaffer.api.event_store import EventStore, build_video_event_records
 from gaffer.config import load_config, repo_path
 from gaffer.perception.video import VideoSource
 from gaffer.schema import load_match_state
@@ -90,7 +91,8 @@ def row_of(set_name: str, ctx: MatchContext, o: Any) -> dict[str, Any]:
 
 def run_set(set_name: str, cfg: dict[str, Any], done: set[tuple[str, str]],
             rows_path: Any, arm: str = "rules", llm: Any = None, budget: Any = None,
-            only: set[str] | None = None) -> list[dict[str, Any]]:
+            only: set[str] | None = None
+            ) -> tuple[list[dict[str, Any]], MatchContext, list[Any]]:
     path, view = SETS[set_name]
     ctx, vb = backend_for(path, cfg, view)
     tb = Toolbox(ctx, AlertStore(f"{OUT}/alerts_{arm}.jsonl"), f"{OUT}/evidence", video=vb)
@@ -98,6 +100,7 @@ def run_set(set_name: str, cfg: dict[str, Any], done: set[tuple[str, str]],
                          trace=TraceWriter(f"{OUT}/trace_{arm}.jsonl"),
                          run_id=f"video_{arm}_{set_name}")
     rows = []
+    outcomes = []
     print(f"\n=== {set_name}: {ctx.match.match_id}, {len(ctx.candidates)} candidates, footage "
           f"{ctx.footage[0]:.0f}-{ctx.footage[1]:.0f} s ===", flush=True)
     for c in ctx.candidates:
@@ -108,6 +111,7 @@ def run_set(set_name: str, cfg: dict[str, Any], done: set[tuple[str, str]],
             continue
         t0 = time.perf_counter()
         o = runner.run([c])[0]
+        outcomes.append(o)
         row = row_of(set_name, ctx, o) | {"wall_s": round(time.perf_counter() - t0, 1)}
         rows.append(row)
         with rows_path.open("a", encoding="utf-8") as fh:
@@ -115,7 +119,7 @@ def run_set(set_name: str, cfg: dict[str, Any], done: set[tuple[str, str]],
         print(f"  {c.id} {c.team} {c.from_}->{c.to} @{clock(c.t)}: first pass "
               f"{row['first_pass']['verdict']} -> {o.decision} ({o.verdict}) in {row['wall_s']} s"
               f" | {o.reason[:100]}", flush=True)
-    return rows
+    return rows, ctx, outcomes
 
 
 # --------------------------------------------------------------------------- simulated pan
@@ -252,8 +256,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=OUT, help=f"output folder (default {OUT})")
     ap.add_argument("--arm", choices=["rules", "llm"], default="rules")
     ap.add_argument("--candidates", default=None, help="comma-separated event ids (all sets)")
+    ap.add_argument("--persist-teamtrack-events", action="store_true",
+                    help="persist a fresh rules-only w900 run to the N1 event database")
     ap.add_argument("--max-cost-usd", type=float, default=0.5, help="llm arm: run cost cap")
     args = ap.parse_args(argv)
+    if args.persist_teamtrack_events and (
+            args.sets.strip() != "w900" or args.arm != "rules" or not args.fresh):
+        ap.error("--persist-teamtrack-events requires --sets w900 --arm rules --fresh; use a "
+                 "new --out directory to preserve old outputs")
     OUT = args.out
     out_dir = repo_path(OUT)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -283,7 +293,29 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for s in filter(None, (x.strip() for x in args.sets.split(","))):
             only = set(args.candidates.split(",")) if args.candidates else None
-            rows += run_set(s, cfg, done, rows_path, args.arm, llm, budget, only)
+            new_rows, ctx, outcomes = run_set(s, cfg, done, rows_path, args.arm, llm, budget, only)
+            rows += new_rows
+            if args.persist_teamtrack_events:
+                if not outcomes:
+                    ap.error("the TeamTrack event import needs at least one verifier outcome")
+                store = EventStore(cfg["api"].get("event_store", {}).get(
+                    "path", "outputs/api/events.sqlite3"))
+                completed_ids = {outcome.event_id for outcome in outcomes}
+                records = [record for record in build_video_event_records(
+                    "teamtrack_demo_w900_1260", ctx, outcomes)
+                    if record.event_id in completed_ids]
+                evidence_root = repo_path(f"{OUT}/evidence/{ctx.match.match_id}")
+                outcomes_by_id = {outcome.event_id: outcome for outcome in outcomes}
+                for record in records:
+                    image = evidence_root / f"{record.event_id}.jpg"
+                    if image.is_file():
+                        record.evidence_refs = [image.relative_to(repo_path(".")).as_posix()]
+                    outcome = outcomes_by_id.get(record.event_id)
+                    if outcome and outcome.trace_id:
+                        record.trace_refs = [f"{OUT}/trace_{args.arm}.jsonl#{outcome.trace_id}"]
+                saved = store.upsert_analysis(records)
+                print(f"Persisted {saved} OpenCV events to the configured SQLite event store.",
+                      flush=True)
         if args.simulated_pan:
             report["simulated_pan"] = run_simulated_pan(cfg)
         if args.bench:

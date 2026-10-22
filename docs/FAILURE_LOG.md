@@ -25,6 +25,26 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-22] Chat invented an event id for "Why was Blue's 18:50 change rejected?" (twice)
+**Stage:** agent (analyst chat, `api/chat.py`)
+**Severity:** degraded (the grounding check caught it; the coach got the safe "can't answer" reply)
+
+**Input:** demo match w900_1260, real Nova 2 Lite, 3 calls per run, 2 runs (21 Oct, fix session).
+**What happened:** Nova called `get_decision` with `evt_018` (the real id is `evt_007`), then answered citing `evt_012` / `evt_018`. Every answer was flagged ("evt_018 is not a candidate of this match") and replaced by `SAFE_ANSWER`. After the first fix (the unknown-id error now lists the real candidates, and the prompt says never to guess an id), the second run still guessed `evt_018` first and then answered from it instead of calling again.
+**Why (best guess):** the model maps "18:50" to an id-like token instead of calling `list_candidate_changes` first.
+**Fix or mitigation:** the question now carries a one-line index of the match's candidates (id, team, clock, change), and the unknown-id error lists them (`test_chat_unknown_event_id_lists_the_real_candidates`). **Not re-tested on Bedrock** (session budget used). The grounding check worked as designed: nothing wrong reached the coach.
+**Measured impact:** before: 2 of 2 live runs ungrounded ($0.0041, 6 calls). After: not measured.
+
+### [2026-10-21] Every real Bedrock posture call was stored as "failed" (guard, format and citation contract)
+**Stage:** agent (N3 posture, `agent/posture.py`)
+**Severity:** degraded (fallback "unclear"; the verifier's decision was never affected)
+
+**Input:** demo evt_003 (White 4-4-2 -> 3-4-3, 16:30) and a generated upload; 3 real calls (N5 x 2, audit x 1).
+**What happened:** all three were rejected as `model_made_unsupported_ball_possession_pressure_or_intent_claim`. The audit saved the raw answer: it tripped on an honest limitation ("No pressing_index data available …"), was wrapped in a ```json fence (unparseable), and cited `defensive_line_m` / `m` instead of the validator's `opencv_metrics.after.defensive_line_m` / `m (attacking-direction-normalized)`, which the prompt never stated.
+**Why (best guess):** the keyword check scanned the whole raw text (limitations included) while the prompt asked for limitations; the citation contract was implicit.
+**Fix or mitigation:** fence stripped before parsing; the keyword check reads the explanation (the claim) only; the evidence lists every citable entry (`citable_metrics`) and the prompt states the format; a model "unclear" on weak evidence is kept as a Bedrock result. The confidence floor (0.45) and the paired-metric rule are unchanged. Tests in `tests/test_posture.py`.
+**Measured impact:** one real call after the fix (22 Oct, $0.0012): **completed / unclear**, 4 exact citations (line 11.5 -> 20.1 m, width 22.7 -> 47.7 m); Nova proposed a directional label and the code downgraded it because the window before 16:30 is too uncertain (`weak_quality_low_segment_confidence`, confidence 0.30). Stored in the demo seed `samples/w900_1260/demo_events_seed.json`.
+
 ### [2026-10-17] Pitch auto-detect put one goal line on the edge of the artificial turf (all 180 drone test frames wrong, accepted at 0.91)
 **Stage:** homography (OpenCV pitch auto-detect for uploads, `perception/pitch.py: detect_pitch_corners`)
 **Severity:** wrong output, accepted with high confidence
@@ -96,7 +116,7 @@
 **What happened:** 68 / 68 decisions equal the rules arm (0 guard blocks, 0 invalid calls, 0 fallbacks), so the LLM adds nothing to decisions. In the 41 alerts the model's explanation repeats the engine's persistence rule ("held for 20 seconds") in **31**, although the verified reason above it says 60 s of look-ahead; the suggestions are near-templates ("Consider adjusting midfield pressing …" 14, "… pressure" 8, "… pressing intensity" 5). 23 of 68 candidates were decided with `record_decision` only (synthetic backend, design situation E: a first-pass revert rejects without a vision call).
 **Why (best guess):** the candidate card's engine evidence string contains "held 20s"; the small model copies the most salient number. Tactical suggestions get no tactical context beyond the two formation names.
 **Screenshot / output:** outputs/eval_agent_final/alerts_llm.jsonl, outputs/eval_agent_final/llm_rows.jsonl, outputs/eval_agent_final.json
-**Fix or mitigation:** mitigated by design: the code-written verified reason is shown first in every alert (spike fix, 15 Oct). **Explanations fixed 17 Oct (build step 7, entry above):** the explanation step never sees the engine's evidence string, and its check rejects a "20 s" that no result contains (test `test_check_flags_the_17_oct_failure_texts`). The final run on 110-119 was not re-run (decisions frozen, scope); on dev seed 45 none of 10 new explanations says "held 20 s". Suggestions are still the model's free text, unchecked (open).
+**Fix or mitigation:** mitigated by design: the code-written verified reason is shown first in every alert (spike fix, 15 Oct). **Explanations fixed 17 Oct (build step 7, entry above):** the explanation step never sees the engine's evidence string, and its check rejects a "20 s" that no result contains (test `test_check_flags_the_17_oct_failure_texts`). The final run on 110-119 was not re-run (decisions frozen, scope); on dev seed 45 none of 10 new explanations says "held 20 s". Suggestions were still the model's free text, unchecked (open until 22 Oct: now checked against the formation change by `explain.check_suggestion` and replaced by `explain.suggestion_template` when wrong; the 16:30 demo alert now reads "White now has 3 at the back and 3 up front (was 4 and 2): check how your team matches up against the 3-4-3.").
 **Measured impact:** 31 / 41 explanations restate the wrong persistence window; 0 / 68 decisions differ from the rules.
 
 ### [2026-10-17] "Strong persistence beats the return-leg rule" adds 25 false alerts on synthetic data (left OFF)
@@ -533,3 +553,19 @@ Delete this section before submitting.
 - Change detector firing on a short tactical moment (a counter-attack), not a real shape change
 - Agent confirming a change it should have rejected (and vice versa)
 - Bedrock throttling or timeouts; tool call with malformed arguments
+
+### [2026-10-21] Concurrent status polling briefly blocks atomic status replacement on Windows
+**Stage:** local upload/analysis progress polling
+**Severity:** recoverable local integration failure
+
+**What happened:** During the connected browser upload flow, a poll reader briefly held `status.json` while the worker attempted to replace it. `Path.replace` raised `PermissionError: [WinError 5] Access is denied`; the worker stopped before completing the upload analysis.
+
+**Fix:** `LocalStorage.write_bytes` retries transient `PermissionError` up to six times with bounded exponential delay while preserving the temporary-file atomic replace. A regression test simulates two transient locks; repeated real status polling and the upload E2E then completed.
+
+### [2026-10-21] Saved advice response looked like a tactical failure after coach context changed
+**Stage:** replaying an event with persisted N4 advice
+**Severity:** coach-facing confusion
+
+**What happened:** An unfamiliar walkthrough changed the setup context after an advice response had already been saved. The API correctly returned HTTP 409 rather than replace a response associated with another coach side/objective/available-role set, but the card displayed `Tactical advice failed`, which did not explain the saved decision.
+
+**Fix:** When the event already has a coach response, the UI keeps its original suggestion and response visible. If the current setup differs, it explains that the saved response stays linked to its original context and cannot be overwritten. Browser E2E against the persisted-response/context-mismatch case passed. The stranger has been asked to confirm the revised copy; do not count that final confirmation until received.

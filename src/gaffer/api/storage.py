@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -77,7 +78,16 @@ class LocalStorage:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_name(p.name + ".tmp")
         tmp.write_bytes(data)
-        tmp.replace(p)  # atomic: a status poll never reads half a file
+        # Windows can briefly deny replacement while a status poll has the
+        # destination open. Keep the atomic write, retry that transient lock.
+        for attempt in range(6):
+            try:
+                tmp.replace(p)
+                break
+            except PermissionError:
+                if attempt == 5:
+                    raise
+                time.sleep(0.01 * (2 ** attempt))
 
     def list_ids(self) -> list[str]:
         if not self.root.exists():

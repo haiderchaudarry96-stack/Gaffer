@@ -36,6 +36,11 @@ cd .. && uvicorn gaffer.api.main:app              # http://localhost:8000/ and /
 VITE_API_URL=http://localhost:8000 npm run dev    # http://localhost:5173
 ```
 
+**Windows, Git Bash:** do not build with `VITE_API_URL=/ npm run build` in Git Bash: MSYS path
+conversion rewrites `/` into `C:/Program Files/Git/`, the site then requests
+`file:///C:/Program%20Files/Git/api/...` and nothing loads (seen 21 Oct). Use PowerShell
+(`$env:VITE_API_URL="/"; npm run build`), or `MSYS_NO_PATHCONV=1 VITE_API_URL=/ npm run build`.
+
 The value is baked in at build time (Vite). **Connected** (any non-empty value):
 
 - **Demo match** from the API: the files from `GET /api/demo/files/<name>` (the same files as
@@ -65,9 +70,33 @@ with Bedrock switched off, so no AWS call is made).
 All data is real Phase 3 output from `../samples/w900_1260/` (TeamTrack drone match, 15:00–21:00).
 `scripts/copy-samples.mjs` copies the files the app reads into `public/sample/` (gitignored) before
 dev / build / test. Components never fetch files: everything goes through `src/data/` (one loader per
-resource, runtime validation). When the FastAPI backend exists, only `src/data/source.ts` changes.
-No match video is shipped: the pitch is drawn from the tracked positions; in `/app` a coach can pick a
-local video file, which stays in the browser.
+resource, runtime validation). The static frontend does not ship match video. With the FastAPI
+backend connected, **Live analysis** plays the allowlisted TeamTrack top-view clips for 15:00–21:00
+beside the tactical map; both follow the same match clock. The UI labels this as recorded footage,
+not a connected camera feed. Candidate cards come from the N1 event API;
+the persisted verification result stays hidden until the stored match-clock evidence boundary.
+
+To prepare the local TeamTrack demo event from the existing OpenCV-produced `w900` MatchState and
+the normal rules verifier (no annotations and no Bedrock call), run from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/run_agent_video.py --sets w900 --arm rules --fresh --candidates evt_003 --out outputs/agent_video_teamtrack_replay --persist-teamtrack-events
+```
+
+`evt_003` is the current OpenCV-generated candidate id for the White 4-4-2 → 3-4-3 example in this
+saved `MatchState`; the UI does not special-case it and reads whichever event rows exist in SQLite.
+Remove `--candidates evt_003` to verify and persist every candidate (a longer run). The command
+writes verified event rows to `api.event_store.path` and evidence/trace artifacts to the output
+directory. Keep the dataset files under `data/teamtrack/`; the replay API serves them from a fixed
+allowlist and supports byte-range seeking.
+
+The Live analysis setup asks which side the coach represents, the objective (chase, protect, or
+balanced), and which substitute roles are actually available. At a confirmed event's stored
+verification boundary, the UI requests a deterministic N4 role suggestion from persisted N3 posture
+evidence and this context. Missing context/evidence, own-team events, and unsupported posture show a
+withheld state without an action. Any suggestion is conditional and role-level; it does not name a
+player or make a substitution. Accept/reject and an optional note are stored against that specific
+recommendation, separately from the formation alert decision. No Bedrock call is made for N4.
 
 ## Decisions that differ from docs/UI_DESIGN.md (second pass, user decided)
 
@@ -96,7 +125,7 @@ local video file, which stays in the browser.
    by one card for the selected change (click a timeline diamond to switch).
 6. **`/app` starts at 16:17**, 13 s before the confirmed 16:30 change, the latest moment from which
    White has ≥ 9 and Blue ≥ 8 outfield players in a team in every frame (`pick-windows.mjs`).
-7. **Live replay timing comes from the trace.** A change appears when its time is reached; checks
+7. **Match replay timing comes from the trace.** A change appears when its time is reached; checks
    start once the 60 s look-ahead after detection has been played (the card's "required re-analysis
    span", 18:05 for evt_003) and each step lands after its recorded tool + LLM time (the
    re-analysis was a cache hit in that run; uncached it took 252 s). Live replay plays at 4×.
@@ -155,6 +184,25 @@ local video file, which stays in the browser.
 19. **Drawer summary**: the coach-facing line is just "Confirmed by the agent at 16:30" (or the
     event's decision). The LLM call count, cost, rules verdict and the honest note sit in a
     collapsed "Technical details" toggle (text unchanged).
+
+### Desk modes (22 Oct: /app no longer opens on the finished demo)
+
+| Mode | How you get there | What is shown |
+|---|---|---|
+| **idle** (default) | `/app` | A decorative pitch (11 neutral drifting dots, a scan line; still with reduced motion) labelled "Waiting to start", the start panel ("Live analysis — recorded TeamTrack match (simulation)", "Upload your own video", link "Review a completed analysis") and an empty timeline. No match data, video, chips, alert or chat. |
+| **live** | Live analysis setup → Start | The recorded TeamTrack video plays from 15:00. Dots come from the MatchState frame at the playhead, formation chips and the timeline are cut at the playhead (`data/liveSession.ts revealTimeline`), the 16:30 candidate is "checking" from its onset and verified only from its stored boundary (18:05); seeking back hides it again. A reading strip shows frames read and detections so far. Coach decisions (alert approve / reject, advice accept / reject) are kept for this session only and never read from or written to the shared demo stores; "Start a new session" (setup dialog) starts fresh. No chat (it knows the whole match). |
+| **review** | "Review a completed analysis", `?mode=review` (or the old `?t=` / `?live=1` / `?drawer=1` links) | The finished demo analysis in full, labelled "Completed analysis", with Match replay, report and chat. |
+| **upload** | an upload finishes | The finished upload in full ("Completed analysis"), with "Replay in match time" (the same reveal, from the upload's start). |
+
+"Start screen" in the header returns to idle from any mode.
+
+Stage layout (22 Oct): whenever there is a video (the recorded replay in live and review, or an
+uploaded file) the video panel and the tactical pitch sit side by side at the same width, stacked
+(video on top) below 900 px, with one transport (play / pause, seek, 1x / 2x / 4x) and no native
+video controls or picture-in-picture minimap. A file the browser cannot decode keeps its panel with
+"This browser can't preview the file; the analysis below still comes from it." A finished
+analysis without candidates says why when the clip is under 120 s ("Gaffer needs about a minute
+after a change to confirm it; this clip is N s long.").
 
 ## Backend API (as used by the frontend)
 

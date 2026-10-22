@@ -573,3 +573,73 @@ class Explainer:
     def stats(self) -> dict[str, Any]:
         return {"calls": self.calls, "cost_usd": round(self.cost, 5),
                 "tokens": dict(self.tokens), "flagged": self.flagged}
+
+
+# --------------------------------------------------------------------------- alert suggestion
+# The suggestion is presentation only (the decision and the alert's verdict are the rules').
+# Like the explanation: the model's text is checked against the formation change and replaced
+# by a code template if it is wrong (16:30 demo: "extra central midfielder" for 4-4-2 -> 3-4-3,
+# which adds a forward, FAILURE_LOG 17 Oct).
+
+SUGGESTION_MAX_CHARS = 160
+_ROLE_WORDS = {"back": r"(defenders?|centre-backs?|center-backs?|backs?|back line)",
+               "mid": r"(central midfielders?|midfielders?|midfield)",
+               "front": r"(forwards?|strikers?|attackers?|wingers?|front line)"}
+_MORE = r"(extra|additional|more|another|added|one more)"
+_FEWER = r"(fewer|less|one fewer|one less|missing|removed|dropped)"
+
+
+def _lines(formation: str) -> dict[str, int] | None:
+    """Players at the back / in midfield / up front for a shape like 4-2-3-1."""
+    parts = [int(x) for x in formation.split("-")] if FORMATION_RE.fullmatch(formation) else []
+    if len(parts) < 3:
+        return None
+    return {"back": parts[0], "mid": sum(parts[1:-1]), "front": parts[-1]}
+
+
+def check_suggestion(text: str, old: str, new: str) -> list[str]:
+    """Problems of a coach suggestion against the change old -> new (empty: acceptable)."""
+    t = text.strip()
+    low = t.lower()
+    if not t:
+        return ["empty"]
+    probs: list[str] = []
+    if len(t) > SUGGESTION_MAX_CHARS:
+        probs.append(f"longer than {SUGGESTION_MAX_CHARS} characters")
+    if re.search(r"\b(ball|possession|press(?:ing|ure)?)\b", low):
+        probs.append("mentions data this camera does not measure")
+    if (re.search(r"\d+(?:\.\d+)?\s*(%|percent\b|m\b|metres?\b|meters?\b|s\b|sec|seconds?\b)",
+                  FORMATION_RE.sub("", low)) or re.search(r"\b\d{1,3}:\d{2}\b", low)):
+        probs.append("contains a measurement or clock (the suggestion cites no result)")
+    a, b = _lines(old), _lines(new)
+    for role, words in _ROLE_WORDS.items():
+        for rx, wants in ((rf"\b{_MORE}\s+(\w+\s+)?{words}", 1),
+                          (rf"\b{_FEWER}\s+(\w+\s+)?{words}", -1)):
+            if not re.search(rx, low):
+                continue
+            if a is None or b is None or (b[role] - a[role]) * wants <= 0:
+                probs.append(f"claims {'more' if wants > 0 else 'fewer'} players in the {role} "
+                             f"line, but {old} -> {new} does not change it that way")
+    return probs
+
+
+def suggestion_template(team: str, old: str, new: str) -> str:
+    """Code-written suggestion: the line counts of the change, then a neutral next step."""
+    a, b = _lines(old), _lines(new)
+    if a is None or b is None:
+        return f"Check the evidence image: {team} now plays {new} (was {old})."
+    moved = [f"{n} {w}" for k, w in (("back", "at the back"), ("mid", "in midfield"),
+                                     ("front", "up front"))
+             if (n := b[k]) != a[k]]
+    was = [f"{a[k]}" for k in ("back", "mid", "front") if b[k] != a[k]]
+    if not moved:
+        return f"Check the evidence image: {team} now plays {new} (was {old})."
+    return (f"{team} now has {' and '.join(moved)} (was {' and '.join(was)}): "
+            f"check how your team matches up against the {new}.")
+
+
+def checked_suggestion(text: str, team: str, old: str, new: str) -> tuple[str, str]:
+    """The suggestion the coach reads and its source ("agent" if it passed, else "template")."""
+    if not check_suggestion(text, old, new):
+        return text.strip(), "agent"
+    return suggestion_template(team, old, new), "template"

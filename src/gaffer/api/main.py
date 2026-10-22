@@ -10,14 +10,15 @@ One process serves the API, runs the analysis worker (one analysis at a time) an
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import cv2
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -25,11 +26,19 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from gaffer.agent.alerts import AlertError, AlertStore
+from gaffer.agent.recommendations import CoachContext, create_recommendation
 from gaffer.api import calib
 from gaffer.api.chat import ChatRefused, ChatService, ChatSource
+from gaffer.api.event_store import (
+    EventStore,
+    EventStoreError,
+    make_event_store,
+    seed_demo_events,
+)
 from gaffer.api.jobs import JobManager, new_id, rules_fingerprint
 from gaffer.api.results import Demo, analysis_result, evidence_file, evidence_url
 from gaffer.api.storage import Storage, StorageError, make_storage, read_json, write_json
+from gaffer.api.teamtrack_replay import ReplaySourceError, TeamTrackReplay, clip_response
 from gaffer.api.uploads import (
     UploadRefused,
     VideoInfo,
@@ -50,6 +59,7 @@ from gaffer.api.visitors import (
 )
 from gaffer.config import load_config, repo_path
 from gaffer.perception.pitch import CalibrationError
+from gaffer.schema import EventStatus, Side
 
 log = logging.getLogger("gaffer.api")
 DEFAULT = object()
@@ -86,6 +96,16 @@ class DecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class RecommendationDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["approved", "rejected"]
+    note: str | None = Field(default=None, max_length=500)
+
+
+class RecommendationRequest(CoachContext):
+    """Coach context used to produce an optional deterministic role suggestion."""
+
+
 class ChatTurn(BaseModel):
     role: str
     text: str
@@ -119,17 +139,22 @@ def _bedrock_factory(cfg: dict[str, Any]) -> Any:
 def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = None,
                llm_factory: Any = DEFAULT, usage: Usage | None = None,
                alerts_path: str | Path | None = None, runner: Any = None,
+               event_store: EventStore | None = None,
                start_worker: bool = True, chat_trace: str | Path | None = None) -> FastAPI:
     """The app. Tests inject `llm_factory` (a fake LLM; None = no Bedrock), `storage`,
     `usage`, `alerts_path`, and `start_worker=False` to run analyses by hand."""
     cfg = cfg or load_config()
     api = cfg["api"]
     storage = storage or make_storage(cfg)
+    teamtrack_replay = TeamTrackReplay(api.get("teamtrack_replay", {}))
     usage = usage or Usage(cfg)
     factory = _bedrock_factory(cfg) if llm_factory is DEFAULT else llm_factory
     alerts_path = repo_path(alerts_path or cfg["agent"]["outputs"]["alerts"])
+    if event_store is None:
+        event_store = make_event_store(cfg)
+        seed_demo_events(event_store, cfg)   # fresh server: the real 16:30 demo event, once
     jobs = JobManager(cfg, storage, llm_factory=factory, usage=usage, alerts_path=alerts_path,
-                      runner=runner, start_worker=start_worker)
+                      event_store=event_store, runner=runner, start_worker=start_worker)
     demo = Demo(cfg)
     chat = ChatService(cfg, usage, factory,
                        repo_path(chat_trace or Path(api["storage"].get("root", "outputs/api"))
@@ -170,6 +195,8 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
                        allow_credentials=True)  # the visitor cookie (dev: Vite on :5173)
     app.state.jobs, app.state.storage, app.state.usage = jobs, storage, usage
     app.state.demo, app.state.chat, app.state.cfg = demo, chat, cfg
+    app.state.event_store = event_store
+    app.state.teamtrack_replay = teamtrack_replay
     app.state.demo_decisions = demo_decisions
 
     def demo_alerts(request: Request) -> list[dict[str, Any]]:
@@ -203,6 +230,111 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
 
     def video_info(aid: str) -> VideoInfo:
         return VideoInfo(**read_json(storage, f"{aid}/upload.json")["video"])
+
+    # ------------------------------------------------------------------ persisted events
+    @app.get("/api/replay/teamtrack")
+    def teamtrack_manifest(request: Request) -> dict[str, Any]:
+        """A fixed, validated list of the recorded 900-1260 top-view source clips."""
+        try:
+            clips = teamtrack_replay.clips()
+        except ReplaySourceError as exc:
+            raise HTTPException(503, f"Recorded TeamTrack clips are unavailable: {exc}") from exc
+        base_url = str(request.base_url).rstrip("/")
+        return {
+            "match_id": teamtrack_replay.match_id,
+            "start_s": teamtrack_replay.start_s,
+            "end_s": teamtrack_replay.end_s,
+            "label": "Recorded TeamTrack footage · live-style simulation",
+            "clips": [clip.public(base_url) for clip in clips],
+        }
+
+    @app.get("/api/replay/teamtrack/clips/{clip_id}")
+    def teamtrack_clip(clip_id: str, request: Request) -> Any:
+        """Serve only one of the manifest's allowlisted clips, with HTTP byte-range support."""
+        try:
+            clip = teamtrack_replay.clip(clip_id)
+        except ReplaySourceError as exc:
+            raise HTTPException(503, f"Recorded TeamTrack clips are unavailable: {exc}") from exc
+        if clip is None:
+            raise HTTPException(
+                404, "That TeamTrack replay segment is not in the allowed clip set.")
+        return clip_response(clip.path, request.headers.get("range"))
+
+    @app.get("/api/events")
+    def list_events(match_id: str, analysis_id: str | None = None,
+                    team: Side | None = None, status: EventStatus | None = None,
+                    start_s: float | None = Query(default=None, ge=0),
+                    end_s: float | None = Query(default=None, ge=0),
+                    limit: int = Query(default=100, ge=1, le=500),
+                    offset: int = Query(default=0, ge=0)) -> dict[str, Any]:
+        """List OpenCV video events for one match, ordered by their estimated match time."""
+        try:
+            events, total = event_store.list(match_id=match_id, analysis_id=analysis_id,
+                                             team=team, status=status, start_s=start_s,
+                                             end_s=end_s, limit=limit, offset=offset)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except EventStoreError as exc:
+            log.exception("event query failed")
+            raise HTTPException(503, "The event history is temporarily unavailable.") from exc
+        return {"match_id": match_id, "total": total, "limit": limit, "offset": offset,
+                "events": [event.model_dump(mode="json") for event in events]}
+
+    @app.get("/api/events/{record_id}")
+    def get_event(record_id: str) -> dict[str, Any]:
+        """Fetch one persisted event, including its analysis lifecycle and coach history."""
+        try:
+            event = event_store.get(record_id)
+        except EventStoreError as exc:
+            log.exception("event lookup failed")
+            raise HTTPException(503, "The event history is temporarily unavailable.") from exc
+        if event is None:
+            raise HTTPException(404, f"No persisted event with id {record_id!r}.")
+        return event.model_dump(mode="json")
+
+    @app.post("/api/events/{record_id}/recommendation")
+    def recommend_event(record_id: str, body: RecommendationRequest) -> dict[str, Any]:
+        """Create/retrieve one deterministic advice result for a confirmed persisted event."""
+        try:
+            event = event_store.get(record_id)
+            if event is None:
+                raise HTTPException(404, f"No persisted event with id {record_id!r}.")
+            result = create_recommendation(event, body)
+            saved = event_store.save_recommendation(record_id=record_id,
+                                                    recommendation=result)
+            trace_path = storage.local_dir("n4trace") / "recommendation_trace.jsonl"
+            trace_path.parent.mkdir(parents=True, exist_ok=True)
+            with trace_path.open("a", encoding="utf-8") as trace:
+                trace.write(json.dumps({"event": "recommendation_created",
+                                        "record_id": record_id,
+                                        "event_id": event.event_id,
+                                        "recommendation_id": saved["recommendation_id"],
+                                        "status": saved["status"],
+                                        "context_key": saved["context_key"],
+                                        "withheld_reason": saved["withheld_reason"]},
+                                       separators=(",", ":"), ensure_ascii=False) + "\n")
+        except HTTPException:
+            raise
+        except EventStoreError as exc:
+            if "temporarily" in str(exc):
+                raise HTTPException(
+                    503, "Recommendation storage is temporarily unavailable.") from exc
+            raise HTTPException(409, str(exc)) from exc
+        return {"recommendation": saved}
+
+    @app.post("/api/events/{record_id}/recommendation/{recommendation_id}/decision")
+    def decide_recommendation(record_id: str, recommendation_id: str,
+                              body: RecommendationDecisionRequest) -> dict[str, Any]:
+        """Append one coach response to this suggestion; this does not decide the alert."""
+        try:
+            saved = event_store.append_recommendation_decision(
+                record_id=record_id, recommendation_id=recommendation_id,
+                decision=body.decision, note=body.note)
+        except EventStoreError as exc:
+            message = str(exc)
+            status = 404 if "does not belong" in message else 409
+            raise HTTPException(status, message) from exc
+        return {"recommendation_response": saved.model_dump(mode="json")}
 
     # ------------------------------------------------------------------ health
     @app.get("/api/health")
@@ -321,6 +453,44 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         except UploadRefused as exc:
             _remove(job_dir)
             raise HTTPException(exc.status_code, str(exc)) from exc
+
+    # ------------------------------------------------------------------ sample clip
+    # "Try it with a sample clip": a clip this server holds (api.sample_clip.path), analysed
+    # exactly like an upload of an unknown source (no saved calibration: full pitch check).
+    def _sample_path() -> Path | None:
+        p = repo_path(str(api.get("sample_clip", {}).get("path", "")) or "_missing_")
+        return p if p.is_file() else None
+
+    @app.get("/api/sample")
+    def sample_info() -> dict[str, Any]:
+        p = _sample_path()
+        if p is None:
+            return {"available": False}
+        return {"available": True, "label": api["sample_clip"].get("label", "Sample clip"),
+                "bytes": p.stat().st_size, "video_url": "/api/sample/video",
+                "file_name": "gaffer_sample_clip.mp4"}
+
+    @app.get("/api/sample/video")
+    def sample_video() -> FileResponse:
+        p = _sample_path()
+        if p is None:
+            raise HTTPException(404, "This server has no sample clip.")
+        return FileResponse(p, media_type="video/mp4")
+
+    @app.post("/api/analyses/sample", status_code=201)
+    async def create_sample_analysis(request: Request) -> dict[str, Any]:
+        p = _sample_path()
+        if p is None:
+            raise HTTPException(404, "This server has no sample clip.")
+        if jobs.queued_count() >= int(api["jobs"]["max_queued"]):
+            raise HTTPException(503, "Gaffer is busy with other analyses. Please try again in a "
+                                     "few minutes.")
+
+        def run() -> dict[str, Any]:
+            with p.open("rb") as fh:  # known=False: treated as an unknown source
+                return _create(request, fh, "gaffer_sample_clip.mp4", False, None)
+
+        return await run_in_threadpool(run)
 
     def _apply(aid: str, points: Any, picked_by: str, t_s: float | None = None
                ) -> dict[str, Any]:
@@ -452,6 +622,18 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
             a = s.decide(alert_id, approve=approve, note=note)
         except AlertError as exc:
             raise HTTPException(409, str(exc)) from exc
+        if alert_id.startswith("alr_up_"):
+            analysis_id, separator, event_id = alert_id.removeprefix("alr_up_").partition("_evt_")
+            if separator:
+                try:
+                    event_store.append_coach_decision(
+                        match_id=f"up_{analysis_id}", event_id=a.event_id,
+                        alert_id=alert_id, decision=a.status,
+                        decided_at_utc=a.decided_utc or "", note=a.coach_note)
+                except EventStoreError as exc:
+                    log.exception("coach decision saved to alert log but event DB mirror failed")
+                    raise HTTPException(503, "The alert decision was saved, but its event history "
+                                            "could not be updated. Contact the operator.") from exc
         return _alert_url(a.model_dump(), request)
 
     @app.post("/api/alerts/{alert_id}/approve")

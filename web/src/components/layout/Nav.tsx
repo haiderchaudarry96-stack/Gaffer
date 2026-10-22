@@ -8,8 +8,7 @@ import { GITHUB_URL } from '../../lib/links'
 const LINKS = [
   { href: '#how', label: 'How it works' },
   { href: '#verified', label: 'Verified' },
-  { href: '#results', label: 'Results' },
-  { href: '#tech', label: 'Tech' },
+  { href: '#judges', label: 'Judges & tech' },
   { href: '#faq', label: 'FAQ' },
   { href: GITHUB_URL, label: 'GitHub' },
 ]
