@@ -196,6 +196,14 @@ recommendation, separately from the formation alert decision. No Bedrock call is
 
 "Start screen" in the header returns to idle from any mode.
 
+Stage layout (22 Oct): whenever there is a video (the recorded replay in live and review, or an
+uploaded file) the video panel and the tactical pitch sit side by side at the same width, stacked
+(video on top) below 900 px, with one transport (play / pause, seek, 1x / 2x / 4x) and no native
+video controls or picture-in-picture minimap. A file the browser cannot decode keeps its panel with
+"This browser can't preview the file; the analysis below still comes from it." A finished
+analysis without candidates says why when the clip is under 120 s ("Gaffer needs about a minute
+after a change to confirm it; this clip is N s long.").
+
 ## Backend API (as used by the frontend)
 
 The full reference is `../docs/API.md`. All JSON; base URL from `VITE_API_URL` (above). Errors: a

@@ -46,7 +46,10 @@ async function visitor(name) {
     const msg = `[${name}] request failed: ${r.url()} ${r.failure()?.errorText}`
     // the browser's own preview of the chosen local file (blob:) is aborted when it cannot decode
     // the codec (generated clips are MPEG-4 Part 2); the upload goes ahead without a preview
-    if (r.url().startsWith('blob:')) notes.push(msg)
+    // review loads the recorded TeamTrack clips; a range read the browser cancels (seek, src
+    // change, page change) is ERR_ABORTED, not a failure
+    if (r.url().startsWith('blob:')
+        || (r.url().includes('/api/replay/teamtrack/clips/') && r.failure()?.errorText === 'net::ERR_ABORTED')) notes.push(msg)
     else problems.push(msg)
   })
   page.on('response', (r) => r.status() >= 400 && problems.push(`[${name}] HTTP ${r.status()} ${r.url()}`))
@@ -140,6 +143,33 @@ await alertCard(p).waitFor({ timeout: 30_000 })
 await imageLoaded(p, 'article[aria-labelledby^="alert-"] img')
 check((await p.locator('#match-select').inputValue()) !== 'w900_1260', 'the uploaded analysis replaced the demo')
 await shot(p, '08-upload-result-desk.png')
+// upload result layout (22 Oct): video and tactical pitch side by side, equal width, one transport,
+// no picture-in-picture; stacked under 900 px; a file the browser cannot decode says so
+const layout = async () => p.evaluate(() => {
+  const box = (sel) => document.querySelector(sel)?.getBoundingClientRect()
+  const v = box('[data-panel="video"]')
+  const m = box('[data-panel="pitch"]')
+  return { v: v && { x: v.x, y: v.y, w: v.width, h: v.height }, m: m && { x: m.x, y: m.y, w: m.width, h: m.height },
+    inset: document.querySelectorAll('[data-panel="video"] [aria-label="Synchronized tactical map"]').length,
+    controls: document.querySelectorAll('[data-panel="video"] video[controls]').length,
+    video: document.querySelectorAll('[data-panel="video"] video').length,
+    fallback: (document.querySelector('[data-panel="video"]')?.textContent ?? '').includes('preview the file; the analysis below still comes from it'),
+    overflow: document.documentElement.scrollWidth - window.innerWidth }
+})
+const wide = await layout()
+check(wide.v && wide.m && Math.abs(wide.v.w - wide.m.w) < 2 && Math.abs(wide.v.y - wide.m.y) < 2 && wide.v.x < wide.m.x,
+  `upload result at 1440 px: video and pitch side by side, same width (${Math.round(wide.v?.w)} / ${Math.round(wide.m?.w)} px)`)
+check(wide.inset === 0 && wide.controls === 0, 'no pitch inset over the video, no native video controls')
+check(wide.video === 1 || wide.fallback, wide.video === 1 ? 'the uploaded video plays in its panel'
+  : 'this browser cannot decode the generated clip: the video panel says so')
+await p.setViewportSize({ width: 390, height: 844 })
+await p.waitForTimeout(400)
+const narrow = await layout()
+check(narrow.v && narrow.m && narrow.v.y + narrow.v.h <= narrow.m.y + 2 && Math.abs(narrow.v.w - narrow.m.w) < 2 && narrow.overflow <= 2,
+  'upload result at 390 px: video on top, pitch below, both full width, no horizontal scroll')
+await shot(p, '08b-upload-result-390px.png', { fullPage: true })
+await p.setViewportSize({ width: 1440, height: 900 })
+await p.waitForTimeout(300)
 await shot(p, '09-upload-result-desk-full.png', { fullPage: true })
 await alertCard(p).getByRole('button', { name: 'Approve' }).click()
 await p.getByText(/You approved it at/).waitFor()

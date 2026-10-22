@@ -13,6 +13,7 @@ import FormationTimeline, { type ShownEvent } from '../components/app/FormationT
 import AlertCard, { type LiveState } from '../components/app/AlertCard'
 import CandidateCard from '../components/app/CandidateCard'
 import RecordedEventCard from '../components/app/RecordedEventCard'
+import NoChangesCard from '../components/app/NoChangesCard'
 import IdleDesk from '../components/app/IdleDesk'
 import ReadingStrip from '../components/app/ReadingStrip'
 import TracePanel from '../components/app/TracePanel'
@@ -73,6 +74,8 @@ export default function AppPage() {
   // this Live analysis session's coach decisions; a new session starts empty
   const [session, setSession] = useState<SessionDecisions>(freshSession)
   const autoplay = useRef(false)
+  // review of the demo: its recorded TeamTrack video next to the pitch (none in a static build)
+  const [reviewReplay, setReviewReplay] = useState<TeamTrackReplay | null>(null)
   const [w0, w1] = uploaded?.window ?? DEFAULT_MATCH.window
   const startT = uploaded ? uploaded.start : Number(params.get('t') ?? APP_START_S)
   const clock = useMemo(() => new PlaybackClock({ min: w0, max: w1, start: startT, rate: 1 }), [w0, w1, startT])
@@ -104,9 +107,20 @@ export default function AppPage() {
   // a finished analysis plays once the positions are in; never with reduced motion or ?paused=1
   const finished = view === 'review' || view === 'upload'
   useEffect(() => {
-    if (index && finished && !reduced && params.get('paused') !== '1') clock.play()
+    if (index && finished && !reduced && params.get('paused') !== '1') clock.play() // no-op with a video
     return () => clock.pause()
   }, [index, reduced, clock, params, finished])
+
+  useEffect(() => {
+    if (view !== 'review' || reviewReplay) return
+    let active = true
+    loadTeamTrackReplay()
+      .then((source) => active && setReviewReplay({ ...source, label: 'Recorded TeamTrack footage · completed analysis' }))
+      .catch(() => {}) // static build or no clips on this server: the pitch alone
+    return () => {
+      active = false
+    }
+  }, [view, reviewReplay])
 
   useEffect(() => {
     document.title = 'Analyst desk — Gaffer'
@@ -279,7 +293,12 @@ export default function AppPage() {
         ?? uploaded.timeline.events[0]?.id ?? '') : STORY_EVENT)
       transport.seek(uploaded ? uploaded.window[0] : APP_START_S)
       transport.setRate(uploaded ? 1 : 4)
-      if (!reduced) clock.play()
+      if (!reduced) {
+        if (video) {
+          if (video.play) video.play()
+          else void video.el.play()
+        } else clock.play()
+      }
     }
   }
   const backToStart = () => {
@@ -343,19 +362,22 @@ export default function AppPage() {
     const start = first ? Math.max(win[0], first.t - 15) : win[0]
     setUploaded({ result, index: new PositionIndex(result.match_state), timeline: tlView, window: win, start })
     // a video this browser cannot decode is analysed by the server but not played here
-    setLocalVideo(v.previewable ? videoFrom(v, win[0]) : null)
+    // a video this browser cannot decode keeps its panel, which says so (the pitch keeps its size)
+    setLocalVideo({ ...videoFrom(v, win[0]), playable: v.previewable })
     setSelected(tlView.events.find((e) => e.status === 'confirmed')?.id ?? tlView.events[0]?.id ?? '')
     setLive(false)
     setUploadOpen(false)
   }
 
-  // the recorded footage starts playing at 15:00 once its player is attached (muted: allowed)
+  // a video starts playing once its player is attached (muted: allowed): the recorded footage
+  // at 15:00 in Live analysis, the demo or upload video in a finished view
+  const autoplayFinished = finished && !reduced && params.get('paused') !== '1'
   useEffect(() => {
-    if (!recordedReplay || !video || !autoplay.current) return
+    if (!video || (!autoplay.current && !autoplayFinished)) return
     autoplay.current = false
     if (video.play) video.play()
-    else void video.el.play()
-  }, [recordedReplay, video])
+    else void video.el.play().catch(() => {}) // a browser that refuses autoplay: Play is there
+  }, [video, autoplayFinished])
 
   // live modes: the chips and the timeline know nothing after the playhead
   const reveal = view === 'live' || live
@@ -398,12 +420,7 @@ export default function AppPage() {
           advice: currentPersisted.recommendation ? session.advice[currentPersisted.recommendation.recommendation_id] : undefined }}
         onSessionDecide={(kind, key, decision, note) => setSession((s) => withDecision(s, kind, key, decision, note))} />
   } else if (!recordedReplay && tl && alertList && !selectedEvent) {
-    card = (
-      <article className="rounded-(--radius-card) border border-line bg-surface p-6">
-        <h2 className="font-display text-2xl font-semibold text-text">No shape changes found</h2>
-        <p className="mt-2 text-muted">The analysis has no candidate changes to show.</p>
-      </article>
-    )
+    card = <NoChangesCard clipSeconds={uploaded ? uploaded.window[1] - uploaded.window[0] : undefined} />
   }
   if (!recordedReplay && tl && alertList && selectedEvent) {
     if (liveState && liveState.phase === 'before') {
@@ -570,7 +587,7 @@ export default function AppPage() {
                 verifiedFor={verifiedFor}
                 onVideo={onVideo}
                 video={localVideo}
-                replay={recordedReplay}
+                replay={recordedReplay ?? (view === 'review' ? reviewReplay : null)}
                 onRemoveVideo={() => setLocalVideo(null)}
                 onUpload={() => setUploadOpen(true)}
               />
