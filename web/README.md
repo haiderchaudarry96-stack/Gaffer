@@ -36,6 +36,11 @@ cd .. && uvicorn gaffer.api.main:app              # http://localhost:8000/ and /
 VITE_API_URL=http://localhost:8000 npm run dev    # http://localhost:5173
 ```
 
+**Windows, Git Bash:** do not build with `VITE_API_URL=/ npm run build` in Git Bash: MSYS path
+conversion rewrites `/` into `C:/Program Files/Git/`, the site then requests
+`file:///C:/Program%20Files/Git/api/...` and nothing loads (seen 21 Oct). Use PowerShell
+(`$env:VITE_API_URL="/"; npm run build`), or `MSYS_NO_PATHCONV=1 VITE_API_URL=/ npm run build`.
+
 The value is baked in at build time (Vite). **Connected** (any non-empty value):
 
 - **Demo match** from the API: the files from `GET /api/demo/files/<name>` (the same files as
@@ -179,6 +184,17 @@ recommendation, separately from the formation alert decision. No Bedrock call is
 19. **Drawer summary**: the coach-facing line is just "Confirmed by the agent at 16:30" (or the
     event's decision). The LLM call count, cost, rules verdict and the honest note sit in a
     collapsed "Technical details" toggle (text unchanged).
+
+### Desk modes (22 Oct: /app no longer opens on the finished demo)
+
+| Mode | How you get there | What is shown |
+|---|---|---|
+| **idle** (default) | `/app` | A decorative pitch (11 neutral drifting dots, a scan line; still with reduced motion) labelled "Waiting to start", the start panel ("Live analysis — recorded TeamTrack match (simulation)", "Upload your own video", link "Review a completed analysis") and an empty timeline. No match data, video, chips, alert or chat. |
+| **live** | Live analysis setup → Start | The recorded TeamTrack video plays from 15:00. Dots come from the MatchState frame at the playhead, formation chips and the timeline are cut at the playhead (`data/liveSession.ts revealTimeline`), the 16:30 candidate is "checking" from its onset and verified only from its stored boundary (18:05); seeking back hides it again. A reading strip shows frames read and detections so far. Coach decisions (alert approve / reject, advice accept / reject) are kept for this session only and never read from or written to the shared demo stores; "Start a new session" (setup dialog) starts fresh. No chat (it knows the whole match). |
+| **review** | "Review a completed analysis", `?mode=review` (or the old `?t=` / `?live=1` / `?drawer=1` links) | The finished demo analysis in full, labelled "Completed analysis", with Match replay, report and chat. |
+| **upload** | an upload finishes | The finished upload in full ("Completed analysis"), with "Replay in match time" (the same reveal, from the upload's start). |
+
+"Start screen" in the header returns to idle from any mode.
 
 ## Backend API (as used by the frontend)
 

@@ -332,6 +332,56 @@ def test_fenced_json_answer_is_parsed_and_still_fully_validated():
     assert validate_assessment("```json\n" + json.dumps(bad) + "\n```", evidence, cfg)[0] is None
 
 
+def test_evidence_lists_exactly_the_citations_the_validator_accepts():
+    evidence = build_evidence(event())
+    listed = {c["metric_path"]: c for c in evidence["citable_metrics"]}
+    assert "opencv_metrics.after.defensive_line_m" in listed
+    assert all("pressing_index" not in p and "confidence" not in p for p in listed)  # null / meta
+    output = valid_output()
+    output["citations"] = [listed[p] for p in (
+        "opencv_metrics.before.defensive_line_m", "opencv_metrics.after.defensive_line_m",
+        "opencv_metrics.before.width_m", "opencv_metrics.after.width_m")]
+    assessment, reason = validate_assessment(json.dumps(output), evidence,
+                                             load_config()["api"]["posture"])
+    assert assessment is not None and reason == "attacking_shape_signals_supported"
+
+
+def test_banned_signal_check_reads_the_claim_not_the_limitations():
+    evidence, cfg = build_evidence(event()), load_config()["api"]["posture"]
+    output = valid_output()
+    output["limitations"] = ["No ball, possession or pressing_index data: pressing intensity "
+                             "cannot be confirmed."]
+    assessment, reason = validate_assessment(json.dumps(output), evidence, cfg)
+    assert assessment is not None and reason == "attacking_shape_signals_supported"
+    output["explanation"] = "The opponent pressed higher after the change."
+    assert validate_assessment(json.dumps(output), evidence, cfg) == (
+        None, "model_made_unsupported_ball_possession_pressure_or_intent_claim")
+    assert validate_assessment(json.dumps(output), evidence, cfg, stage="reassessment")[1] \
+        == "reassessment_made_unsupported_ball_possession_pressure_or_intent_claim"
+
+
+def test_model_unclear_on_weak_evidence_is_kept_as_a_validated_bedrock_result(tmp_path):
+    """Like the real evt_003: the before window is too uncertain (confidence below the floor)."""
+    output = {"posture": "unclear", "evidence_strength": 0.6,
+              "explanation": "The line moved up, but the shape before 16:30 was not clear.",
+              "citations": [], "limitations": ["Ball and possession are not measured."]}
+    store = EventStore(tmp_path / "events.sqlite3")
+    record = event()
+    metrics = record.opencv_metrics
+    metrics["before"]["confidence"] = 0.30
+    record.opencv_metrics = metrics
+    store.upsert_analysis([record])
+    analyzer = PostureAnalyzer(config_with_trace(tmp_path), store,
+                               lambda: FakeLLM(json.dumps(output)), None,
+                               trace_path=tmp_path / "posture_trace.jsonl")
+    assert analyzer.analyze(record.record_id) == "completed"
+    saved = store.get(record.record_id).posture_result
+    assert saved["posture"] == "unclear" and saved["source"] == "bedrock"
+    assert saved["evidence_strength"] == 0.35  # capped, never raised
+    assert "weak_quality_low_segment_confidence" in saved["limitations"]
+    assert saved["explanation"] == output["explanation"]
+
+
 def test_nonconfirmed_event_is_skipped_without_bedrock_call(tmp_path):
     cfg = config_with_trace(tmp_path)
     store = EventStore(tmp_path / "events.sqlite3")

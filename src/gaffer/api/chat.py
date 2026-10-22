@@ -35,14 +35,51 @@ ONE analysed match. Use the tools to look things up; answer only from their resu
 like [evt_003]. Copy numbers and mm:ss times exactly as the results give them.
 - Formations and segments are the tactics engine's first-pass reading; get_decision gives the \
 agent's checked verdict on a candidate change (confirmed, rejected or uncertain) and its reason.
+- Never guess a candidate id: find it first with list_candidate_changes (team and time).
 - The ball, possession and pressing are not measured on this camera: if asked, say so.
 - If the data cannot answer the question, say that in one sentence and say what you can answer.
-- At most 3 short sentences, plain words for a coach, no field names."""
+- Write for a coach: never use a candidate id as a word in a sentence. Name a change by its \
+time, team and shapes ("Blue's 18:00 switch from 4-2-3-1 to 4-4-2") and put the id only in \
+the square-bracket citation.
+- For a rejected or uncertain change, say in plain words why Gaffer did not alert (use \
+reason_plain) and, if the result shows the team kept the new shape afterwards (kept_after), \
+say the coach may want to watch it.
+- If asked how to beat or play against a team, first look up that team's shapes and line, \
+width and depth (get_timeline / compare_windows), then give at most 2 options, each \
+conditional and role-level, tied to a shape or number you cited ("If Blue stays in 4-2-3-1 \
+with a 47.7 m width [R2], consider ..."); say the coach decides. Never name players, never \
+claim possession, pressing or the score.
+- At most 4 short sentences, plain words for a coach, no field names."""
 
 SAFE_ANSWER = ("I can't answer that reliably from this analysis's data. I can tell you each "
                "team's shape at a given time, which shape changes Gaffer checked and why it "
                "confirmed or rejected them, and the defensive line, width and depth over a "
                "stretch of the match.")
+
+# Off-topic questions get a code reply (no Bedrock call, no daily question used). A question is
+# on-topic if it names this match's teams, a formation, a clock, a candidate id, or a football /
+# analysis word; anything else ("write me a poem", "capital of France") is not about the match.
+_TOPIC_RE = re.compile(
+    r"\b(formation|shape|line|defen[cs]\w*|attack\w*|midfield\w*|forward|striker|winger|"
+    r"back\w*|width|wide|narrow|deep|depth|compact\w*|press\w*|ball|possession|goal\w*|"
+    r"team|player|keeper|change[sd]?|switch\w*|alert|confirm\w*|reject\w*|uncertain|"
+    r"check\w*|verif\w*|agent|minute|half|match|game|play\w*|opponent|tactic\w*|coach\w*|"
+    r"sub\w*|evidence|camera|video|clip|pitch|report|analys\w*|gaffer|opencv|shift\w*|"
+    r"score|offside|corner|set piece|counter|transition|centroid|candidate|decision|"
+    r"held|revert\w*|look|frame|fps|why|reliab\w*|accura\w*|trust\w*|sure|wrong|right|"
+    r"correct\w*|mistake\w*|explain\w*|mean\w*|happen\w*|start\w*|end\w*|this)\b",
+    re.IGNORECASE)
+_SHAPE_OR_TIME_RE = re.compile(r"\b\d(?:-\d){1,4}\b|\b\d{1,3}:[0-5]\d\b|\bevt_\d{3}\b")
+OFF_TOPIC_TEXT = "I only answer questions about this match. Try: "
+
+
+def off_topic(question: str, team_names: list[str]) -> bool:
+    """True when the question is not about this match (checked in code, before any LLM)."""
+    low = question.lower()
+    if _TOPIC_RE.search(low) or _SHAPE_OR_TIME_RE.search(low):
+        return False
+    return not any(re.search(rf"\b{re.escape(n.lower())}\b", low) for n in team_names if n)
+
 
 REF_RE = re.compile(r"\[(R\d+)\]")
 EVT_RE = re.compile(r"\[?(evt_\d{3})\]?")
@@ -144,7 +181,11 @@ class ChatTools:
         try:
             c = self.src.ctx.candidate(eid)
         except (KeyError, StopIteration, ValueError):
-            return {"error": "unknown_event", "message": f"no candidate {eid!r}"}
+            # let the model recover instead of guessing again: the ids that do exist (small)
+            return {"error": "unknown_event", "message": f"no candidate {eid!r}",
+                    "candidates": [{"event_id": k.id, "team": self.tb.team_name(k.team),
+                                    "clock": clock(k.t), "change": f"{k.from_} -> {k.to}"}
+                                   for k in self.src.ctx.candidates[:20]]}
         out: dict[str, Any] = {"event_id": c.id, "team": self.tb.team_name(c.team),
                                "change": f"{c.from_} -> {c.to}", "t": round(c.t, 1),
                                "clock": clock(c.t)}
@@ -152,8 +193,34 @@ class ChatTools:
         if d is None:
             out["decision"] = "not checked by the agent"
         else:
-            out.update(decision=d["decision"], reason=d.get("reason"),
-                       explanation=(d.get("explanation") or "")[:300] or None)
+            reason = d.get("reason") or ""
+            out.update(decision=d["decision"], reason=reason or None)
+            # the changes the reason points at, by time and shapes (a coach never sees ids)
+            refs = []
+            for rid in dict.fromkeys(re.findall(r"evt_\d{3}", reason)):
+                try:
+                    k = self.src.ctx.candidate(rid)
+                except (KeyError, StopIteration, ValueError):
+                    continue
+                refs.append({"event_id": k.id, "team": self.tb.team_name(k.team),
+                             "clock": clock(k.t), "change": f"{k.from_} -> {k.to}"})
+            if refs:
+                out["refers_to"] = refs
+            plain = reason
+            for r in refs:
+                plain = plain.replace(r["event_id"], f"the {r['clock']} change ({r['change']})")
+            if "returns to the shape held before" in reason:
+                plain += (": Gaffer treats a quick return to a shape the team just left as "
+                          "undoing a short change, not a new plan, so it does not alert")
+            out["reason_plain"] = plain or None
+        # what the team did next: the next change of the same team, else the end of the footage
+        later = [k for k in self.src.ctx.candidates if k.team == c.team and k.t > c.t]
+        end = self.src.ctx.footage[1]
+        nxt = min(later, key=lambda k: k.t) if later else None
+        out["kept_after"] = {"shape": c.to, "from_clock": clock(c.t),
+                             "until_clock": clock(nxt.t if nxt else end),
+                             "until": "next change" if nxt else "end of the footage",
+                             "seconds": round((nxt.t if nxt else end) - c.t)}
         a = self.alerts.get(c.id)
         if a is not None:
             out["alert"] = {"status": a.get("status"), "title": a.get("title")}
@@ -206,9 +273,23 @@ def _numbers(obj: Any, out: set[float], clocks: set[int], forms: set[int]) -> No
             out.add(round(float(m.group(0)), 2))
 
 
-def check_answer(text: str, results: dict[str, dict[str, Any]], event_ids: set[str]
-                 ) -> list[str]:
-    """Problems with an answer (empty = grounded); see module docstring."""
+BARE_EVT_RE = re.compile(r"(?<!\[)\b(evt_\d{3})\b(?!\])")
+
+
+def readable_ids(text: str, candidates: list[Any]) -> str:
+    """A candidate id used as a word ("undoes what they did in evt_005") becomes its time
+    ("the 18:00 change"); ids in square brackets stay as citations."""
+    when = {k.id: clock(k.t) for k in candidates}
+    return BARE_EVT_RE.sub(lambda m: f"the {when[m.group(1)]} change"
+                           if m.group(1) in when else m.group(1), text)
+
+
+def check_answer(text: str, results: dict[str, dict[str, Any]], event_ids: set[str],
+                 known: list[Any] | None = None) -> list[str]:
+    """Problems with an answer (empty = grounded); see module docstring. `known` is data the
+    app itself gave the model with the question (the candidate index: ids, teams, clocks,
+    shapes): its clocks and shapes are grounded too, without a [Rn] citation (live 22 Oct:
+    an answer naming the earlier change's time from the index was refused)."""
     probs: list[str] = []
     if not text.strip():
         return ["empty answer"]
@@ -223,6 +304,8 @@ def check_answer(text: str, results: dict[str, dict[str, Any]], event_ids: set[s
     clocks: set[int] = set()
     forms: set[int] = set()
     _numbers(list(results.values()), allowed, clocks, forms)
+    if known:
+        _numbers(list(known), set(), clocks, forms)  # clocks / shapes only, not free numbers
     body = REF_RE.sub(" ", EVT_RE.sub(" ", text))
     for m in CLOCK_RE.finditer(body):
         s = int(m.group(1)) * 60 + int(m.group(2))
@@ -303,6 +386,14 @@ class ChatService:
         if len(q) > int(self.c["max_question_chars"]):
             raise ChatRefused(f"Please keep questions under {int(self.c['max_question_chars'])} "
                               "characters.", 422)
+        names = [src.ctx.match.teams.home.name, src.ctx.match.teams.away.name]
+        if off_topic(q, names):
+            tries = [f"What shape did {names[0]} play at the start?",
+                     "Which shape changes were confirmed, and why?",
+                     f"Why was {names[1]}'s change rejected?"]
+            return {"answer": OFF_TOPIC_TEXT + " / ".join(f'"{t}"' for t in tries),
+                    "citations": [], "trace_id": None, "sources": {}, "grounded": True,
+                    "off_topic": True}
         calls_left, cost_left = self.usage.bedrock_left()
         if calls_left <= 0 or cost_left <= 0:
             raise ChatRefused("Gaffer's analyst has answered all the questions it can today "
@@ -331,7 +422,12 @@ class ChatService:
                 ) -> dict[str, Any]:
         tools = ChatTools(src)
         specs = chat_tool_specs()
-        msgs = _history(history, int(self.c["history_turns"])) + [user_message(q)]
+        # A one-line-per-change index (ids, team, clock) so the model looks up the right id
+        # instead of guessing one (live 21 Oct: "18:50" became evt_018 twice).
+        index = "; ".join(f"{k.id} {tools.tb.team_name(k.team)} {clock(k.t)} {k.from_}->{k.to}"
+                          for k in src.ctx.candidates[:20])
+        prompt = f"{q}\n\n(Candidate changes in this match: {index})" if index else q
+        msgs = _history(history, int(self.c["history_turns"])) + [user_message(prompt)]
         results: dict[str, dict[str, Any]] = {}
         sources: dict[str, dict[str, Any]] = {}
         used = {"in": 0, "out": 0, "calls": 0, "cost": 0.0}
@@ -388,7 +484,7 @@ class ChatService:
                 r = call()
                 continue
             text = (r.text or "").strip()
-            probs = check_answer(text, results, event_ids)
+            probs = check_answer(text, results, event_ids, [index] if index else None)
             if not probs:
                 grounded = True
                 break
@@ -405,6 +501,7 @@ class ChatService:
         cites: list[str] = []
         if grounded:
             cites = list(dict.fromkeys(REF_RE.findall(text) + EVT_RE.findall(text)))
+            text = readable_ids(text, src.ctx.candidates)
         elif r is None and not flags:
             text = ("That question needs more look-ups than one answer is allowed. Try a "
                     "narrower question, for example about one team or one stretch of the "

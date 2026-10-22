@@ -7,8 +7,6 @@ import { chromium } from 'playwright-core'
 const base = process.env.BASE_URL ?? 'http://127.0.0.1:8011'
 const executablePath = process.env.CHROMIUM_PATH
 const expectReadyAdvice = process.env.N5_READY_ADVICE === '1'
-const expectSavedResponse = process.env.N5_EXPECT_SAVED_RESPONSE === '1'
-const expectContextMismatch = process.env.N5_CONTEXT_MISMATCH === '1'
 const targetEventId = process.env.N5_EVENT_ID
 const responseDecision = process.env.N5_RESPONSE_DECISION ?? 'approved'
 const responseNote = `N5 browser-to-database restart ${responseDecision === 'approved' ? 'acceptance' : 'rejection'}`
@@ -36,7 +34,16 @@ try {
   await page.goto(`${base}/app?paused=1`)
   assert.equal(await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches), true,
     'the browser run requests reduced motion')
-  const openLiveSetup = page.getByRole('button', { name: 'Live analysis' })
+  // /app opens idle (22 Oct UX fix): a decorative pitch, the start panel, nothing real yet
+  await page.getByText('Waiting to start').waitFor()
+  assert.equal(await page.locator('video, canvas').count(), 0, 'idle: no video and no pitch canvas')
+  assert.equal(await page.getByRole('heading', { name: /Formation change|Possible formation change/ }).count(), 0,
+    'idle: no alert card')
+  assert.equal(await page.locator('ol[aria-label$=" shapes"] li').count(), 0, 'idle: empty shape timeline')
+  await page.getByRole('button', { name: 'Live analysis — recorded TeamTrack match (simulation)' }).waitFor()
+  await page.getByRole('button', { name: 'Upload your own video' }).waitFor()
+  await page.getByRole('button', { name: 'Review a completed analysis' }).waitFor()
+  const openLiveSetup = page.getByRole('button', { name: 'Live analysis', exact: true })
   await openLiveSetup.focus()
   await page.keyboard.press('Enter')
   const setup = page.getByRole('dialog', { name: 'Set up Live analysis' })
@@ -61,9 +68,9 @@ try {
   assert.match(setupText, /entire pitch/i, 'setup says the entire pitch must be visible')
   assert.match(setupText, /different jerseys/i, 'setup requires visually different team jerseys')
   assert.match(setupText, /No camera is connected/i, 'setup does not claim a live camera is connected')
-  await page.locator('#coach-side').selectOption(expectContextMismatch ? 'home' : 'away')
-  await page.locator('#match-objective').selectOption(expectContextMismatch ? 'balanced' : 'chase')
-  await setup.getByRole('checkbox', { name: expectContextMismatch ? 'defender' : 'attacker' }).check()
+  await page.locator('#coach-side').selectOption('away')
+  await page.locator('#match-objective').selectOption('chase')
+  await setup.getByRole('checkbox', { name: 'attacker' }).check()
   await page.getByRole('button', { name: 'Start recorded match analysis' }).click()
 
   const video = page.locator('video[aria-label^="Recorded TeamTrack"]')
@@ -73,6 +80,9 @@ try {
     return el && el.readyState >= 1
   }, null, { timeout: 60_000 })
   await page.getByText('Recorded TeamTrack footage · replay, not a live camera').waitFor()
+  await page.getByText('Gaffer is reading the footage').waitFor()
+  await page.getByText(/run on this footage beforehand \(about 7 min on a laptop CPU\), and are revealed in match time\. Ground-truth annotations are not used\./).waitFor()
+  assert(Math.abs(Number(await page.getByLabel('Match time').inputValue()) - 900) < 2, 'the session starts at 15:00')
 
   const videoBox = await video.boundingBox()
   const mapBox = await page.getByLabel('Synchronized tactical map').boundingBox()
@@ -171,6 +181,14 @@ try {
   const targetLabel = new RegExp(`${target.team_name} ${target.from_formation} to ${target.to_formation}`)
   assert.equal(await page.getByRole('button', { name: targetLabel }).count(), 0,
     'the target event is not exposed before its candidate time')
+  // fix session 22 Oct: the shape timeline shows nothing after the playhead in replay modes
+  const futureShapes = await page.evaluate((now) => Array.from(
+    document.querySelectorAll('ol[aria-label$=" shapes"] li')).map((li) => li.getAttribute('title') ?? '')
+    .map((title) => title.match(/^(\d+):(\d+)–(\d+):(\d+)/))
+    .filter((m) => m && (Number(m[1]) * 60 + Number(m[2]) > now + 0.5 || Number(m[3]) * 60 + Number(m[4]) > now + 1)),
+  target.candidate_time_s - 0.5)
+  assert.equal(futureShapes.length, 0, 'no shape segment extends past the playhead')
+  await page.getByRole('list', { name: 'Diamond legend' }).getByText('found, not checked (time budget)').waitFor()
 
   await seek(target.candidate_time_s)
   await page.getByRole('button', { name: targetLabel }).waitFor()
@@ -183,8 +201,7 @@ try {
     : target.status === 'rejected' ? 'Candidate not confirmed' : 'Formation change remains uncertain'
   await page.getByRole('heading', { name: finalHeading }).waitFor()
   const posture = page.getByRole('region', { name: 'Tactical posture assessment' })
-  await posture.getByText(expectReadyAdvice ? 'defensive' : /unclear/i,
-    expectReadyAdvice ? { exact: true } : undefined).waitFor()
+  await posture.getByText(expectReadyAdvice ? 'defensive' : 'unclear', { exact: true }).waitFor()
   if (expectReadyAdvice) {
     assert.equal(await posture.getByText('opencv_metrics.before.defensive_line_m').count(), 0,
       'OpenCV citations are collapsed by default')
@@ -192,6 +209,14 @@ try {
     await posture.getByText('opencv_metrics.before.defensive_line_m').waitFor()
   }
   const advice = page.getByRole('region', { name: 'Optional role advice' })
+  if (!expectReadyAdvice) {
+    await posture.getByText(/Bedrock (was not available|answered, but the code checks|’s answer did not pass)/i).waitFor()
+  }
+  // advice: withheld, or a conditional role option (posture-based, or from the verified shape alone)
+  await page.waitForFunction(() => /No role suggestion for this event|Consider replacing a/
+    .test(document.querySelector('[aria-label="Optional role advice"]')?.textContent ?? ''), null, { timeout: 30_000 })
+  const adviceReady = (await advice.getByText(/Consider replacing a/).count()) > 0
+  if (expectReadyAdvice) assert(adviceReady, 'the ready-advice fixture shows an option')
   if (expectReadyAdvice) {
     await advice.getByText(/^If the opponent's defensive posture continues/i).waitFor()
     await advice.getByText(/Consider replacing a defender with an available attacker/i).waitFor()
@@ -199,33 +224,25 @@ try {
       'cited posture evidence is collapsed by default')
     await advice.getByRole('button', { name: 'Cited posture evidence' }).click()
     await advice.getByText('opencv_metrics.before.defensive_line_m').waitFor()
-    const adviceText = await advice.innerText()
-    assert.doesNotMatch(adviceText, /automatically|player\s+\d+/i,
-      'the suggestion stays conditional and role-level, with no named-player or automatic-substitution claim')
-    if (expectSavedResponse) {
-      await advice.getByText(`Coach ${responseDecision} this suggestion.`).waitFor()
-      await advice.getByText(responseNote).waitFor()
-    } else if (expectContextMismatch) {
-      await advice.getByText(/This advice already has a saved coach response/i).waitFor()
-      assert.doesNotMatch(await advice.innerText(), /Tactical advice failed|HTTP 409/i,
-        'a changed setup explains the saved context instead of showing an API failure')
-      await advice.getByText(`Coach ${responseDecision} this suggestion.`).waitFor()
-      await advice.getByText(responseNote).waitFor()
-    } else {
-      await advice.getByRole('textbox', { name: 'Optional note for this suggestion' })
-        .fill(responseNote)
-      await advice.getByRole('button', {
-        name: responseDecision === 'approved' ? 'Accept suggestion' : 'Reject suggestion',
-      }).click()
-      await advice.getByText(`Coach ${responseDecision} this suggestion.`).waitFor()
-      await advice.getByText(responseNote).waitFor()
-    }
-  } else {
-    await posture.getByText(/Bedrock output was unavailable|deterministic fallback/i).waitFor()
-    await advice.getByText(/No role suggestion for this event/i).waitFor()
-    assert.equal(await advice.getByRole('button', { name: /Accept suggestion|Reject suggestion/ }).count(), 0,
-      'unavailable Bedrock posture cannot produce an actionable role suggestion')
   }
+  if (adviceReady) {
+    assert.doesNotMatch(await advice.innerText(), /automatically|player\s+\d+/i,
+      'the suggestion stays conditional and role-level, with no named-player or automatic-substitution claim')
+    await advice.getByRole('textbox', { name: 'Optional note for this suggestion' }).fill(responseNote)
+    await advice.getByRole('button', {
+      name: responseDecision === 'approved' ? 'Accept suggestion' : 'Reject suggestion',
+    }).click()
+    await advice.getByText(`Coach ${responseDecision} this suggestion.`).waitFor()
+    await advice.getByText(responseNote).waitFor()
+    await advice.getByText('Saved for this session only: a new session starts fresh.').waitFor()
+  } else {
+    assert.equal(await advice.getByRole('button', { name: /Accept suggestion|Reject suggestion/ }).count(), 0,
+      'a withheld result has no actionable role suggestion')
+  }
+  // the coach's decision on the verified alert, kept for this session only
+  const decision = page.getByRole('region', { name: 'Coach decision on this alert' })
+  await decision.getByRole('button', { name: 'Approve alert' }).click()
+  await decision.getByText('You approved this alert.').waitFor()
   const persisted = await page.evaluate(async (recordId) => {
     const response = await fetch(`/api/events/${encodeURIComponent(recordId)}`)
     return response.json()
@@ -236,18 +253,43 @@ try {
     assert.equal(persisted.recommendation_status, 'ready', 'supported advice remains a separate record')
     assert.deepEqual(persisted.recommendation.citations,
       persisted.posture_result.citations, 'advice cites the persisted N3 evidence exactly')
-    assert.deepEqual(persisted.recommendation.action,
-      { consider_replacing: 'defender', with_available_role: 'attacker' },
-      'advice remains conditional and role-level')
-    assert.equal(persisted.recommendation.coach_response.decision, responseDecision)
-    assert.equal(persisted.recommendation.coach_response.note, responseNote)
   } else {
-    assert.equal(persisted.posture_status, 'failed', 'failed Bedrock state remains explicit in storage')
+    assert(['failed', 'unavailable', 'completed'].includes(persisted.posture_status),
+      `the stored posture state is explicit (${persisted.posture_status})`)
     assert.equal(persisted.posture_result.posture, 'unclear', 'fallback does not invent a posture')
+  }
+  if (adviceReady) {
+    assert.equal(persisted.recommendation_status, 'ready', 'the option is a separate stored record')
+    assert.deepEqual(persisted.recommendation.action,
+      { consider_replacing: 'defender', with_available_role: 'attacker' }, 'advice stays conditional and role-level')
+  } else {
     assert.equal(persisted.recommendation_status, 'withheld', 'N4 stores a withheld, non-actionable result')
     assert.equal(persisted.recommendation.action, null, 'withheld N4 result contains no action')
   }
+  assert(!persisted.recommendation.coach_response, 'session decisions are not written to the shared demo store')
   assert.equal(persisted.recommendation.context.objective, 'chase', 'coach context persists')
+
+  // seeking back to 16:00 hides everything after the playhead again
+  await seek(960)
+  await page.waitForTimeout(400)
+  assert.equal(await page.getByRole('button', { name: targetLabel }).count(), 0, 'no diamond after seeking back')
+  assert.equal(await page.getByRole('heading', { name: finalHeading }).count(), 0, 'no verified card after seeking back')
+  assert.equal(await page.getByRole('region', { name: 'Coach decision on this alert' }).count(), 0,
+    'no alert decision after seeking back')
+
+  // a new session starts fresh: nothing decided, back at 15:00
+  await page.getByRole('button', { name: 'Live analysis', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Set up Live analysis' }).getByRole('button', { name: 'Start a new session' }).click()
+  await page.getByText('Gaffer is reading the footage').waitFor()
+  await page.waitForFunction(() => Math.abs(Number(document.querySelector('input[type="range"]')?.value) - 900) < 2)
+  await seek(target.verification_match_time_s)
+  await page.getByRole('heading', { name: finalHeading }).waitFor()
+  await page.getByRole('region', { name: 'Coach decision on this alert' }).getByRole('button', { name: 'Approve alert' }).waitFor()
+  assert.equal(await page.getByText('You approved this alert.').count(), 0, 'a new session shows no earlier alert decision')
+  if (adviceReady) {
+    await advice.getByRole('button', { name: 'Accept suggestion' }).waitFor()
+    assert.equal(await advice.getByText(responseNote).count(), 0, 'a new session shows no earlier advice response')
+  }
 
   await page.getByRole('group', { name: 'Playback speed' }).getByRole('button').nth(0).click()
   await seek(929.5)

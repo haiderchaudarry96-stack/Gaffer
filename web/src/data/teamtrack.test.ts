@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PersistedEvent, TeamTrackClip } from './teamtrack'
-import { postureVisibleAt, replayEventStateAt } from './teamtrack'
+import { plainPostureReason, postureSourceNote, postureVisibleAt, replayEventStateAt } from './teamtrack'
 import { teamTrackClipIndex, teamTrackClipLocalTime } from '../components/app/teamTrackPlayer'
 
 const event: PersistedEvent = {
@@ -68,5 +68,21 @@ describe('recorded TeamTrack replay timing', () => {
     expect(postureVisibleAt(event, 1019.99)).toBe(false)
     expect(postureVisibleAt(event, 1020)).toBe(true)
     expect(postureVisibleAt({ ...event, status: 'uncertain' }, 2000)).toBe(false)
+  })
+})
+
+describe('posture reasons in plain words', () => {
+  it('maps every stored code the real demo produced and keeps free text', () => {
+    expect(plainPostureReason('weak_quality_low_segment_confidence')).toMatch(/not read clearly enough/)
+    expect(plainPostureReason('model_made_unsupported_ball_possession_pressure_or_intent_claim')).toMatch(/does not measure/)
+    expect(plainPostureReason('bedrock_client_unavailable')).toMatch(/not switched on/)
+    expect(plainPostureReason('missing_or_null_metric:defensive_line_m')).toMatch(/not in the stored OpenCV/)
+    expect(plainPostureReason('Ball and possession are not measured.')).toBe('Ball and possession are not measured.')
+  })
+  it('says where the posture came from', () => {
+    const base = { ...event, posture_status: 'completed' as const }
+    expect(postureSourceNote({ ...base, posture_result: { ...base.posture_result!, source: 'bedrock' } })).toMatch(/Assessed by Amazon Bedrock/)
+    expect(postureSourceNote({ ...base, posture_result: { ...base.posture_result!, source: 'deterministic_fallback' } })).toMatch(/code checks did not support/)
+    expect(postureSourceNote({ ...event, posture_status: 'unavailable' })).toMatch(/not available/)
   })
 })

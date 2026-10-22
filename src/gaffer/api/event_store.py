@@ -951,6 +951,24 @@ def make_event_store(cfg: dict[str, Any]) -> EventStore:
     return EventStore(settings.get("path", "outputs/api/events.sqlite3"))
 
 
+def seed_demo_events(store: EventStore, cfg: dict[str, Any]) -> int:
+    """Import the tracked demo-event seed (`api.teamtrack_replay.seed_file`) once, only when the
+    database has no row for the replay match. Every seeded record must belong to the configured
+    real demo analysis (`seed_analysis_id`), so a test fixture can never be shipped this way."""
+    replay = cfg["api"].get("teamtrack_replay", {})
+    seed, match_id = replay.get("seed_file"), replay.get("match_id")
+    if not seed or not match_id or not repo_path(seed).is_file():
+        return 0
+    if store.list(match_id=match_id, limit=1)[1]:
+        return 0
+    data = json.loads(repo_path(seed).read_text(encoding="utf-8"))
+    records = [EventRecordV1_1.model_validate(r) for r in data.get("records", [])]
+    if any(r.match_id != match_id or r.analysis_id != replay.get("seed_analysis_id")
+           for r in records):
+        raise EventStoreError(f"{seed}: a record is outside the configured demo analysis")
+    return store.upsert_analysis(records)
+
+
 def persist_video_analysis(store: EventStore, analysis_id: str, ctx: Any,
                            outcomes: list[Any], *,
                            completion_times_utc: dict[str, str] | None = None) -> int:

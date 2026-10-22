@@ -199,6 +199,26 @@ export async function uploadVideo(file: File, onProgress?: (fraction: number) =>
   return validateStatus(await apiUpload('/api/analyses', form, 'Upload', onProgress, opts))
 }
 
+export interface SampleClip {
+  label: string
+  bytes: number
+  videoUrl: string
+  fileName: string
+}
+
+/** The server's sample clip ("Try it with a sample clip"), or null when it has none. */
+export async function getSampleClip(opts?: ApiOptions): Promise<SampleClip | null> {
+  const r = obj(await apiGet('/api/sample', 'Sample clip', opts), 'sample')
+  if (r.available !== true) return null
+  return { label: str(r.label, 'sample.label'), bytes: num(r.bytes, 'sample.bytes'),
+    videoUrl: apiUrl(str(r.video_url, 'sample.video_url'), opts), fileName: str(r.file_name, 'sample.file_name') }
+}
+
+/** Analyse the server's sample clip as an unknown upload (the full pitch check runs). */
+export async function startSampleAnalysis(opts?: ApiOptions): Promise<AnalysisStatus> {
+  return validateStatus(await apiPost('/api/analyses/sample', {}, 'Sample analysis', opts))
+}
+
 export async function startAnalysis(id: string, request: PitchPointsRequest, opts?: ApiOptions): Promise<AnalysisStatus> {
   if (request.points.length !== 4) throw new DataError('startAnalysis: exactly 4 pitch points are needed')
   return validateStatus(await apiPost(`/api/analyses/${encodeURIComponent(id)}/start`, request, 'Start analysis', opts))

@@ -6,9 +6,9 @@ This file is a durable summary for future Codex and Claude Code sessions. It is 
 
 - [`CODEX_PLANNING.md`](CODEX_PLANNING.md): old flow, target flow, status, requirements, scope boundaries.
 - [`PLANNING.md`](PLANNING.md): N1–N6 roadmap, including the original unfinished EC2/AWS deployment and submission work; acceptance criteria, paste-ready prompts, update rules.
-- [`RECORD.md`](RECORD.md): append-only phase/session record; N1-N5 local implementation and acceptance are complete; N6 has not started. The stranger identified one saved-response UX issue that was fixed and browser-tested; see RECORD.md for the limit on its human retest.
-- [`CLAUDE.md`](CLAUDE.md): project constraints and Claude Code working rules; read at every session.
-- [`docs/PLAN.md`](docs/PLAN.md): original six phases and historical acceptance/status. It remains separate from N1–N6.
+- [`RECORD.md`](../../RECORD.md): append-only phase/session record; N1-N5 local implementation and acceptance are complete; N6 has not started. The stranger identified one saved-response UX issue that was fixed and browser-tested; see RECORD.md for the limit on its human retest.
+- [`CLAUDE.md`](../../CLAUDE.md): project constraints and Claude Code working rules; read at every session.
+- [`docs/PLAN.md`](../PLAN.md): original six phases and historical acceptance/status. It remains separate from N1–N6.
 
 ## Product and current state
 

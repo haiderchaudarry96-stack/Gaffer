@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { ArrowLeft, ArrowRight, Check, CloudOff, FileVideo, Loader2, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CloudOff, FileVideo, Loader2, PlayCircle, Upload } from 'lucide-react'
 import Dialog from '../app/Dialog'
 import { Button } from '../ui/Button'
 import PitchPoints from './PitchPoints'
+import FootageGuide from './FootageGuide'
 import { formatBytes, formatDuration, isAcceptedVideo, readVideo, unreadableVideo, type LocalVideoInfo } from './readVideo'
 import { apiConfigured } from '../../data/api'
 import {
@@ -10,16 +11,19 @@ import {
   confirmPitch,
   estimateProcessingSeconds,
   getAnalysisStatus,
+  getSampleClip,
   loadAnalysisResult,
   needsPitchStep,
   SECONDS_PER_VIDEO_SECOND,
   setPitchPoints,
+  startSampleAnalysis,
   STAGE_LABELS,
   STAGES,
   uploadVideo,
   type AnalysisResult,
   type AnalysisStatus,
   type PixelPoint,
+  type SampleClip,
 } from '../../data/analysis'
 
 type Step =
@@ -68,6 +72,17 @@ export default function UploadPanel({
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const alive = useRef(true)
+  const [sample, setSample] = useState<SampleClip | null>(null)
+
+  // "Try it with a sample clip": only when the server holds one (hidden otherwise)
+  useEffect(() => {
+    if (!open || !connected) return
+    let live = true
+    getSampleClip().then((s) => live && setSample(s), () => live && setSample(null))
+    return () => {
+      live = false
+    }
+  }, [open, connected])
 
   useEffect(() => {
     alive.current = true
@@ -135,6 +150,23 @@ export default function UploadPanel({
       setStep({ kind: 'mark', status, adjusting: false })
     } else {
       await follow(status)
+    }
+  }
+
+  /** connected: the server analyses its own sample clip as an unknown upload (pitch check runs) */
+  const trySample = async () => {
+    if (!sample) return
+    const info: LocalVideoInfo = { file: new File([], sample.fileName, { type: 'video/mp4' }), url: sample.videoUrl,
+      duration: 0, width: 0, height: 0, frameUrl: '', frameT: 0, previewable: true }
+    setVideo(info)
+    setStep({ kind: 'progress', status: null, upload: 1 })
+    try {
+      const created = await startSampleAnalysis()
+      const v = created.video
+      setVideo({ ...info, duration: v?.duration_s ?? 0, width: v?.width ?? 0, height: v?.height ?? 0 })
+      await route(created)
+    } catch (e) {
+      fail(e, { kind: 'choose' })
     }
   }
 
@@ -224,9 +256,18 @@ export default function UploadPanel({
                 onChange={(e) => void pick(e.target.files?.[0])}
               />
             </label>
-            <p className="text-sm text-muted">
-              Works best with a drone or fixed camera that shows the whole pitch. Panning/zooming cameras are not supported.
-            </p>
+            {connected && sample && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
+                <div>
+                  <p className="font-medium text-text">No video at hand?</p>
+                  <p className="text-sm text-muted">{sample.label}, held by this server ({formatBytes(sample.bytes)}). It goes through the same pitch check as an upload.</p>
+                </div>
+                <Button variant="ghost" onClick={() => void trySample()}>
+                  <PlayCircle className="size-4" aria-hidden="true" /> Try it with a sample clip
+                </Button>
+              </div>
+            )}
+            <FootageGuide />
             {reading && (
               <p className="flex items-center gap-2 text-sm text-muted" role="status">
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Reading the video in your browser…
@@ -348,7 +389,7 @@ export default function UploadPanel({
                 setStraightDown(s)
               }}
             />
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+            <div className="sticky bottom-0 z-20 -mx-1 flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface px-1 pt-4 pb-1">
               <Button variant="ghost" disabled={busy} onClick={() => (step.adjusting ? setStep({ kind: 'confirm', status: step.status }) : setStep({ kind: 'choose' }))}>
                 <ArrowLeft className="size-4" aria-hidden="true" /> Back
               </Button>

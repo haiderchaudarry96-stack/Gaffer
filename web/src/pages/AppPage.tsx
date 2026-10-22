@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Radio, Video } from 'lucide-react'
+import { ArrowLeft, FileText, House, Radio, Upload, Video } from 'lucide-react'
 import Logo from '../components/ui/Logo'
 import { Button } from '../components/ui/Button'
 import { ErrorState, Skeleton } from '../components/ui/States'
@@ -13,6 +13,8 @@ import FormationTimeline, { type ShownEvent } from '../components/app/FormationT
 import AlertCard, { type LiveState } from '../components/app/AlertCard'
 import CandidateCard from '../components/app/CandidateCard'
 import RecordedEventCard from '../components/app/RecordedEventCard'
+import IdleDesk from '../components/app/IdleDesk'
+import ReadingStrip from '../components/app/ReadingStrip'
 import TracePanel from '../components/app/TracePanel'
 import ChatFab from '../components/app/ChatFab'
 import ReportDialog from '../components/app/ReportDialog'
@@ -30,8 +32,10 @@ import { livePhase, livePlan } from '../data/live'
 import { timelineFromContract, type AnalysisResult } from '../data/analysis'
 import { suggestedQuestions } from '../data/suggestions'
 import type { FormationTimeline as TimelineView } from '../data'
-import { loadPersistedEvents, loadTeamTrackReplay, replayEventStateAt,
+import { loadPersistedEvents, loadTeamTrackReplay,
   requestRoleRecommendation, type CoachContext, type PersistedEvent, type TeamTrackReplay } from '../data/teamtrack'
+import { currentReplayEvent, freshSession, initialDeskMode, readingIndex, readingStats, revealTimeline,
+  visibleReplayEvents, withDecision, type DeskMode, type SessionDecisions } from '../data/liveSession'
 
 /** An analysis returned by the backend for an uploaded video, ready for the same views. */
 interface Uploaded {
@@ -46,7 +50,10 @@ interface Uploaded {
 /**
  * The analyst desk. Default view: pitch (or video), shape timeline, one alert card.
  * Everything else (trace, chat, report) is one click away.
- * URL parameters (for demos and screenshots): ?t=<seconds>&live=1&drawer=1&paused=1&upload=1
+ * Modes: idle (default: nothing shown until the coach starts), live (Live analysis on the recorded
+ * TeamTrack match, revealed up to the playhead), review (the finished demo analysis) and upload
+ * (a finished upload). URL parameters: ?mode=review (or ?t= / ?live=1 / ?drawer=1: review),
+ * ?paused=1, ?upload=1 (opens the upload panel).
  */
 export default function AppPage() {
   const reduced = usePrefersReducedMotion()
@@ -62,6 +69,10 @@ export default function AppPage() {
   const [availableRoles, setAvailableRoles] = useState<Array<'attacker' | 'midfielder' | 'defender'>>([])
   const [recommendationErrors, setRecommendationErrors] = useState<Record<string, string>>({})
   const recommendationAttempts = useRef(new Set<string>())
+  const [deskMode, setDeskMode] = useState<DeskMode>(() => initialDeskMode(params))
+  // this Live analysis session's coach decisions; a new session starts empty
+  const [session, setSession] = useState<SessionDecisions>(freshSession)
+  const autoplay = useRef(false)
   const [w0, w1] = uploaded?.window ?? DEFAULT_MATCH.window
   const startT = uploaded ? uploaded.start : Number(params.get('t') ?? APP_START_S)
   const clock = useMemo(() => new PlaybackClock({ min: w0, max: w1, start: startT, rate: 1 }), [w0, w1, startT])
@@ -87,11 +98,15 @@ export default function AppPage() {
   const index = uploaded?.index ?? demoIndex
   const matchState = uploaded ? uploaded.result.match_state : matchRes.status === 'ready' ? matchRes.data : null
 
-  // play once the positions are in; never auto-play with reduced motion or ?paused=1
+  const view: 'idle' | 'live' | 'review' | 'upload' = uploaded ? 'upload' : recordedReplay ? 'live' : deskMode
+  const reading = useMemo(() => readingIndex(view === 'live' ? matchState : null), [view, matchState])
+
+  // a finished analysis plays once the positions are in; never with reduced motion or ?paused=1
+  const finished = view === 'review' || view === 'upload'
   useEffect(() => {
-    if (index && !recordedReplay && !reduced && params.get('paused') !== '1') clock.play()
+    if (index && finished && !reduced && params.get('paused') !== '1') clock.play()
     return () => clock.pause()
-  }, [index, reduced, clock, params, recordedReplay])
+  }, [index, reduced, clock, params, finished])
 
   useEffect(() => {
     document.title = 'Analyst desk — Gaffer'
@@ -201,20 +216,7 @@ export default function AppPage() {
   }, [tl, allTrace])
 
   const shownEvents: ShownEvent[] = recordedReplay
-    ? persistedEvents.flatMap((record) => {
-        const state = replayEventStateAt(record, t)
-        if (state.kind === 'upcoming') return []
-        const event: TimelineEvent = {
-          id: record.event_id,
-          team: record.team,
-          t: record.candidate_time_s,
-          from: record.from_formation ?? 'unknown',
-          to: record.to_formation ?? 'unknown',
-          status: state.kind === 'decided' ? state.status : 'candidate',
-          reason: null,
-        }
-        return [{ event, status: event.status, pending: state.kind === 'checking' }]
-      })
+    ? visibleReplayEvents(persistedEvents, t)
     : (tl?.events ?? [])
         .map((e) => {
           if (!live) return { event: e, status: e.status, pending: false }
@@ -231,24 +233,16 @@ export default function AppPage() {
     return done && done.status === 'confirmed' ? done.event.id : null
   }
 
-  const replayHistory = recordedReplay ? persistedEvents.filter((event) => event.candidate_time_s <= t) : []
-  const replayLatestTime = replayHistory.at(-1)?.candidate_time_s
-  const replayLatestGroup = replayHistory.filter((event) => event.candidate_time_s === replayLatestTime)
-  const currentPersisted = recordedReplay
-    ? persistedEvents.find((event) => event.event_id === selected && event.candidate_time_s <= t)
-      ?? replayLatestGroup.find((event) => event.team === coachSide)
-      ?? replayLatestGroup.at(-1)
-    : undefined
+  const current = recordedReplay ? currentReplayEvent(persistedEvents, t, selected, coachSide) : null
+  const currentPersisted = current?.record
   const selectedEvent: TimelineEvent | undefined = recordedReplay
-    ? currentPersisted ? {
-        id: currentPersisted.event_id,
-        team: currentPersisted.team,
-        t: currentPersisted.candidate_time_s,
-        from: currentPersisted.from_formation ?? 'unknown',
-        to: currentPersisted.to_formation ?? 'unknown',
-        status: replayEventStateAt(currentPersisted, t).kind === 'decided'
-          ? (replayEventStateAt(currentPersisted, t) as { kind: 'decided'; status: 'confirmed' | 'rejected' | 'uncertain' }).status
-          : 'candidate',
+    ? current ? {
+        id: current.record.event_id,
+        team: current.record.team,
+        t: current.record.candidate_time_s,
+        from: current.record.from_formation ?? 'unknown',
+        to: current.record.to_formation ?? 'unknown',
+        status: current.state.kind === 'decided' ? current.state.status : 'candidate',
         reason: null,
       } : undefined
     : tl?.events.find((e) => e.id === selected)
@@ -280,11 +274,23 @@ export default function AppPage() {
     const next = !live
     setLive(next)
     if (next) {
-      setSelected(STORY_EVENT)
-      transport.seek(APP_START_S)
-      transport.setRate(4)
+      // an upload replays from its start, the demo from shortly before its story event
+      setSelected(uploaded ? (uploaded.timeline.events.find((e) => e.status === 'confirmed')?.id
+        ?? uploaded.timeline.events[0]?.id ?? '') : STORY_EVENT)
+      transport.seek(uploaded ? uploaded.window[0] : APP_START_S)
+      transport.setRate(uploaded ? 1 : 4)
       if (!reduced) clock.play()
     }
+  }
+  const backToStart = () => {
+    clock.pause()
+    setUploaded(null)
+    setRecordedReplay(null)
+    setPersistedEvents([])
+    setLocalVideo(null)
+    setLive(false)
+    setDeskMode('idle')
+    setSelected(STORY_EVENT)
   }
   const startLiveAnalysis = async () => {
     setLiveAnalysisLoading(true)
@@ -295,11 +301,16 @@ export default function AppPage() {
       setUploaded(null)
       setLocalVideo(null)
       setLive(false)
+      // a fresh session: no decisions, no advice attempts or errors carried over
+      setSession(freshSession())
+      setRecommendationErrors({})
+      recommendationAttempts.current.clear()
       setPersistedEvents(events)
       setRecordedReplay(source)
       setSelected('')
       clock.pause()
       clock.seek(source.start_s)
+      autoplay.current = !reduced
       setLiveAnalysisOpen(false)
     } catch (error) {
       setLiveAnalysisError(error instanceof Error ? error.message : 'Could not load the recorded TeamTrack replay.')
@@ -337,9 +348,21 @@ export default function AppPage() {
     setLive(false)
     setUploadOpen(false)
   }
+
+  // the recorded footage starts playing at 15:00 once its player is attached (muted: allowed)
+  useEffect(() => {
+    if (!recordedReplay || !video || !autoplay.current) return
+    autoplay.current = false
+    if (video.play) video.play()
+    else void video.el.play()
+  }, [recordedReplay, video])
+
+  // live modes: the chips and the timeline know nothing after the playhead
+  const reveal = view === 'live' || live
+  const shownTl = reveal && tl ? revealTimeline(tl, t) : tl
   const verdict = alert ? splitAlertExplanation(alert.explanation).verified : (selectedEvent?.reason ?? null)
 
-  const replayState = currentPersisted ? replayEventStateAt(currentPersisted, t) : null
+  const replayState = current?.state ?? null
   const savedRecommendation = currentPersisted?.recommendation
   const currentRoles = [...availableRoles].sort().join(',')
   const savedRoles = [...(savedRecommendation?.context.available_substitute_roles ?? [])].sort().join(',')
@@ -370,7 +393,10 @@ export default function AppPage() {
       matchTimeS={t} onRefresh={() => {
         if (recordedReplay) void loadPersistedEvents(recordedReplay.match_id).then(setPersistedEvents)
       }} recommendationError={recommendationErrors[currentPersisted.record_id]}
-        recommendationNotice={recommendationNotice} />
+        recommendationNotice={recommendationNotice}
+        session={{ alert: session.alert[currentPersisted.record_id],
+          advice: currentPersisted.recommendation ? session.advice[currentPersisted.recommendation.recommendation_id] : undefined }}
+        onSessionDecide={(kind, key, decision, note) => setSession((s) => withDecision(s, kind, key, decision, note))} />
   } else if (!recordedReplay && tl && alertList && !selectedEvent) {
     card = (
       <article className="rounded-(--radius-card) border border-line bg-surface p-6">
@@ -428,84 +454,135 @@ export default function AppPage() {
         </a>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
           <Logo />
-          <label htmlFor="match-select" className="sr-only">
-            Match
-          </label>
-          <select
-            id="match-select"
-            className="order-last h-9 w-full rounded-full border border-line bg-surface px-3 text-sm text-text sm:order-none sm:w-auto"
-            value={uploaded ? uploaded.result.id : DEFAULT_MATCH.id}
-            onChange={(e) => {
-              if (e.target.value === DEFAULT_MATCH.id) {
-                setUploaded(null)
-                setRecordedReplay(null)
-                setPersistedEvents([])
-              }
-            }}
-          >
-            {uploaded && <option value={uploaded.result.id}>{uploaded.result.label}</option>}
-            {MATCHES.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+          {finished && (
+            <>
+              <label htmlFor="match-select" className="sr-only">
+                Match
+              </label>
+              <select
+                id="match-select"
+                className="order-last h-9 w-full rounded-full border border-line bg-surface px-3 text-sm text-text sm:order-none sm:w-auto"
+                value={uploaded ? uploaded.result.id : DEFAULT_MATCH.id}
+                onChange={(e) => {
+                  if (e.target.value === DEFAULT_MATCH.id) {
+                    setUploaded(null)
+                    setRecordedReplay(null)
+                    setPersistedEvents([])
+                    setDeskMode('review')
+                  }
+                }}
+              >
+                {uploaded && <option value={uploaded.result.id}>{uploaded.result.label}</option>}
+                {MATCHES.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} (completed analysis)
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
             <Link to="/" className="hidden items-center gap-1 rounded-full px-3 py-2 text-sm text-muted hover:text-text lg:inline-flex">
               <ArrowLeft className="size-4" aria-hidden="true" /> Story
             </Link>
+            {view !== 'idle' && (
+              <Button variant="ghost" size="sm" onClick={backToStart}>
+                <House className="size-4" aria-hidden="true" /> Start screen
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => { clock.pause(); setLiveAnalysisError(null); setLiveAnalysisOpen(true) }}>
               <Video className="size-4" aria-hidden="true" /> Live analysis
             </Button>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={live}
-              onClick={toggleLive}
-              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm ${live ? 'border-warn text-text' : 'border-line text-muted hover:text-text'}`}
-            >
-              <Radio className={`size-4 ${live ? 'text-warn' : ''}`} aria-hidden="true" />
-              Match replay
-              <span className={`relative h-4 w-7 rounded-full border transition-colors ${live ? 'border-warn bg-warn' : 'border-line bg-surface-2'}`} aria-hidden="true">
-                <span className={`absolute top-px left-0 size-3 rounded-full bg-surface shadow transition-transform ${live ? 'translate-x-3' : 'translate-x-px'}`} />
-              </span>
-            </button>
-            <Button variant="ghost" size="sm" onClick={() => setReportOpen(true)}>
-              <FileText className="size-4" aria-hidden="true" /> <span className="hidden sm:inline">Generate</span> report
-            </Button>
+            {view === 'idle' && (
+              <Button variant="ghost" size="sm" onClick={() => setUploadOpen(true)}>
+                <Upload className="size-4" aria-hidden="true" /> Upload video
+              </Button>
+            )}
+            {finished && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={live}
+                onClick={toggleLive}
+                className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm ${live ? 'border-warn text-text' : 'border-line text-muted hover:text-text'}`}
+              >
+                <Radio className={`size-4 ${live ? 'text-warn' : ''}`} aria-hidden="true" />
+                {uploaded ? 'Replay in match time' : 'Match replay'}
+                <span className={`relative h-4 w-7 rounded-full border transition-colors ${live ? 'border-warn bg-warn' : 'border-line bg-surface-2'}`} aria-hidden="true">
+                  <span className={`absolute top-px left-0 size-3 rounded-full bg-surface shadow transition-transform ${live ? 'translate-x-3' : 'translate-x-px'}`} />
+                </span>
+              </button>
+            )}
+            {finished && (
+              <Button variant="ghost" size="sm" onClick={() => setReportOpen(true)}>
+                <FileText className="size-4" aria-hidden="true" /> <span className="hidden sm:inline">Generate</span> report
+              </Button>
+            )}
           </div>
         </div>
       </header>
 
       <main id="main" className="mx-auto grid max-w-[1600px] gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_440px] xl:gap-8 xl:p-8">
-        <h1 className="sr-only">{uploaded ? `Gaffer analyst desk: ${uploaded.result.label}` : 'Gaffer analyst desk: TeamTrack drone match, 15:00 to 21:00'}</h1>
-        {loadError && loadError.status === 'error' && (
-          <div className="xl:col-span-2">
-            <ErrorState title="Some match data could not be loaded" detail={loadError.error} />
-          </div>
-        )}
-        {/* mobile order: stage, alert, timeline; desktop: stage + timeline left, alert right */}
-        <div className="min-w-0 xl:col-start-1 xl:row-start-1">
-          <Stage
-            clock={clock}
-            transport={transport}
-            index={index}
-            match={matchState}
-            timeline={tl}
-            verifiedFor={verifiedFor}
-            onVideo={onVideo}
-            video={localVideo}
-            replay={recordedReplay}
-            onRemoveVideo={() => setLocalVideo(null)}
+        <h1 className="sr-only">
+          {view === 'idle' ? 'Gaffer analyst desk: start an analysis'
+            : uploaded ? `Gaffer analyst desk: ${uploaded.result.label}`
+              : view === 'live' ? 'Gaffer analyst desk: Live analysis of a recorded TeamTrack match'
+                : 'Gaffer analyst desk: completed analysis, TeamTrack drone match, 15:00 to 21:00'}
+        </h1>
+        {view === 'idle' ? (
+          <IdleDesk
+            reduced={reduced}
+            onLive={() => { setLiveAnalysisError(null); setLiveAnalysisOpen(true) }}
             onUpload={() => setUploadOpen(true)}
+            onReview={() => setDeskMode('review')}
           />
-        </div>
-        <aside aria-label="Alert" className="min-w-0 xl:sticky xl:top-24 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start">
-          {card}
-        </aside>
-        <div className="min-w-0 xl:col-start-1 xl:row-start-2">
-          <FormationTimeline clock={clock} timeline={tl} events={shownEvents} selected={selected} onSelect={selectEvent} />
-        </div>
+        ) : (
+          <>
+            {loadError && loadError.status === 'error' && (
+              <div className="xl:col-span-2">
+                <ErrorState title="Some match data could not be loaded" detail={loadError.error} />
+              </div>
+            )}
+            {view === 'live' && recordedReplay && (
+              <div className="xl:col-span-2">
+                <ReadingStrip stats={readingStats(reading, recordedReplay.start_s, t)} playing={transport.playing} />
+              </div>
+            )}
+            {finished && (
+              <p className="rounded-(--radius-card) border border-line bg-surface px-4 py-2 text-sm text-muted xl:col-span-2">
+                <span className="font-semibold text-text">Completed analysis</span>
+                {' · '}{uploaded
+                  ? 'your upload, analysed in full: every shape, change and alert below is the finished result.'
+                  : 'the finished 15:00–21:00 analysis of the recorded TeamTrack match, shown in full for review.'}
+                {' '}<button type="button" onClick={toggleLive} className="font-medium text-accent-ink underline underline-offset-4 hover:text-text">
+                  {live ? 'Show the full result' : 'Replay in match time'}
+                </button>
+              </p>
+            )}
+            {/* mobile order: stage, alert, timeline; desktop: stage + timeline left, alert right */}
+            <div className="min-w-0 xl:col-start-1">
+              <Stage
+                clock={clock}
+                transport={transport}
+                index={index}
+                match={matchState}
+                timeline={shownTl}
+                verifiedFor={verifiedFor}
+                onVideo={onVideo}
+                video={localVideo}
+                replay={recordedReplay}
+                onRemoveVideo={() => setLocalVideo(null)}
+                onUpload={() => setUploadOpen(true)}
+              />
+            </div>
+            <aside aria-label="Alert" className="min-w-0 xl:sticky xl:top-24 xl:col-start-2 xl:row-span-2 xl:self-start">
+              {card}
+            </aside>
+            <div className="min-w-0 xl:col-start-1">
+              <FormationTimeline clock={clock} timeline={shownTl} events={shownEvents} selected={selected} onSelect={selectEvent} revealToPlayhead={reveal} />
+            </div>
+          </>
+        )}
       </main>
 
       <Dialog open={liveAnalysisOpen} onClose={() => setLiveAnalysisOpen(false)} title="Set up Live analysis" wide>
@@ -547,6 +624,11 @@ export default function AppPage() {
           {liveAnalysisError && <p role="alert" className="rounded-xl border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-danger">{liveAnalysisError}</p>}
           <div className="flex flex-wrap justify-end gap-3">
             <Button variant="ghost" onClick={() => setLiveAnalysisOpen(false)}>Cancel</Button>
+            {recordedReplay && (
+              <Button variant="ghost" disabled={liveAnalysisLoading} onClick={() => void startLiveAnalysis()}>
+                Start a new session
+              </Button>
+            )}
             <Button variant="primary" disabled={liveAnalysisLoading} onClick={() => {
               if (recordedReplay) setLiveAnalysisOpen(false)
               else void startLiveAnalysis()
@@ -588,16 +670,16 @@ export default function AppPage() {
           )}
           {alert && (!liveState || liveState.phase === 'decided') && (
             <div className="rounded-xl border border-warn/40 bg-warn/5 px-4 py-3 text-sm">
-              <p className="font-semibold text-warn">Suggestion (unchecked model text)</p>
+              <p className="font-semibold text-warn">Suggestion (checked against the formation change; not a decision)</p>
               <p className="mt-1 text-muted">“{alert.suggestion}”</p>
-              {!uploaded && <p className="mt-1 text-muted">Known to be weak: 4-4-2 → 3-4-3 adds a forward, not a central midfielder.</p>}
             </div>
           )}
         </div>
       </Dialog>
       <ReportDialog open={reportOpen} onClose={() => setReportOpen(false)} override={uploaded ? uploaded.result.report : undefined} />
       <UploadPanel open={uploadOpen} onClose={() => setUploadOpen(false)} onUseDemo={openDemoWith} onResult={showResult} />
-      <ChatFab matchId={chatMatchId} suggestions={suggestedQuestions(tl)} />
+      {/* the chat reads the whole finished analysis: offered in review, never mid-session */}
+      {finished && <ChatFab matchId={chatMatchId} suggestions={suggestedQuestions(tl)} />}
     </div>
   )
 }

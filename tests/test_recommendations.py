@@ -11,14 +11,23 @@ from gaffer.api.event_store import EventRecordV1_1, EventStore, EventStoreError
 
 
 def event(*, status: str = "confirmed", posture: str = "defensive",
-          posture_status: str = "completed", source: str = "bedrock") -> EventRecordV1_1:
+          posture_status: str = "completed", source: str = "bedrock",
+          shape: tuple[str, str] = ("4-4-2", "3-4-3")) -> EventRecordV1_1:
     return EventRecordV1_1(
         record_id="record_demo_evt_003", analysis_id="analysis_demo",
         match_id="teamtrack_top_w900_1260", event_id="evt_003", event_type="shape_change",
-        team="home", team_name="White", from_formation="4-4-2", to_formation="3-4-3",
+        team="home", team_name="White", from_formation=shape[0], to_formation=shape[1],
         candidate_time_s=990.0, detection_time_s=1025.0, status=status,
         verification_match_time_s=1085.0,
         verification={"decision": status, "reason": "OpenCV verifier result."},
+        # the stored OpenCV metrics the posture citations below must match exactly
+        opencv_metrics={
+            "before": {"start_s": 840.0, "end_s": 990.0, "formation": "4-4-2",
+                       "confidence": 0.8, "defensive_line_m": 48.0, "compactness_m": 30.0,
+                       "width_m": 42.0},
+            "after": {"start_s": 990.0, "end_s": 1085.0, "formation": "3-4-3",
+                      "confidence": 0.8, "defensive_line_m": 42.0, "compactness_m": 26.0,
+                      "width_m": 36.0}},
         posture_status=posture_status,
         posture_result={
             "schema_version": "1.0", "posture": posture, "source": source,
@@ -64,11 +73,16 @@ def test_supported_advice_is_conditional_and_copies_exact_posture_citations():
 
 @pytest.mark.parametrize("record,coach_context,reason", [
     (event(status="candidate"), context(), "not deterministically confirmed"),
-    (event(posture="unclear"), context(), "Supported tactical posture"),
-    (event(posture_status="unavailable"), context(), "Supported tactical posture"),
-    (event(source="deterministic_fallback"), context(), "validated evidence"),
+    (event(posture="unclear", shape=("3-4-3", "4-4-2")), context(),
+     "Supported tactical posture"),
+    (event(posture_status="unavailable", shape=("3-4-3", "4-4-2")), context(),
+     "Supported tactical posture"),
+    (event(source="deterministic_fallback", shape=("3-4-3", "4-4-2")), context(),
+     "validated evidence"),
     (event(), context(side="home"), "your team's change"),
-    (event(), context(objective="protect"), "documented role-advice rule"),
+    (event(posture="unclear"), context(side="home"), "your team's change"),
+    (event(status="candidate", posture="unclear"), context(), "not deterministically"),
+    (event(), context(objective="protect"), "No available defensive"),
     (event(), context(roles=["midfielder"]), "No available attacking"),
     (event(), context(objective="balanced"), "balanced-objective"),
     (event(), context(side=None), "Select which team"),
@@ -105,17 +119,66 @@ def test_context_key_is_order_independent_and_duplicate_roles_are_rejected():
 
 
 def test_fabricated_or_out_of_boundary_posture_citation_withholds_advice():
-    record = event()
+    record = event(shape=("3-4-3", "4-4-2"))
     record.posture_result["citations"][0]["metric_path"] = "teamtrack.annotations.boxes"
     result = create_recommendation(record, context())
     assert result["status"] == "withheld"
     assert "validated evidence" in result["withheld_reason"]
 
-    record = event()
+    record = event(shape=("3-4-3", "4-4-2"))
     record.posture_result["citations"][0]["match_time_window_s"] = [1070.0, 1090.0]
     result = create_recommendation(record, context())
     assert result["status"] == "withheld"
     assert result["citations"] == []
+
+
+def test_fabricated_posture_citations_are_never_shown_with_a_shape_option():
+    record = event()  # 4-4-2 -> 3-4-3 opens a shape option; the posture is rejected
+    record.posture_result["citations"][0]["metric_path"] = "teamtrack.annotations.boxes"
+    result = create_recommendation(record, context())
+    assert result["status"] == "ready" and result["basis"] == "shape_matchup"
+    assert result["citations"] == [] and result["posture"] is None
+    assert result["evidence_strength"] == 0.0
+
+
+@pytest.mark.parametrize("objective,roles,action", [
+    ("chase", ["attacker"],
+     {"consider_replacing": "defender", "with_available_role": "attacker"}),
+    ("protect", ["defender"],
+     {"consider_replacing": "attacker", "with_available_role": "defender"}),
+])
+def test_unclear_posture_still_gets_a_shape_matchup_option(objective, roles, action):
+    # the real demo event: White 4-4-2 -> 3-4-3 confirmed, Bedrock posture unclear
+    result = create_recommendation(event(posture="unclear"),
+                                   context(objective=objective, roles=roles))
+    assert result["status"] == "ready" and result["basis"] == "shape_matchup"
+    assert result["action"] == action
+    assert result["condition"].startswith("If you are")
+    assert "verified shape only" in result["rationale"]
+    assert result["shape_evidence"] == {"team": "White", "from": "4-4-2", "to": "3-4-3",
+                                        "event_time_s": 990.0}
+    assert result["posture"] is None and result["citations"] == []
+
+
+def test_shape_option_needs_an_opening_and_a_matching_role():
+    flat = create_recommendation(event(posture="unclear", shape=("4-4-2", "4-2-3-1")),
+                                 context())  # back line unchanged: nothing to exploit
+    assert flat["status"] == "withheld" and flat["action"] is None
+    balanced = create_recommendation(event(posture="unclear"), context(objective="balanced"))
+    assert balanced["status"] == "withheld"
+
+
+def test_advice_rechecks_cited_values_against_the_stored_opencv_metrics():
+    """Fix session 21 Oct: a citation whose value is not the stored metric withholds advice."""
+    record = event(shape=("3-4-3", "4-4-2"))  # no shape option to fall back on
+    record.posture_result["citations"][1]["value"] = 20.1  # stored after-line is 42.0
+    result = create_recommendation(record, context())
+    assert result["status"] == "withheld" and result["action"] is None
+    assert "validated evidence" in result["withheld_reason"]
+    record = event(shape=("3-4-3", "4-4-2"))
+    record.posture_result["citations"][3]["unit"] = "m"  # stored unit is "m (lateral spread)"
+    assert create_recommendation(record, context())["status"] == "withheld"
+    assert create_recommendation(event(), context())["status"] == "ready"  # exact copies pass
 
 
 def test_recommendations_and_their_coach_responses_survive_restart_and_stay_separate(tmp_path):

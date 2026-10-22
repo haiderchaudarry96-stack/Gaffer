@@ -66,6 +66,9 @@ export interface RoleRecommendation {
   rationale: string
   citations: PostureCitation[]
   posture: 'attacking' | 'defensive' | 'hybrid' | null
+  /** what the option rests on: a supported posture read, or the verified shape change alone */
+  basis: 'posture' | 'shape_matchup' | null
+  shape_evidence: { team: string; from: string; to: string; event_time_s: number } | null
   evidence_strength: number
   confidence_note: string
   withheld_reason: string | null
@@ -211,11 +214,20 @@ function recommendationResult(value: unknown, label: string): RoleRecommendation
     posture_trace_id: typeof result.posture_trace_id === 'string' ? result.posture_trace_id : null,
     citations, posture: ['attacking', 'defensive', 'hybrid'].includes(String(result.posture))
       ? result.posture as RoleRecommendation['posture'] : null,
+    basis: result.basis === 'posture' || result.basis === 'shape_matchup' ? result.basis : null,
+    shape_evidence: shapeEvidence(result.shape_evidence),
     evidence_strength: number(result.evidence_strength, `${label}.evidence_strength`),
     confidence_note: typeof result.confidence_note === 'string' ? result.confidence_note : '',
     withheld_reason: typeof result.withheld_reason === 'string' ? result.withheld_reason : null,
     created_at_utc: result.created_at_utc, ...(coachResponse ? { coach_response: coachResponse } : {}),
   }
+}
+
+function shapeEvidence(value: unknown): RoleRecommendation['shape_evidence'] {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  if (typeof v.from !== 'string' || typeof v.to !== 'string' || typeof v.event_time_s !== 'number') return null
+  return { team: typeof v.team === 'string' ? v.team : '', from: v.from, to: v.to, event_time_s: v.event_time_s }
 }
 
 export async function loadTeamTrackReplay(): Promise<TeamTrackReplay> {
@@ -314,4 +326,35 @@ export function postureVisibleAt(event: PersistedEvent, matchTimeS: number): boo
   return event.status === 'confirmed'
     && event.verification_match_time_s !== null
     && matchTimeS >= event.verification_match_time_s
+}
+
+/** Plain words for the posture checker's reason codes (the stored code stays in the record). */
+const POSTURE_REASONS: [RegExp, string][] = [
+  [/^weak_quality_low_segment_confidence$/, 'The shape just before or after the change was not read clearly enough to compare.'],
+  [/^weak_quality_high_uncertainty$/, 'Too many readings around the change were unsettled.'],
+  [/^weak_quality_low_(coverage_before|coverage_after|footage_frac|visual_reanalysis_coverage)$/, 'Too few players were tracked around the change.'],
+  [/^weak_quality_low_player_visibility$/, 'Too few players were visible around the change.'],
+  [/^(model|reassessment)_made_unsupported_ball_possession_pressure_or_intent_claim$/, 'The model’s answer talked about the ball, possession, pressing or intent, which this camera does not measure, so it was not used.'],
+  [/^malformed_result/, 'The model’s answer was not in the required format.'],
+  [/^(missing_or_null_metric|citation_mismatch|duplicate_citation)/, 'The model cited a number that is not in the stored OpenCV measurements.'],
+  [/^directional_label_needs_two_paired_metric_types$/, 'A label needs two measurements that agree, before and after the change.'],
+  [/^unsupported_(attacking|defensive|hybrid)_label$/, 'The measurements do not support that label.'],
+  [/^bedrock_client_unavailable$/, 'Amazon Bedrock is not switched on for this server.'],
+  [/^(missing_aws_credentials|bedrock_|model_returned_no_single_text_answer|reassessment_returned)/, 'Amazon Bedrock could not give an answer this time.'],
+  [/^(global_api_bedrock_budget_exhausted|posture_budget_unavailable)/, 'Today’s Bedrock budget for this demo is used up.'],
+  [/^model_price_unavailable$/, 'The model’s price is not configured, so Bedrock was not called.'],
+  [/^visual_reanalysis/, 'A second OpenCV look at the video was not available.'],
+]
+
+export function plainPostureReason(reason: string): string {
+  for (const [pattern, text] of POSTURE_REASONS) if (pattern.test(reason)) return text
+  return reason
+}
+
+/** Where the shown posture came from, in one sentence. */
+export function postureSourceNote(event: PersistedEvent): string {
+  if (event.posture_status === 'unavailable') return 'Amazon Bedrock was not available, so no label was attempted.'
+  if (event.posture_status === 'failed') return 'Amazon Bedrock’s answer did not pass the evidence checks, so it was not used.'
+  if (event.posture_result?.source === 'bedrock') return 'Assessed by Amazon Bedrock and checked against the stored OpenCV measurements.'
+  return 'Amazon Bedrock answered, but the code checks did not support a label, so Gaffer keeps it unclear.'
 }

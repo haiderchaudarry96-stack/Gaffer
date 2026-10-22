@@ -1,6 +1,6 @@
 # Gaffer New-Scope Plan
 
-This roadmap adds the coach workflow described in [`CODEX_PLANNING.md`](CODEX_PLANNING.md). The original phase history remains in [`docs/PLAN.md`](docs/PLAN.md). **Do one numbered phase per Claude Code session. Do not start a phase until the user provides its prompt.**
+This roadmap adds the coach workflow described in [`CODEX_PLANNING.md`](CODEX_PLANNING.md). The original phase history remains in [`docs/PLAN.md`](../PLAN.md). **Do one numbered phase per Claude Code session. Do not start a phase until the user provides its prompt.**
 
 ## Progress snapshot
 
@@ -221,13 +221,13 @@ Keep only fixes needed for N5. At the end give the end-to-end outcome, checks ac
 **Claude Code prompt:**
 
 ```text
-Work only on phase N6 in PLANNING.md. Read CLAUDE.md, PROJECT_MEMORY.md, CODEX_PLANNING.md, PLANNING.md, RECORD.md, docs/PLAN.md, docs/FAILURE_LOG.md, docs/DATA_SOURCES.md, docs/API.md, deploy/README.md and completed N1–N5 work. The user has already authorized project work; do not repeatedly ask for permission. Preserve the user's existing AppPage.tsx edit. Do not commit or submit to Devpost.
+Work only on phase N6 in docs/dev/PLANNING.md. Read CLAUDE.md, docs/dev/PROJECT_MEMORY.md, docs/dev/CODEX_PLANNING.md, docs/dev/PLANNING.md, RECORD.md, docs/PLAN.md, docs/FAILURE_LOG.md, docs/DATA_SOURCES.md, docs/API.md, deploy/README.md and completed N1–N5 work. The user has already authorized project work; do not repeatedly ask for permission. Preserve the user's existing AppPage.tsx edit. Do not commit or submit to Devpost.
 
 Complete the original unfinished AWS/deployment scope as well as the submission package. Deploy the single-process Docker app to EC2 in the already configured Sydney region using an IAM instance role and no static keys. Configure/verify persistent event database and artifact storage, S3 where the existing storage backend requires it, a real OpenCV vision-tool execution on EC2, Bedrock from the deployed app and its safe fallback, CloudWatch application logs/metrics, an AWS Budget alarm, public URL and clean redeploy instructions. Use the existing account and current permissions; record exact blockers and actual resource costs if an AWS action cannot complete. Do not claim deployment or cloud checks succeeded unless they were actually observed.
 
 Prepare the judge-facing technical report, architecture and agent-workflow diagrams, README OpenCV/AWS sections, failure evidence, screenshots, and a demo script/video capped at five minutes. Keep synthetic evaluation separate from the single-match TeamTrack demonstration; disclose limitations and state that the video is a recorded simulation, not a live camera. Do not create unrelated services or submit on Devpost.
 
-At the end report the public URL (if deployed), AWS resources and observed/estimated costs, checks actually run and results, remaining external blockers, and git status. Update N6 and overall progress in PLANNING.md and append a dated N6 entry to RECORD.md. Mark N6 complete only when the acceptance criteria above are met.
+At the end report the public URL (if deployed), AWS resources and observed/estimated costs, checks actually run and results, remaining external blockers, and git status. Update N6 and overall progress in docs/dev/PLANNING.md and append a dated N6 entry to RECORD.md. Mark N6 complete only when the acceptance criteria above are met.
 ```
 
 ## After each phase

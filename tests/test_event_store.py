@@ -214,3 +214,31 @@ def test_explicit_retry_can_reclaim_stale_pending_without_old_attempt_overwritin
         trace_ref="trace#live", attempt_id="attempt_live", actual_calls=1,
         actual_cost_usd=0.001)
     assert EventStore(store.path).get(event.record_id).posture_result["trace_id"] == "attempt_live"
+
+
+def test_demo_seed_is_imported_once_into_an_empty_db_and_rejects_fixtures(tmp_path):
+    """A fresh server (empty outputs/) gets the real 16:30 record and its stored posture."""
+    import copy
+    import json
+
+    from gaffer.api.event_store import seed_demo_events
+    from gaffer.config import load_config, repo_path
+
+    cfg = copy.deepcopy(load_config())
+    replay = cfg["api"]["teamtrack_replay"]
+    store = EventStore(tmp_path / "events.sqlite3")
+    assert seed_demo_events(store, cfg) == 1
+    assert seed_demo_events(store, cfg) == 0  # never twice, never over existing rows
+    events, total = store.list(match_id=replay["match_id"])
+    assert total == 1 and events[0].event_id == "evt_003" and events[0].status == "confirmed"
+    assert events[0].analysis_id == "teamtrack_demo_w900_1260"
+    assert events[0].posture_status == "completed" and events[0].posture_result["citations"]
+    assert events[0].recommendation_status == "not_requested" and not events[0].coach_decisions
+
+    data = json.loads(repo_path(replay["seed_file"]).read_text(encoding="utf-8"))
+    data["records"][0]["analysis_id"] = "analysis_n5_ui_fixture"
+    bad = tmp_path / "bad_seed.json"
+    bad.write_text(json.dumps(data), encoding="utf-8")
+    replay["seed_file"] = str(bad)
+    with pytest.raises(EventStoreError, match="outside the configured demo analysis"):
+        seed_demo_events(EventStore(tmp_path / "other.sqlite3"), cfg)

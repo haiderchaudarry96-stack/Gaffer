@@ -538,3 +538,17 @@ poll refreshes pending posture state; the UI hides the result until the match cl
 responses, or invalid citations keep the verified formation event intact and save a labelled
 deterministic `unclear` fallback where a result is persisted. N3 uses event-record schema 1.1 and DB
 migration 3's call/cost attempt ledger; frozen MatchState and TacticalTimeline v1.0 are unchanged.
+
+**Fixes 21–22 Oct (audit, then fix session; no change to the verifier or the confidence floor).**
+Every real posture call before them was stored as `failed` (FAILURE_LOG 2026-10-21). Now: the
+evidence lists every citable value as `citable_metrics` (exact `metric_path`, value, unit, window)
+and the prompt states that citations are copied from it; a ```json fence is stripped before
+parsing; the banned-signal check (ball, possession, pressing / pressure, intent, opponent) reads the
+claim (`explanation`) only, so `limitations` may say what is not measured; a model `unclear` on
+weak evidence is kept as a Bedrock result with the weak-quality reason as a limitation and its
+strength capped at 0.35; the trace records the model's own label (`model_posture`) next to the
+stored one. N4 advice re-checks each cited value, unit and window against the event's stored
+`opencv_metrics` and withholds otherwise. **Real result on the demo evt_003 (22 Oct, one call,
+$0.0012):** completed / `unclear`, 4 exact citations; the code downgraded Nova's label because the
+window before 16:30 is too uncertain (confidence 0.30 < 0.45). It ships in
+`samples/w900_1260/demo_events_seed.json`.

@@ -239,7 +239,28 @@ def test_full_confirm_path_creates_pending_alert_and_png(ctx, toolbox, tmp_path)
                                           "explanation": f"held [{q['ref']}]",
                                           "suggestion": "watch the wings"})
     assert r["status"] == "pending" and st.done
-    assert AlertStore(tmp_path / "alerts.jsonl").get(r["alert_id"]).status == "pending"
+    alert = AlertStore(tmp_path / "alerts.jsonl").get(r["alert_id"])
+    assert alert.status == "pending" and alert.suggestion == "watch the wings"  # passed the check
+
+
+def test_alert_suggestion_is_checked_against_the_change_and_templated():
+    """Fix session 21 Oct: the 16:30 demo said "extra central midfielder" for 4-4-2 -> 3-4-3
+    (which adds a forward). Presentation only: the decision path is untouched."""
+    wrong = "Consider adjusting midfield pressure to exploit the extra central midfielder."
+    probs = explain.check_suggestion(wrong, "4-4-2", "3-4-3")
+    assert any("mid line" in p for p in probs) and any("does not measure" in p for p in probs)
+    text, source = explain.checked_suggestion(wrong, "White", "4-4-2", "3-4-3")
+    assert source == "template" and "midfielder" not in text
+    assert text == ("White now has 3 at the back and 3 up front (was 4 and 2): "
+                    "check how your team matches up against the 3-4-3.")
+    assert explain.check_suggestion("Watch the extra forward on your full-backs.",
+                                    "4-4-2", "3-4-3") == []
+    assert explain.check_suggestion("Hold the line for 30 s.", "4-4-2", "3-4-3")
+    shapes = ["4-4-2", "3-4-3", "4-3-3", "4-2-3-1", "3-5-2", "5-3-2", "4-1-4-1"]
+    for a in shapes:  # the template always passes its own check
+        for b in shapes:
+            if a != b:
+                assert explain.check_suggestion(explain.suggestion_template("T", a, b), a, b) == []
 
 
 # --------------------------------------------------------------------------- alerts.py

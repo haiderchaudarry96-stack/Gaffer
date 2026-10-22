@@ -561,6 +561,10 @@ api:
     start_s: 900
     end_s: 1260
     clip_duration_s: 30
+    # real OpenCV + Bedrock demo record(s), imported once into an empty DB at startup
+    # (scripts/export_demo_seed.py writes it; only records of seed_analysis_id are allowed)
+    seed_file: samples/w900_1260/demo_events_seed.json
+    seed_analysis_id: teamtrack_demo_w900_1260
   cors_origins: ["http://localhost:5173", "http://127.0.0.1:5173"]
   web_dist: web/dist              # served at / when it exists (npm run build in web/)
   demo:
@@ -586,7 +590,8 @@ api:
                                   # forgotten first; a restart forgets all); never global
   uploads:
     max_bytes: 524288000          # 500 MB (a 6 min 4K drone clip is ~130 MB)
-    max_duration_s: 360           # 6 min: ~7 min of OpenCV on the laptop CPU + agent checks
+    max_duration_s: 370           # 6 min (+10 s: 12 TeamTrack clips of 30.03 s = 360.4 s):
+                                  # ~7 min of OpenCV on the laptop CPU + agent checks
     min_duration_s: 5
     extensions: [.mp4, .mov]
     max_aspect: 2.5               # wider frames are panoramas / side cameras: refused
@@ -596,6 +601,9 @@ api:
       top_pattern: '^D_\d{8}_\d+_(\d+)_(\d+)\.mp4$'   # drone; groups = match start / end s
       side_pattern: '^F_\d{8}_\d+_\d+_\d+\.mp4$'      # fixed side camera: refused (top-down only)
       top_size: [3840, 2160]
+  sample_clip:                    # "Try it with a sample clip" (scripts/make_sample_clip.py);
+    path: data/sample_clips/teamtrack_top_sample_1080p.mp4   # hidden in the UI if missing
+    label: "TeamTrack drone clip · 30 s · 1080p"
   jobs:
     view: top                     # uploads are analysed as a top-down view (only one supported)
     arm: auto                     # auto: Nova arm when Bedrock is configured, else rules; llm; rules

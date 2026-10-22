@@ -1,9 +1,10 @@
 import { CheckCircle2, Clock3, Info, ShieldAlert, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { formatClock } from '../../data/time'
-import { decideRoleRecommendation, postureVisibleAt,
+import { decideRoleRecommendation, plainPostureReason, postureSourceNote, postureVisibleAt,
   type PersistedEvent, type ReplayEventState } from '../../data/teamtrack'
 import Disclosure from '../ui/Disclosure'
+import type { SessionDecision } from '../../data/liveSession'
 
 type VisibleEventState = Exclude<ReplayEventState, { kind: 'upcoming' }>
 
@@ -19,7 +20,7 @@ function coachReadableWithheldReason(reason?: string | null): string {
     'The posture assessment does not contain enough validated evidence.':
       'The posture evidence did not pass its checks, so a role suggestion would be a guess.',
     "This event is your team's change; this response rule covers opponent changes.":
-      'This rule only considers the opponent’s formation changes.',
+      'This is your own team’s change. To see how Gaffer would respond to it as the opponent, choose the other side in Live analysis setup.',
     'No available attacking substitute role was entered.':
       'Add an available attacker role in setup before considering this option.',
     'No available defensive substitute role was entered.':
@@ -40,6 +41,8 @@ export default function RecordedEventCard({
   onRefresh,
   recommendationError,
   recommendationNotice,
+  session,
+  onSessionDecide,
 }: {
   event: PersistedEvent
   state: VisibleEventState
@@ -48,9 +51,15 @@ export default function RecordedEventCard({
   onRefresh: () => void
   recommendationError?: string
   recommendationNotice?: string
+  /** this Live analysis session's own decisions (the shared demo stores are not shown) */
+  session?: { alert?: SessionDecision; advice?: SessionDecision }
+  /** set: decisions stay in this session (recorded demo); unset: saved to the event store */
+  onSessionDecide?: (kind: 'alert' | 'advice', key: string, decision: SessionDecision['decision'], note: string) => void
 }) {
   const isOwn = coachSide !== '' && event.team === coachSide
   const [note, setNote] = useState('')
+  const [alertNote, setAlertNote] = useState('')
+  const sessionMode = onSessionDecide !== undefined
   const [decisionBusy, setDecisionBusy] = useState(false)
   const [decisionError, setDecisionError] = useState<string | null>(null)
   const title = state.kind === 'checking'
@@ -78,8 +87,16 @@ export default function RecordedEventCard({
   const posture = event.posture_result
   const recommendation = event.recommendation
 
+  const adviceResponse = sessionMode
+    ? session?.advice
+    : recommendation?.coach_response && { decision: recommendation.coach_response.decision, note: recommendation.coach_response.note ?? '' }
+
   const decide = async (decision: 'approved' | 'rejected') => {
     if (!recommendation) return
+    if (onSessionDecide) {
+      onSessionDecide('advice', recommendation.recommendation_id, decision, note)
+      return
+    }
     setDecisionBusy(true)
     setDecisionError(null)
     try {
@@ -145,7 +162,7 @@ export default function RecordedEventCard({
               <p className="mt-2 text-sm text-text">{posture.explanation}</p>
               <p className="mt-2 text-xs text-muted">
                 Evidence strength {posture.evidence_strength} / 1; this is not a calibrated probability.
-                {posture.source === 'bedrock' ? ' Assessed by Amazon Bedrock.' : ' Bedrock output was unavailable or did not pass evidence checks.'}
+                {' '}{postureSourceNote(event)}
               </p>
               {posture.citations.length > 0 && (
                 <Disclosure
@@ -168,8 +185,9 @@ export default function RecordedEventCard({
                 </Disclosure>
               )}
               {posture.limitations.length > 0 && (
-                <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-muted">
-                  {posture.limitations.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-xs break-words text-muted">
+                  {[...new Set(posture.limitations.map(plainPostureReason))].map((item, index) => (
+                    <li key={`${item}-${index}`} className="[overflow-wrap:anywhere]">{item}</li>))}
                 </ul>
               )}
             </>
@@ -204,8 +222,8 @@ export default function RecordedEventCard({
           ) : recommendation.status === 'withheld' ? (
             <p className="mt-3 text-sm text-muted">
               No role suggestion for this event. {coachReadableWithheldReason(recommendation.withheld_reason)}
-              {' '}Gaffer only offers a conditional role option when the confirmed formation, supported posture evidence,
-              your objective, and an available role align. It does not select a named player or make a substitution.
+              {' '}Gaffer offers a conditional role option only for a confirmed opponent change that fits your objective
+              and an available role. It does not select a named player or make a substitution.
             </p>
           ) : (
             <>
@@ -214,9 +232,15 @@ export default function RecordedEventCard({
                 Consider replacing a {recommendation.action?.consider_replacing} with an available {recommendation.action?.with_available_role}.
               </p>
               <p className="mt-2 text-sm text-muted">{recommendation.rationale}</p>
-              <p className="mt-2 text-xs text-muted">
-                {recommendation.context.objective} objective · {recommendation.posture} posture · Evidence strength {recommendation.evidence_strength}/1; not a calibrated probability.
-              </p>
+              {recommendation.basis === 'shape_matchup' && recommendation.shape_evidence ? (
+                <p className="mt-2 text-xs text-muted">
+                  {recommendation.context.objective} objective · based on the verified shape change only ({recommendation.shape_evidence.team} {recommendation.shape_evidence.from} → {recommendation.shape_evidence.to} at {formatClock(recommendation.shape_evidence.event_time_s)}); the posture read was not conclusive.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-muted">
+                  {recommendation.context.objective} objective · {recommendation.posture} posture · Evidence strength {recommendation.evidence_strength}/1; not a calibrated probability.
+                </p>
+              )}
               {recommendation.citations.length > 0 && (
                 <Disclosure
                   className="mt-3"
@@ -235,10 +259,11 @@ export default function RecordedEventCard({
                   </ul>
                 </Disclosure>
               )}
-              {recommendation.coach_response ? (
+              {adviceResponse ? (
                 <div className="mt-4 rounded-lg border border-line px-3 py-2 text-sm">
-                  <strong>Coach {recommendation.coach_response.decision} this suggestion.</strong>
-                  {recommendation.coach_response.note && <p className="mt-1 text-muted">{recommendation.coach_response.note}</p>}
+                  <strong>Coach {adviceResponse.decision} this suggestion.</strong>
+                  {adviceResponse.note && <p className="mt-1 text-muted">{adviceResponse.note}</p>}
+                  {sessionMode && <p className="mt-1 text-xs text-muted">Saved for this session only: a new session starts fresh.</p>}
                 </div>
               ) : (
                 <div className="mt-4 space-y-3">
@@ -257,6 +282,32 @@ export default function RecordedEventCard({
                 </div>
               )}
             </>
+          )}
+        </section>
+      )}
+      {sessionMode && state.kind === 'decided' && state.status === 'confirmed' && (
+        <section className="mt-5 rounded-xl border border-line bg-bg p-4" aria-label="Coach decision on this alert">
+          <h3 className="font-semibold text-text">Your decision on this alert</h3>
+          {session?.alert ? (
+            <div className="mt-3 text-sm">
+              <strong>You {session.alert.decision} this alert.</strong>
+              {session.alert.note && <p className="mt-1 text-muted">{session.alert.note}</p>}
+              <p className="mt-1 text-xs text-muted">Saved for this session only: a new session starts fresh.</p>
+            </div>
+          ) : (
+            <div className="mt-3 space-y-3">
+              <label htmlFor={`alert-note-${event.record_id}`} className="block text-xs font-medium text-muted">Optional note</label>
+              <textarea id={`alert-note-${event.record_id}`} maxLength={500} value={alertNote}
+                onChange={(e) => setAlertNote(e.target.value)} rows={2}
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text"
+                placeholder="Add a note (optional)" />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => onSessionDecide('alert', event.record_id, 'approved', alertNote)}
+                  className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-ink">Approve alert</button>
+                <button type="button" onClick={() => onSessionDecide('alert', event.record_id, 'rejected', alertNote)}
+                  className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-text">Reject alert</button>
+              </div>
+            </div>
           )}
         </section>
       )}

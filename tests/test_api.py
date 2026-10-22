@@ -373,15 +373,20 @@ def test_role_recommendation_api_persists_context_and_separate_coach_response(cl
         from_formation="4-4-2", to_formation="3-4-3", candidate_time_s=100.0,
         detection_time_s=110.0, status="confirmed", verification_match_time_s=180.0,
         verification={"decision": "confirmed"}, posture_status="completed",
+        # stored metrics the citations must match (N4 re-checks them, fix session 22 Oct)
+        opencv_metrics={"before": {"start_s": 50.0, "end_s": 100.0, "defensive_line_m": 48.0},
+                        "after": {"start_s": 100.0, "end_s": 180.0, "defensive_line_m": 42.0}},
         posture_result={"schema_version": "1.0", "posture": "defensive", "source": "bedrock",
             "analysis_time_utc": "2026-10-21T08:00:00Z", "model_id": "fake",
             "trace_id": "posture-trace", "evidence_strength": 0.8,
             "explanation": "The defensive line moved back and width reduced.",
             "citations": [
                 {"metric_path": "opencv_metrics.before.defensive_line_m", "value": 48.0,
-                 "unit": "m", "match_time_window_s": [50.0, 100.0]},
+                 "unit": "m (attacking-direction-normalized)",
+                 "match_time_window_s": [50.0, 100.0]},
                 {"metric_path": "opencv_metrics.after.defensive_line_m", "value": 42.0,
-                 "unit": "m", "match_time_window_s": [100.0, 180.0]},
+                 "unit": "m (attacking-direction-normalized)",
+                 "match_time_window_s": [100.0, 180.0]},
             ], "limitations": []},
         created_utc="2026-10-21T08:00:00Z", updated_utc="2026-10-21T08:00:00Z")
     client.app.state.event_store.upsert_analysis([event])
@@ -576,7 +581,7 @@ def test_chat_visitor_from_cookie(tmp_path, base_cfg) -> None:
     cfg = copy.deepcopy(base_cfg)
     cfg["api"]["chat"]["max_questions_per_visitor_per_day"] = 1
     c = make_client(tmp_path, cfg, llm=FakeLLM(["Ask me about a change [evt_003]."] * 3))
-    q = {"match_id": "w900_1260", "question": "hello", "history": []}
+    q = {"match_id": "w900_1260", "question": "What did White change?", "history": []}
     a, b = TestClient(c.app), TestClient(c.app)
     a.get("/api/health"), b.get("/api/health")  # each browser gets its cookie
     assert a.post("/api/chat", json=q).status_code == 200
@@ -613,6 +618,35 @@ def test_chat_grounded_answer_with_citations(tmp_path, base_cfg) -> None:
     assert log[0]["citations"] == ["R1", "evt_003"]
 
 
+def test_off_topic_question_is_answered_in_code_without_bedrock(tmp_path, base_cfg) -> None:
+    llm = FakeLLM(["should never be called"])
+    c = make_client(tmp_path, base_cfg, llm=llm)
+    r = ask(c, "What is the capital of France?")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["off_topic"]
+    assert j["answer"].startswith("I only answer questions about this match. Try:")
+    assert "White" in j["answer"] and not llm.calls  # no LLM call
+    assert ask(c, "What did White change at 16:30?").json().get("off_topic") is None
+
+
+def test_chat_unknown_event_id_lists_the_real_candidates(tmp_path, base_cfg) -> None:
+    """Fix session 21 Oct: Nova guessed evt_018 for Blue's 18:50 change; the error now names
+    the ids that exist so the next call can use the right one (evt_007)."""
+    llm = FakeLLM([[("get_decision", {"event_id": "evt_018"})],
+                   [("get_decision", {"event_id": "evt_007"})],
+                   "Blue's 18:50 change was rejected [R2] [evt_007]."])
+    c = make_client(tmp_path, base_cfg, llm=llm)
+    r = ask(c, "Why was Blue's 18:50 change rejected?")
+    assert r.status_code == 200, r.json()
+    question = llm.calls[0]["messages"][-1]["content"][0]["text"]
+    assert "evt_007 Blue 18:50 4-4-2->4-2-3-1" in question  # the index the model reads first
+    first = llm.calls[1]["messages"][-1]["content"][0]["toolResult"]["content"][0]["json"]
+    assert first["error"] == "unknown_event"
+    assert {"event_id": "evt_007", "team": "Blue", "clock": "18:50",
+            "change": "4-4-2 -> 4-2-3-1"} in first["candidates"]
+
+
 def test_chat_ungrounded_numbers_are_replaced(tmp_path, base_cfg) -> None:
     llm = FakeLLM([[("get_decision", {"event_id": "evt_003"})],
                    "White held 3-4-3 in 77% of windows [R1].",  # 77 is not in the result
@@ -620,6 +654,15 @@ def test_chat_ungrounded_numbers_are_replaced(tmp_path, base_cfg) -> None:
     c = make_client(tmp_path, base_cfg, llm=llm)
     j = ask(c, "How long did White keep it?").json()
     assert j["answer"] == SAFE_ANSWER and not j["grounded"] and j["citations"] == []
+
+
+def test_readable_ids_turns_bare_ids_into_times() -> None:
+    from types import SimpleNamespace
+
+    from gaffer.api.chat import readable_ids
+    cands = [SimpleNamespace(id="evt_005", t=1080.0), SimpleNamespace(id="evt_007", t=1130.0)]
+    out = readable_ids("It undoes what they did in evt_005 [evt_007] [R1].", cands)
+    assert out == "It undoes what they did in the 18:00 change [evt_007] [R1]."
 
 
 def test_check_answer_rules() -> None:
@@ -631,6 +674,10 @@ def test_check_answer_rules() -> None:
     assert check_answer("No number here, see [evt_003].", results, ev) == []
     assert check_answer("Held 91% of windows.", results, ev)  # numbers need a citation
     assert check_answer("At 17:45 [R1].", results, ev)  # clock not in results
+    # a clock the app gave with the question (candidate index) is grounded, other ones not
+    idx = ["evt_005 Blue 17:45 4-2-3-1->4-4-2"]
+    assert check_answer("It returned from the 17:45 change [evt_003].", results, ev, idx) == []
+    assert check_answer("At 18:10 [evt_003].", results, ev, idx)
     assert check_answer("See [R7].", results, ev)  # unknown ref
     assert check_answer("See [evt_099].", results, ev)  # unknown candidate
 
@@ -641,10 +688,10 @@ def test_chat_visitor_limit(tmp_path, base_cfg) -> None:
     llm = FakeLLM(["Ask me about a time or a change [evt_003].",
                    "Ask me about a time or a change [evt_003]."])
     c = make_client(tmp_path, cfg, llm=llm)
-    assert ask(c, "hello", visitor="a").status_code == 200
-    r = ask(c, "hello again", visitor="a")
+    assert ask(c, "What did White change?", visitor="a").status_code == 200
+    r = ask(c, "And Blue?", visitor="a")
     assert r.status_code == 429 and "limit of 1 questions" in r.json()["detail"]
-    assert ask(c, "hello", visitor="b").status_code == 200  # another visitor
+    assert ask(c, "What did White change?", visitor="b").status_code == 200  # another visitor
     usage = json.loads((tmp_path / "usage.json").read_text())
     assert "a" not in usage["visitors"] and len(usage["visitors"]) == 2  # hashed ids
 
@@ -654,8 +701,8 @@ def test_chat_global_daily_cap(tmp_path, base_cfg) -> None:
     cfg["api"]["bedrock_daily"]["max_calls"] = 1
     llm = FakeLLM(["Nothing numeric [evt_003].", "never sent"])
     c = make_client(tmp_path, cfg, llm=llm)
-    assert ask(c, "first").status_code == 200
-    r = ask(c, "second", visitor="other")
+    assert ask(c, "First shape of White?").status_code == 200
+    r = ask(c, "Second half shape?", visitor="other")
     assert r.status_code == 429 and "daily limit" in r.json()["detail"]
     assert len(llm.calls) == 1
 
@@ -665,7 +712,7 @@ def test_chat_token_budget_per_question(tmp_path, base_cfg) -> None:
     cfg["api"]["chat"]["max_tokens_per_request"] = 3000  # room for one call (1560 tokens), not two
     llm = FakeLLM([[("get_match_overview", {})], "unused"])
     c = make_client(tmp_path, cfg, llm=llm)
-    j = ask(c, "Tell me everything").json()
+    j = ask(c, "Tell me everything about this match").json()
     assert "more look-ups" in j["answer"] and len(llm.calls) == 1
 
 
@@ -673,7 +720,7 @@ def test_chat_bedrock_unreachable(tmp_path, base_cfg) -> None:
     llm = FakeLLM([BedrockCallError("Could not connect to Bedrock.", "check the network",
                                     "Connection")])
     c = make_client(tmp_path, base_cfg, llm=llm)
-    r = ask(c, "anything")
+    r = ask(c, "Any shape changes?")
     assert r.status_code == 503 and "can't be reached" in r.json()["detail"]
     usage = json.loads((tmp_path / "usage.json").read_text())
     assert sum(usage["visitors"].values()) == 0  # the question was given back
@@ -681,7 +728,7 @@ def test_chat_bedrock_unreachable(tmp_path, base_cfg) -> None:
 
 def test_chat_without_bedrock_and_bad_targets(tmp_path, base_cfg, videos) -> None:
     c = make_client(tmp_path, base_cfg)
-    r = ask(c, "anything")
+    r = ask(c, "Any shape changes?")
     assert r.status_code == 503 and "not configured" in r.json()["detail"]
     assert ask(c, "x", match_id="abcdef123456").status_code == 404
     aid = upload(c, videos["straight"]).json()["id"]
@@ -803,3 +850,41 @@ def test_s3_storage_publishes_and_reads_back(tmp_path) -> None:
     assert s2.read_bytes("abcdef123456/status.json") == b'{"ok": 1}'
     with pytest.raises(StorageError):
         s2.read_bytes("abcdef123456/nope.json")
+
+
+def test_serve_no_bedrock_never_writes_the_real_event_db(tmp_path) -> None:
+    """Fix session 21 Oct: the Bedrock-off launcher used outputs/api/events.sqlite3."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("serve_no_bedrock",
+                                                  Path(__file__).parents[1] / "scripts"
+                                                  / "serve_no_bedrock.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    app = mod.build_app(tmp_path / "out")
+    own_db = (tmp_path / "out" / "events.sqlite3").resolve()
+    assert Path(app.state.event_store.path).resolve() == own_db
+    events = TestClient(app).get("/api/events", params={"match_id": "teamtrack_top_w900_1260"})
+    assert [e["event_id"] for e in events.json()["events"]] == ["evt_003"]  # seeded demo only
+
+
+def test_sample_clip_runs_the_unknown_source_pitch_check(tmp_path, base_cfg, videos) -> None:
+    """Fix session 21 Oct: "Try it with a sample clip" analyses a server-held file like an
+    upload of an unknown source (OpenCV pitch check), and is hidden when the file is missing."""
+    cfg = copy.deepcopy(base_cfg)
+    cfg["api"]["sample_clip"] = {"path": str(tmp_path / "missing.mp4"), "label": "x"}
+    c = make_client(tmp_path / "a", cfg)
+    assert c.get("/api/sample").json() == {"available": False}
+    assert c.post("/api/analyses/sample").status_code == 404
+    assert c.get("/api/sample/video").status_code == 404
+
+    cfg["api"]["sample_clip"] = {"path": str(videos["straight"]), "label": "Generated clip"}
+    c = make_client(tmp_path / "b", cfg)
+    info = c.get("/api/sample").json()
+    assert info["available"] and info["video_url"] == "/api/sample/video"
+    assert c.get("/api/sample/video", headers={"Range": "bytes=0-99"}).status_code == 206
+    r = c.post("/api/analyses/sample")
+    assert r.status_code == 201, r.json()
+    st = r.json()
+    assert st["status"] in ("needs_confirmation", "needs_corners")  # the full pitch check ran
+    assert st["source"]["kind"] == "upload" and st["video"]["filename"] == "gaffer_sample_clip.mp4"

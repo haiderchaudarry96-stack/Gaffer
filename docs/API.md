@@ -39,6 +39,9 @@ Docker: `deploy/README.md`.
 | `GET /api/replay/teamtrack` | — | fixed 900–1260 s TeamTrack top-view clip manifest, with segment URLs and match-time ranges |
 | `GET /api/replay/teamtrack/clips/{clip_id}` | optional `Range: bytes=start-end` | allowlisted MP4 segment; supports HTTP 206 byte ranges for seeking |
 | `POST /api/analyses` | `multipart/form-data`: `video` (MP4/MOV, required), `known_source` (`true`/`false`/`auto`, optional), `pitch_points` (JSON `[[x,y]×4]` or `[{x,y}×4]`, optional) | `201` **AnalysisStatus** (`queued`, `needs_confirmation` or `needs_corners`) |
+| `GET /api/sample` | — | `{available: false}`, or `{available, label, bytes, video_url, file_name}` for the server's sample clip (`api.sample_clip.path`, made by `scripts/make_sample_clip.py`) |
+| `GET /api/sample/video` | optional `Range` | the sample clip (MP4, for the browser preview); `404` if missing |
+| `POST /api/analyses/sample` | — | like `POST /api/analyses` for the server's sample clip, as an **unknown source** (`known_source=false`: OpenCV pitch auto-detect, then "Is this your pitch?" / 4 corners); `404` if missing |
 | `POST /api/analyses/{id}/pitch` | `{"confirmed": true}` or `{"pitch_points": [[x,y]×4]}` | AnalysisStatus (`queued`) |
 | `POST /api/analyses/{id}/start` | the frontend's pitch step: `{"points": [{x,y}×4], "frame": {width, height, t_s}, "straight_down": bool}` | AnalysisStatus (`queued`) |
 | `GET /api/analyses/{id}/pitch-preview` | — | JPEG: the frame with the pitch outline, corners 1–4 and the markings a 4-corner homography puts there |
@@ -53,6 +56,12 @@ Docker: `deploy/README.md`.
 
 
 ### Persisted event endpoints
+
+A fresh server (empty `outputs/`, e.g. Docker / EC2) imports `api.teamtrack_replay.seed_file`
+(`samples/w900_1260/demo_events_seed.json`: the real OpenCV evt_003 record with its stored Bedrock
+posture read, exported by `scripts/export_demo_seed.py`) once into an event DB that has no row for
+the replay match. Only records of `seed_analysis_id` are accepted, so a test fixture cannot be
+shipped this way. Coach decisions and role advice are never seeded.
 
 | Method and path | Request | Response |
 |---|---|---|
@@ -346,6 +355,12 @@ Caps (all in `config.yaml`, changeable without code; restart the server):
 | tokens per question (all rounds) | `api.chat.max_tokens_per_request` (12,000), `max_tool_rounds` (4) | polite "needs more look-ups than one answer is allowed; try a narrower question" |
 | questions per visitor per UTC day | `api.chat.max_questions_per_visitor_per_day` (20); visitor = `X-Visitor-Id` header, else the visitor cookie the browser sent back, else client IP (a client without cookies is counted by IP), stored hashed | `429` "You've reached today's limit of 20 questions" |
 | Bedrock calls / cost per UTC day, whole API (chat + analyses) | `api.bedrock_daily.max_calls` (300), `max_cost_usd` (1.00), persisted in `outputs/api/usage.json` | `429` "daily limit for this demo, come back tomorrow"; analyses fall back to the rules arm |
+
+Off-topic questions (no football / analysis word, team name, formation, clock or candidate id;
+`api/chat.py off_topic`) are answered in code, with no Bedrock call and no daily question used:
+"I only answer questions about this match. Try: …" (`off_topic: true`). Each question carries a
+one-line index of the match's candidates (id, team, clock, change), and `get_decision` on an
+unknown id returns the real ones, so the model does not guess ids (FAILURE_LOG 2026-10-22).
 
 Bedrock unreachable (no credentials, network, throttling) → `503` "The analyst (Amazon Bedrock)
 can't be reached right now: …", and the question is given back to the visitor's allowance. No

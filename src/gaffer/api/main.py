@@ -29,7 +29,12 @@ from gaffer.agent.alerts import AlertError, AlertStore
 from gaffer.agent.recommendations import CoachContext, create_recommendation
 from gaffer.api import calib
 from gaffer.api.chat import ChatRefused, ChatService, ChatSource
-from gaffer.api.event_store import EventStore, EventStoreError, make_event_store
+from gaffer.api.event_store import (
+    EventStore,
+    EventStoreError,
+    make_event_store,
+    seed_demo_events,
+)
 from gaffer.api.jobs import JobManager, new_id, rules_fingerprint
 from gaffer.api.results import Demo, analysis_result, evidence_file, evidence_url
 from gaffer.api.storage import Storage, StorageError, make_storage, read_json, write_json
@@ -145,7 +150,9 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     usage = usage or Usage(cfg)
     factory = _bedrock_factory(cfg) if llm_factory is DEFAULT else llm_factory
     alerts_path = repo_path(alerts_path or cfg["agent"]["outputs"]["alerts"])
-    event_store = event_store or make_event_store(cfg)
+    if event_store is None:
+        event_store = make_event_store(cfg)
+        seed_demo_events(event_store, cfg)   # fresh server: the real 16:30 demo event, once
     jobs = JobManager(cfg, storage, llm_factory=factory, usage=usage, alerts_path=alerts_path,
                       event_store=event_store, runner=runner, start_worker=start_worker)
     demo = Demo(cfg)
@@ -446,6 +453,44 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         except UploadRefused as exc:
             _remove(job_dir)
             raise HTTPException(exc.status_code, str(exc)) from exc
+
+    # ------------------------------------------------------------------ sample clip
+    # "Try it with a sample clip": a clip this server holds (api.sample_clip.path), analysed
+    # exactly like an upload of an unknown source (no saved calibration: full pitch check).
+    def _sample_path() -> Path | None:
+        p = repo_path(str(api.get("sample_clip", {}).get("path", "")) or "_missing_")
+        return p if p.is_file() else None
+
+    @app.get("/api/sample")
+    def sample_info() -> dict[str, Any]:
+        p = _sample_path()
+        if p is None:
+            return {"available": False}
+        return {"available": True, "label": api["sample_clip"].get("label", "Sample clip"),
+                "bytes": p.stat().st_size, "video_url": "/api/sample/video",
+                "file_name": "gaffer_sample_clip.mp4"}
+
+    @app.get("/api/sample/video")
+    def sample_video() -> FileResponse:
+        p = _sample_path()
+        if p is None:
+            raise HTTPException(404, "This server has no sample clip.")
+        return FileResponse(p, media_type="video/mp4")
+
+    @app.post("/api/analyses/sample", status_code=201)
+    async def create_sample_analysis(request: Request) -> dict[str, Any]:
+        p = _sample_path()
+        if p is None:
+            raise HTTPException(404, "This server has no sample clip.")
+        if jobs.queued_count() >= int(api["jobs"]["max_queued"]):
+            raise HTTPException(503, "Gaffer is busy with other analyses. Please try again in a "
+                                     "few minutes.")
+
+        def run() -> dict[str, Any]:
+            with p.open("rb") as fh:  # known=False: treated as an unknown source
+                return _create(request, fh, "gaffer_sample_clip.mp4", False, None)
+
+        return await run_in_threadpool(run)
 
     def _apply(aid: str, points: Any, picked_by: str, t_s: float | None = None
                ) -> dict[str, Any]:

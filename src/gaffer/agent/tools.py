@@ -996,9 +996,14 @@ class Toolbox:
 
             text, source = explain.template(explain.facts(self, st)), "template"
         explanation = compose_explanation(f"{st.reason} [{st.verdict_ref}]", text, source)
+        # presentation only: a suggestion that contradicts the change is replaced by code text
+        from gaffer.agent import explain
+
+        suggestion, _ = explain.checked_suggestion(a.suggestion, self.team_name(c.team),
+                                                   c.from_, c.to)
         try:
             alert = self.store.create(self.ctx.match.match_id, c.id, c.t, title, explanation,
-                                      a.suggestion, st.evidence_image)
+                                      suggestion, st.evidence_image)
         except AlertError as exc:
             raise _NotAllowed(str(exc)) from exc
         st.alert_id = alert.alert_id

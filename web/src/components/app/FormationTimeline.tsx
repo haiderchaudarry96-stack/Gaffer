@@ -15,7 +15,7 @@ const STATUS_TEXT: Record<EventStatus, string> = {
   confirmed: 'verified by the agent',
   rejected: 'rejected by the agent',
   uncertain: 'uncertain',
-  candidate: 'not checked',
+  candidate: 'found, not checked (time budget)',
 }
 /** approximate width of one 12 px JetBrains Mono character, plus the label's padding */
 const CHAR_PX = 7.3
@@ -45,6 +45,7 @@ function Marker({
       onClick={() => onSelect(e.event)}
       className={`grid size-7 place-items-center rounded-full ${selected ? 'bg-text/10 ring-1 ring-text' : 'hover:bg-text/10'}`}
       aria-label={`${formatClock(e.event.t)} ${name} ${e.event.from} to ${e.event.to}, ${e.pending ? 'being checked' : STATUS_TEXT[e.status]}`}
+      title={`${formatClock(e.event.t)} ${name}: ${e.event.from} → ${e.event.to}, ${e.pending ? 'being checked' : STATUS_TEXT[e.status]}`}
       aria-pressed={selected}
     >
       <span className="relative grid place-items-center">
@@ -61,12 +62,15 @@ export default function FormationTimeline({
   events,
   selected,
   onSelect,
+  revealToPlayhead = false,
 }: {
   clock: PlaybackClock
   timeline: TL | null
   events: ShownEvent[]
   selected: string | null
   onSelect: (e: TimelineEvent) => void
+  /** live / recorded replay: nothing after the playhead is drawn (no future shapes or diamonds) */
+  revealToPlayhead?: boolean
 }) {
   const t = useClockTime(clock, 8)
   // measure the bar so a label is drawn only where it fits completely (never truncated)
@@ -86,6 +90,11 @@ export default function FormationTimeline({
   const minutes: number[] = []
   for (let m = Math.ceil(start_s / 60) * 60; m <= end_s; m += 60) minutes.push(m)
   const sides: TeamSide[] = ['home', 'away']
+  const cut = revealToPlayhead ? t : end_s
+  const segments = timeline.segments
+    .filter((s) => s.start_s < cut)
+    .map((s) => (s.end_s > cut ? { ...s, end_s: cut } : s))
+  const visible = events.filter((e) => e.event.t <= cut)
 
   return (
     <section aria-labelledby="timeline-title" className="rounded-(--radius-card) border border-line bg-surface px-4 py-4 sm:px-6">
@@ -100,7 +109,7 @@ export default function FormationTimeline({
       </div>
 
       {sides.map((side) => {
-        const own = events.filter((e) => e.event.team === side)
+        const own = visible.filter((e) => e.event.team === side)
         return (
           <div key={side} className="mb-2 grid grid-cols-[4.5rem_1fr] items-end gap-3 sm:grid-cols-[5.5rem_1fr]">
             <span className="flex items-center gap-1.5 pb-2 text-sm font-medium text-text">
@@ -123,7 +132,7 @@ export default function FormationTimeline({
                 ))}
               </div>
               <ol className="relative h-9" aria-label={`${timeline.teamNames[side]} shapes`}>
-                {timeline.segments.map((s, i) => {
+                {segments.map((s, i) => {
                   const f = s[side].formation
                   const label = f === 'uncertain' ? '' : f
                   const fits = label !== '' && (frac(s.end_s) - frac(s.start_s)) * barPx >= label.length * CHAR_PX + LABEL_PAD_PX
@@ -165,9 +174,25 @@ export default function FormationTimeline({
         <span className="pointer-events-none absolute -top-[9.5rem] h-[9.5rem] w-0.5 -translate-x-1/2 rounded bg-accent" style={{ left: pct(t) }} aria-hidden="true" />
       </div>
 
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted" aria-label="Diamond legend">
+        {([['confirmed', 'confirmed'], ['rejected', 'rejected'], ['uncertain', 'uncertain'],
+          ['candidate', 'found, not checked (time budget)']] as const).map(([status, text]) => (
+          <li key={status} className="flex items-center gap-1.5">
+            <span className={`size-2.5 rotate-45 border-2 ${MARKER[status]}`} aria-hidden="true" />
+            {text}
+          </li>
+        ))}
+        {revealToPlayhead && (
+          <li className="flex items-center gap-1.5">
+            <span className="size-2.5 rotate-45 border-2 border-warn bg-warn" aria-hidden="true" />
+            being checked
+          </li>
+        )}
+      </ul>
+
       {/* narrow screens: the changes as a readable list instead of tiny bar labels */}
       <ul className="mt-3 space-y-1 sm:hidden" aria-label="Shape changes">
-        {events.map((e) => (
+        {visible.map((e) => (
             <li key={e.event.id}>
               <button
                 type="button"

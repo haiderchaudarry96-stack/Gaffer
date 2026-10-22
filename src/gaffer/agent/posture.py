@@ -46,22 +46,30 @@ them to infer forward/backward movement. defensive_line_m is attacking-direction
 larger means farther forward. compactness_m is front-to-back depth; width_m is lateral spread.
 These measurements describe shape, not proof of tactical intent.
 
-Every citation must copy one exact non-null numeric metric value, its exact metric_path, unit and
-the match-time window supplied. Do not cite a formation name as a metric. Keep the explanation
-short, coach-readable and limited to observed shape. If evidence is weak, missing, conflicting,
-or not safely interpretable, return unclear and explain the limitation.
+Citations: the evidence lists every citable value in citable_metrics. Copy whole entries from
+that list only, with metric_path, value, unit and match_time_window_s exactly as given (for example
+"opencv_metrics.after.defensive_line_m"). Nothing outside citable_metrics can be cited; a formation
+name is never a metric. If evidence is weak, missing, conflicting, or not safely interpretable
+(see quality, coverage and each window's confidence), return unclear and say why.
 
-If the stored post-event window is materially incomplete and a video backend is available, you
-may return one visual_reanalysis_request for a short window strictly after the candidate time,
+The explanation is your claim: one or two short coach-readable sentences about observed shape
+only, never using the words ball, possession, pressing, pressure, intent or opponent. Put caveats
+about signals that are not measured in limitations, not in the explanation.
+
+If the stored post-event window is materially incomplete and visual_reanalysis_available is true,
+you may return one visual_reanalysis_request for a short window strictly after the candidate time,
 using one allowed sample rate. Do not request it just to repeat existing evidence. After extra
 OpenCV evidence is supplied, answer the posture question and do not request another window.
 
-JSON schema:
+Return raw JSON (no code fence) matching:
 {"posture":"attacking|defensive|hybrid|unclear","evidence_strength":0.0,
- "explanation":"short text","citations":[{"metric_path":"...","value":1.0,
- "unit":"...","match_time_window_s":[1.0,2.0]}],"limitations":[...],
- "visual_reanalysis_request":null}
+ "explanation":"short text","citations":[<entries copied from citable_metrics>],
+ "limitations":["short caveat"],"visual_reanalysis_request":null}
 evidence_strength is a bounded evidence-strength judgment, not a calibrated probability."""
+
+# Signals the top-view pipeline does not measure: never allowed in the model's claim text.
+UNSUPPORTED_CLAIM_RE = re.compile(r"\b(ball|possession|press(?:ing|ure)?|intent|opponent)\b",
+                                  re.IGNORECASE)
 
 
 class VisualReanalysisRequest(BaseModel):
@@ -220,7 +228,15 @@ def build_evidence(record: PersistedEventRecord) -> dict[str, Any]:
                 "unavailable unless a valid stored metric is explicitly present"),
         },
     }
+    result["citable_metrics"] = citable_metrics(result)
     return result
+
+
+def citable_metrics(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every value the validator accepts as a citation, in the exact form it must be copied."""
+    return [{"metric_path": path, "value": value, "unit": unit,
+             "match_time_window_s": list(window)}
+            for path, (value, unit, window) in _citation_index(evidence).items()]
 
 
 def _citation_index(evidence: dict[str, Any]) -> dict[str, tuple[float, str, tuple[float, float]]]:
@@ -360,9 +376,12 @@ def _classification_supported(posture: Posture, evidence: dict[str, Any], paired
     return False, "unknown_posture"
 
 
-def validate_assessment(raw_text: str, evidence: dict[str, Any],
-                        cfg: dict[str, Any]) -> tuple[PostureAssessment | None, str]:
-    """Parse and validate a model result, downgrading unsupported directional labels."""
+def validate_assessment(raw_text: str, evidence: dict[str, Any], cfg: dict[str, Any],
+                        stage: str = "model") -> tuple[PostureAssessment | None, str]:
+    """Parse and validate a model result, downgrading unsupported directional labels.
+
+    The banned-signal check reads the claim (the explanation) only; `limitations` may say which
+    signals are not measured. `stage` prefixes that rejection reason ("model"/"reassessment")."""
     # Nova often wraps its JSON in a ```json fence; the content is still checked in full.
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", raw_text.strip(), flags=re.DOTALL)
     try:
@@ -370,10 +389,19 @@ def validate_assessment(raw_text: str, evidence: dict[str, Any],
         assessment = PostureAssessment.model_validate(data)
     except (json.JSONDecodeError, ValidationError, TypeError) as exc:
         return None, f"malformed_result:{type(exc).__name__}"
+    if UNSUPPORTED_CLAIM_RE.search(assessment.explanation):
+        return None, f"{stage}_made_unsupported_ball_possession_pressure_or_intent_claim"
     ok, citation_reason, paired = _citations_match(assessment, evidence)
     if not ok:
         return None, citation_reason
     supported, reason = _classification_supported(assessment.posture, evidence, paired, cfg)
+    if not supported and assessment.posture == "unclear":
+        # The model already declined a label and the quality checks agree: keep its answer,
+        # record why the evidence is weak and cap the strength (no label is ever added).
+        return assessment.model_copy(update={
+            "evidence_strength": min(float(assessment.evidence_strength), 0.35),
+            "limitations": list(dict.fromkeys([*assessment.limitations, reason]))[:8],
+        }), "model_unclear"
     if not supported:
         return (assessment.model_copy(update={
             "posture": "unclear",
@@ -383,6 +411,16 @@ def validate_assessment(raw_text: str, evidence: dict[str, Any],
             "limitations": list(dict.fromkeys([*assessment.limitations, reason]))[:8],
         }), reason)
     return assessment, reason
+
+
+def _proposed_posture(raw_text: str) -> str | None:
+    """The label the model itself proposed (trace only), or None if it is unreadable."""
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", raw_text.strip(), flags=re.DOTALL)
+    try:
+        value = json.loads(fenced.group(1) if fenced else raw_text).get("posture")
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return None
+    return value if isinstance(value, str) else None
 
 
 def _fallback(record: PersistedEventRecord, *, trace_id: str, model_id: str | None,
@@ -550,6 +588,7 @@ class PostureAnalyzer:
         model_id = str(self.settings.get("model_id") or self.cfg["bedrock"]["model_id"])
         try:
             evidence = build_evidence(record)
+            evidence["visual_reanalysis_available"] = callable(self.visual_reanalysis)
             evidence_text = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"),
                                        allow_nan=False)
             if len(evidence_text) > int(self.settings.get("max_evidence_chars", 8000)):
@@ -637,10 +676,6 @@ class PostureAnalyzer:
                                        int(tokens.get("output_tokens", 0)))
             if response.stop_reason != "end_turn" or response.tool_uses or not response.text:
                 raise ValueError("model_returned_no_single_text_answer")
-            if re.search(r"\b(ball|possession|press(?:ing|ure)?|intent|opponent)\b",
-                         response.text, flags=re.IGNORECASE):
-                raise ValueError(
-                    "model_made_unsupported_ball_possession_pressure_or_intent_claim")
             assessment, validation = validate_assessment(response.text, evidence, self.settings)
             model_output_hash = hashlib.sha256(response.text.encode("utf-8")).hexdigest()
             visual_request = assessment.visual_reanalysis_request if assessment else None
@@ -682,6 +717,8 @@ class PostureAnalyzer:
                     "window_s": visual_segment["window_s"],
                     **visual_segment["quality"],
                 }
+                evidence["visual_reanalysis_available"] = False
+                evidence["citable_metrics"] = citable_metrics(evidence)
                 evidence_text = json.dumps(evidence, ensure_ascii=False, separators=(",", ":"),
                                            allow_nan=False)
                 if len(evidence_text) > int(self.settings.get("max_evidence_chars", 8000)):
@@ -707,12 +744,8 @@ class PostureAnalyzer:
                                            int(tokens.get("output_tokens", 0)))
                 if response.stop_reason != "end_turn" or response.tool_uses or not response.text:
                     raise ValueError("reassessment_returned_no_single_text_answer")
-                if re.search(r"\b(ball|possession|press(?:ing|ure)?|intent|opponent)\b",
-                             response.text, flags=re.IGNORECASE):
-                    raise ValueError(
-                        "reassessment_made_unsupported_ball_possession_pressure_or_intent_claim")
                 assessment, validation = validate_assessment(response.text, evidence,
-                                                             self.settings)
+                                                             self.settings, stage="reassessment")
                 if assessment and assessment.visual_reanalysis_request is not None:
                     raise ValueError("reassessment_requested_an_additional_visual_window")
                 model_output_hash = hashlib.sha256(response.text.encode("utf-8")).hexdigest()
@@ -728,6 +761,7 @@ class PostureAnalyzer:
             self.trace.write(trace_id, "model_decision", {
                 "event_id": record.event_id, "model_id": response.model_id,
                 "model_output_sha256": model_output_hash,
+                "model_posture": _proposed_posture(response.text),  # before any code downgrade
                 "posture": assessment.posture if assessment else None,
                 "citations": ([c.model_dump(mode="json") for c in assessment.citations]
                               if assessment else []), "validation": validation,

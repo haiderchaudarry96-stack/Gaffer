@@ -29,7 +29,7 @@ export default function Limits() {
           'Blue’s switch to 4-2-3-1 at 18:50 held for 220 s but the return-leg rule rejected it; the tested fix added 25 false alerts on synthetic data, so it stays off.',
           'Panning and zooming cameras are refused by the camera check. The fixed side-camera view is experimental and never alerted.',
           'The drone pipeline does not detect the ball, so shapes come from player positions only and set pieces are not recognised as such.',
-          'All real footage is one match: accuracy numbers come from synthetic matches; real clips give traces and decision tables. Alert suggestions are unchecked model text.',
+          'All real footage is one match: accuracy numbers come from synthetic matches; real clips give traces and decision tables. Alert suggestions are checked against the formation change and replaced by a code template when wrong; they are never part of the decision.',
           'This site replays stored outputs; the backend (EC2, S3, CloudWatch) is being deployed, so chat and report generation are off here.',
         ]}
       />
