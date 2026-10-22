@@ -140,6 +140,10 @@ def test_health(client) -> None:
     assert j["status"] == "ok" and j["opencv_version"].startswith("5.")
     assert j["rules_fingerprint"] == "ca4ff9bbf7b01c6c"
     assert j["bedrock"] == "not configured" and j["demo_available"]
+    assert j["aws"]["region"] == "ap-southeast-2" and j["aws"]["credentials"] == "not used"
+    assert j["aws"]["model_id"] and j["aws"]["fallback_model_id"]
+    assert j["storage"] == "local" and isinstance(j["sample_clip"], bool)
+    assert isinstance(j["replay_clips"], int | str)
 
 
 def test_rules_fingerprint_is_frozen(base_cfg) -> None:

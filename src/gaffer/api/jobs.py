@@ -328,8 +328,16 @@ class JobManager:
         self.current = aid
         self.update(aid, status="running", stage="detecting", progress=0.0, queue_position=0,
                     started_utc=now_utc())
+        t0 = time.perf_counter()
         try:
             self.runner(self, aid)
+            done = self.get(aid) or {}
+            if done.get("status") == "done":  # one line per finished analysis (CloudWatch metric)
+                summ = done.get("summary") or {}
+                log.info("analysis_done id=%s wall_s=%.1f video_s=%s candidates=%s "
+                         "bedrock_calls=%s", aid, time.perf_counter() - t0,
+                         (done.get("video") or {}).get("duration_s"), summ.get("candidates"),
+                         (summ.get("bedrock") or {}).get("calls"))
         except AnalysisFailed as exc:
             self.update(aid, status="failed", error=str(exc), error_detail=exc.detail[:2000],
                         eta_s=None)

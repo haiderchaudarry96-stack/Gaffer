@@ -337,12 +337,45 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         return {"recommendation_response": saved.model_dump(mode="json")}
 
     # ------------------------------------------------------------------ health
+    cred_cache: dict[str, str] = {}
+
+    def credential_source() -> str:
+        """Where boto3 finds credentials (`iam-role` on EC2), computed once; never the keys."""
+        if factory is None:
+            return "not used"
+        if "v" not in cred_cache:
+            try:
+                import boto3
+
+                prof = cfg["aws"].get("profile")
+                sess = boto3.session.Session(
+                    profile_name=prof if prof in boto3.session.Session().available_profiles
+                    else None)
+                creds = sess.get_credentials()
+                cred_cache["v"] = creds.method if creds is not None else "none found"
+            except Exception as exc:  # report, never fail the health check
+                cred_cache["v"] = f"error: {type(exc).__name__}"
+        return cred_cache["v"]
+
+    def replay_clips() -> int | str:
+        try:
+            return len(teamtrack_replay.clips())
+        except ReplaySourceError as exc:
+            return f"unavailable: {exc}"
+
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         return {"status": "ok", "opencv_version": cv2.__version__,
                 "rules_fingerprint": rules_fingerprint(cfg),
                 "bedrock": "client available" if factory is not None else "not configured",
                 "model_id": cfg["bedrock"]["model_id"], "region": cfg["aws"]["region"],
+                "aws": {"region": cfg["aws"]["region"],
+                        "model_id": cfg["bedrock"]["model_id"],
+                        "fallback_model_id": cfg["bedrock"].get("fallback_model_id"),
+                        "credentials": credential_source()},
+                "storage": api["storage"].get("backend", "local"),
+                "replay_clips": replay_clips(),
+                "sample_clip": _sample_path() is not None,
                 "demo_available": demo.available(),
                 "analyses": {"running": jobs.current, "queued": jobs.queued_count()},
                 "usage_today": usage.snapshot(),
@@ -716,10 +749,27 @@ def _remove(job_dir: Path) -> None:
     shutil.rmtree(job_dir, ignore_errors=True)
 
 
+def _server_logging() -> None:
+    """`GAFFER_LOG_LEVEL=INFO` (set in the EC2 container): the `gaffer.*` loggers print to stderr
+    next to uvicorn's own lines (CloudWatch reads them, e.g. `analysis_done`). Unset: unchanged."""
+    import os
+
+    level = os.environ.get("GAFFER_LOG_LEVEL", "").strip().upper()
+    lg = logging.getLogger("gaffer")
+    if not level or lg.handlers:
+        return
+    h = logging.StreamHandler()
+    h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    lg.addHandler(h)
+    lg.setLevel(level)
+    lg.propagate = False
+
+
 def __getattr__(name: str) -> Any:
     """`uvicorn gaffer.api.main:app` builds the app on first access (not at import, so tests
     and scripts can import this module without starting a worker)."""
     if name == "app":
+        _server_logging()
         app_ = create_app()
         globals()["app"] = app_
         return app_

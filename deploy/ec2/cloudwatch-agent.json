@@ -1,0 +1,23 @@
+{
+  "agent": {"run_as_user": "root", "region": "ap-southeast-2"},
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {"file_path": "/opt/gaffer/outputs/llm_calls.jsonl",
+           "log_group_name": "/gaffer/app", "log_stream_name": "llm_calls"},
+          {"file_path": "/opt/gaffer/outputs/agent_trace.jsonl",
+           "log_group_name": "/gaffer/app", "log_stream_name": "agent_trace"},
+          {"file_path": "/opt/gaffer/outputs/api/*/trace.jsonl",
+           "log_group_name": "/gaffer/app", "log_stream_name": "analysis_trace"},
+          {"file_path": "/opt/gaffer/outputs/alerts.jsonl",
+           "log_group_name": "/gaffer/app", "log_stream_name": "alerts"},
+          {"file_path": "/opt/gaffer/outputs/api/chat_trace.jsonl",
+           "log_group_name": "/gaffer/app", "log_stream_name": "chat_trace"},
+          {"file_path": "/opt/gaffer/outputs/api/posture_trace.jsonl",
+           "log_group_name": "/gaffer/app", "log_stream_name": "posture_trace"}
+        ]
+      }
+    }
+  }
+}

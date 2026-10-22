@@ -19,3 +19,5 @@ docs
 scripts
 *.mp4
 *.mov
+web/dist
+data/sample_clips

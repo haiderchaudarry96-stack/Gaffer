@@ -1,0 +1,5 @@
+# Files run on Linux (Docker, EC2) keep LF even when checked out or archived on Windows
+# (core.autocrlf=true would otherwise turn them into CRLF and break `sh`).
+*.sh text eol=lf
+deploy/Dockerfile text eol=lf
+deploy/ec2/* text eol=lf
