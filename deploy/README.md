@@ -6,22 +6,28 @@ OpenCV is `opencv-contrib-python-headless==5.0.0.93` (same version as the laptop
 libraries). **No AWS keys are ever copied into the image**: on EC2 the IAM instance role is used
 (boto3's default credential chain); locally Bedrock is optional.
 
-Not built yet: the cloud session that wrote this could not pull a base image (Docker Hub rate
-limit, AWS mirror blocked by its proxy). The same install and run steps were checked in a clean
-Python 3.12 virtualenv with `uvicorn` and `curl`.
+Built and run (22 Oct): on the laptop (amd64, 411 s from an empty cache, image 1.27 GB, health and
+`/app` checked) and on EC2 (x86_64 m7i-flex.large, 53 s, 897 MB; live at http://13.210.196.109/).
+The image builds the frontend itself (Node stage, `VITE_API_URL=/`), so `web/dist` no longer has to
+exist in the build context. Large files are not in the image: the replay clips, the sample clip
+and the model are mounted, or fetched from S3 at start when `GAFFER_ASSETS_BUCKET` is set
+(`deploy/start.sh`, `gaffer.aws.assets`).
 
 ## Build and run locally (laptop, Docker Desktop)
 
 From the repo root:
 
 ```powershell
-# optional: build the frontend first so the image serves it at / ("/" = the API is on this
-# same server, so the site works on any host name; empty = static demo, not connected)
-cd web; npm ci; $env:VITE_API_URL="/"; npm run build; cd ..
-
+# the image builds the frontend itself (Node stage) with VITE_API_URL=/ (API on the same server)
 docker build -f deploy/Dockerfile -t gaffer:latest .
-docker run --rm -p 8000:8000 -v "${PWD}/outputs:/app/outputs" --name gaffer gaffer:latest
+docker run --rm -p 8000:8000 -v "${PWD}/outputs:/app/outputs" `
+  -v "${PWD}/data/teamtrack:/app/data/teamtrack:ro" `
+  -v "${PWD}/data/sample_clips:/app/data/sample_clips:ro" --name gaffer gaffer:latest
 ```
+
+The two read-only mounts give the container the 12 replay clips (Live analysis) and the sample
+clip; without them the app still runs, `/api/health` then shows `replay_clips: "unavailable: …"`
+and `sample_clip: false`. Set `GAFFER_LOG_LEVEL=INFO` (`-e`) to see the `gaffer.*` log lines.
 
 Then open http://localhost:8000/api/health (and http://localhost:8000/ and /app if the frontend
 was built).
@@ -57,19 +63,21 @@ curl.exe -X POST -H "Content-Type: application/json" -d "{\"confirmed\": true}" 
 curl.exe http://localhost:8000/api/analyses/<id>
 ```
 
-## On EC2 (Phase 4, next session: needs the user's OK on cost first)
+## On EC2 (deployed 22 Oct): see [DEPLOY_AWS.md](DEPLOY_AWS.md)
 
-- Base image: Docker Hub's anonymous pull limit can bite on shared IPs; the AWS mirror avoids it:
-  `docker build --build-arg BASE=public.ecr.aws/docker/library/python:3.12-slim -f deploy/Dockerfile -t gaffer:latest .`
-- Instance role with least privilege: `bedrock:InvokeModel` on the two inference profiles in
-  `config.yaml` (+ the underlying Nova models), `s3:GetObject/PutObject/ListBucket` on the results
-  bucket if `api.storage.backend: s3`, CloudWatch Logs `logs:CreateLogStream/PutLogEvents`.
-- The configured profile `default` does not exist on EC2: the API then uses the instance role
-  automatically (`api/main.py _bedrock_factory`).
-- Region `ap-southeast-2`. CPU only: a 6-min 4K drone clip is ~7 min of OpenCV on the laptop CPU;
-  measure on the instance before sizing it.
-- Put `api.event_store.path` on an EBS-backed directory and mount that volume at the same container
-  path on every restart/redeploy. For a consistent backup, stop the app or use SQLite's backup API;
-  do not copy a live DB file by itself.
+Live at **http://13.210.196.109/** (m7i-flex.large in ap-southeast-2; the Free plan refuses
+Graviton types). [DEPLOY_AWS.md](DEPLOY_AWS.md) lists the resources and their ids, the real costs,
+what was checked on the live server, how to redeploy after a `git pull`, how to stop the instance
+and how to delete everything. Files:
+
+- `deploy/ec2/bootstrap.sh`: one-time instance setup (Docker, CloudWatch agent, `/opt/gaffer`).
+- `deploy/ec2/deploy.sh <bucket> <src key>`: build the image on the instance and (re)start the
+  container (port 80, `--restart unless-stopped`, awslogs to `/gaffer/app`, EBS volumes).
+- `deploy/ec2/cloudwatch-agent.json`: the JSONL logs shipped to CloudWatch.
+- `deploy/aws/make_iam_policies.py`: the IAM policies (laptop deploy user, instance role).
+- `deploy/aws/ssm_run.py`: run a shell script on the instance through SSM Run Command (no SSH).
+- No AWS key is ever on the instance or in the image: boto3 and Docker's awslogs driver use the
+  instance role (`/api/health` shows `"credentials": "iam-role"`). IMDSv2 hop limit 2 lets the
+  container reach it.
 - Limits for a public demo live in `config.yaml` → `api.chat`, `api.bedrock_daily`
   (300 Bedrock calls and $1.00 per UTC day for the whole API by default).

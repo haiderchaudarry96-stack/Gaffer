@@ -25,6 +25,36 @@
 
 <!-- Add entries here, newest first. -->
 
+### [2026-10-22] Same 6 minutes of footage, different result through the upload path (EC2)
+**Stage:** formation / change detection (upload path vs the Phase 3 demo pipeline)
+**Severity:** wrong output (for the demo story: the confirmed change is a different team)
+
+**Input:** the 12 TeamTrack drone clips 900–1260 s joined into one 360.4 s 4K MP4 (packets copied, no re-encode), uploaded to the live EC2 server (N6a, `up_fcb6687fdc86`, Nova arm, frozen rules `ca4ff9bbf7b01c6c`).
+**What happened:** 8 candidates; the only confirmed one is **Blue 3-5-2 → 4-4-2 at 16:30** (held 67 % of 12 windows). White's **4-4-2 → 3-4-3 at 16:30**, the change the Phase 3 demo run confirmed in the same minutes (`samples/w900_1260`, 91 % held), is not a candidate at all: White's first candidate is 3-4-3 → 4-3-3 (rejected), i.e. White was already read as 3-4-3.
+**Why (best guess, not isolated):** the upload path differs from the Phase 3 run in two inputs: it fits its own team-colour model on these 6 minutes (Phase 3 used the full-match team model `<match>.teams.json`) and it re-anchors the saved 31-point calibration to the upload's first frame (the reference clip is not on the server). Either can change who is White and which shape is read before 16:30. Nothing points at EC2 (same image as the laptop, x86_64 OpenCV 5.0.0).
+**Screenshot / output:** live result `http://13.210.196.109/api/analyses/fcb6687fdc86/result`; evidence `…/evidence/evt_002.jpg`.
+**Fix or mitigation:** known limitation for now; the demo keeps the Phase 3 record. To isolate: run the same upload on the laptop, then with the full-match team model, then with the reference clip present.
+**Measured impact:** demo-window agreement between the two paths on confirmed changes: 0 of 1.
+
+### [2026-10-22] Posture read on the first real upload event failed validation (fallback "unclear")
+**Stage:** agent (N3 posture, `agent/posture.py`)
+**Severity:** degraded (safe fallback; the verifier's confirmed decision was unaffected)
+
+**Input:** EC2 upload `up_fcb6687fdc86`, evt_002 (Blue 3-5-2 → 4-4-2), Nova 2 Lite, 1 call (1,529 in / 421 out tokens, $0.0015).
+**What happened:** Nova answered `unclear` with **no citations**; the result failed schema validation (`malformed_result:ValidationError`), so the event is stored `posture_status: failed` with the deterministic fallback `unclear`. Only the output hash is kept (`posture_trace`, CloudWatch stream `posture_trace`), not the text.
+**Why (best guess):** an `unclear` answer without the required citation list does not fit the typed result; the 22 Oct fix covered `unclear` answers that still cited metrics.
+**Fix or mitigation:** not fixed in N6a (deployment only). Candidate fix: accept a model `unclear` with an empty citation list as a completed `unclear` (it makes no claim to cite).
+**Measured impact:** 1 of 1 real upload posture calls on EC2 failed validation.
+
+### [2026-10-22] Free plan refuses Graviton: t4g.large launch rejected
+**Stage:** AWS
+**Severity:** degraded (deployment on a different instance type)
+
+**Input:** `aws ec2 run-instances --instance-type t4g.large` in ap-southeast-2 on the Free-plan account.
+**What happened:** `InvalidParameterCombination: The specified instance type is not eligible for Free Tier.` Eligible in Sydney: t3.micro/small, t4g.micro/small, t8i.micro/small, c7i-flex.large, m7i-flex.large.
+**Fix or mitigation:** launched **m7i-flex.large** (2 vCPU Intel, 8 GiB, $0.1197/h). No larger type is available on this plan, so the 6-min 4K upload takes 31.5 min on the server (detection 464 s; agent re-analysis uses the full 1,200 s OpenCV budget).
+**Measured impact:** detection 1.29 s per video second on EC2 vs 1.18 on the laptop.
+
 ### [2026-10-22] Chat invented an event id for "Why was Blue's 18:50 change rejected?" (twice)
 **Stage:** agent (analyst chat, `api/chat.py`)
 **Severity:** degraded (the grounding check caught it; the coach got the safe "can't answer" reply)

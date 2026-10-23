@@ -8,7 +8,7 @@ This roadmap adds the coach workflow described in [`CODEX_PLANNING.md`](CODEX_PL
 - Expanded coach workflow: approximately **85% complete**, with approximately **15% remaining** (rough phase-allocation estimate revised after N1-N5).
 - At the earlier 45% estimate, the remaining 55% included unfinished original Phase 4/5 work and the new coach-workflow requirements. The earlier phase breakdown did not list the AWS deployment and submission backlog explicitly; this revision adds it.
 - These are planning estimates, not measured engineering metrics. The existing OpenCV, API, agent, UI, and TeamTrack work is reusable.
-- Status for new phases: **N1-N5 complete; N6 not started**. This file tracks phase progress.
+- Status for new phases: **N1-N5 complete; N6a (AWS deployment) complete 2026-10-22; N6b (submission package) not started**. This file tracks phase progress.
 
 ## Requirements sequence
 
@@ -202,7 +202,7 @@ Keep only fixes needed for N5. At the end give the end-to-end outcome, checks ac
 
 ## N6 — AWS EC2 deployment and submission package
 
-**Status:** Not started.  
+**Status:** N6a (AWS deployment) complete 2026-10-22: live at http://13.210.196.109/, every check observed (see `deploy/DEPLOY_AWS.md` and the N6a entry in `RECORD.md`). N6b (technical report, diagrams, README judge section, screenshots, demo video) not started; N6 is complete only when N6b is done.  
 **Goal:** complete the unfinished original Phase 4 cloud deployment and Phase 5 judge-facing submission work.
 
 **Use what exists:** `deploy/Dockerfile`, one-process deployment design, `deploy/README.md`, S3 storage adapter, Bedrock configuration, existing AWS region/account setup, IAM role design, API health endpoint, and measured evaluation/failure records.

@@ -386,10 +386,11 @@ including a 3-minute generated upload where the agent confirms a 4-4-2 → 3-5-2
 OpenCV re-analysis and the coach approves the alert; a clean virtualenv install from
 `requirements.lock` and a real `uvicorn` + `curl` run, serving the built frontend.
 
-**Not tested yet:** real Bedrock calls from the API (chat, Nova arm on uploads); any real
-non-TeamTrack footage (pitch detection, the classical drone detector at other resolutions and
-camera heights); `eval_autodetect.py` on TeamTrack; S3 against AWS; the Docker image (the sandbox
-could not pull a base image).
+**Checked on EC2 (22 Oct, `deploy/DEPLOY_AWS.md`):** the Docker image, real Bedrock from the API
+through the instance role (chat, Nova arm on uploads, coach report, posture), uploads of the sample
+clip and a 6-min 4K TeamTrack file. **Not tested yet:** any real non-TeamTrack footage (pitch
+detection, the classical drone detector at other resolutions and camera heights);
+`api.storage.backend: s3` (the deployment keeps results on EBS; S3 holds only the assets).
 
 ## Known limits
 

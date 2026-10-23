@@ -1,0 +1,177 @@
+# Gaffer on AWS (N6a deployment, 22 Oct 2026)
+
+Public app: **http://13.210.196.109/** (desk: `/app`, health: `/api/health`). HTTP only, no domain.
+
+One EC2 instance in **ap-southeast-2 (Sydney)** runs one Docker container: the FastAPI API, the
+single analysis worker (OpenCV 5) and the built frontend. Bedrock (Nova 2 Lite via the global
+inference profile) is called from the container with the **instance role**; no access key exists
+on the instance or in the image. S3 holds the large files and the source tarball; CloudWatch holds
+the logs and two metrics.
+
+```
+laptop ── git archive ──► S3 gaffer-demo-<acct>/src/        (source, per commit)
+       ── aws s3 cp   ──► S3 gaffer-demo-<acct>/assets/     (replay clips, sample clip, model)
+EC2 m7i-flex.large ── deploy.sh: docker build ─► container "gaffer" (port 80 -> 8000)
+   ├─ start: assets from S3 -> /opt/gaffer/assets (EBS), demo seed -> event DB (once)
+   ├─ /opt/gaffer/outputs (EBS): events.sqlite3, uploads, alerts.jsonl, llm_calls.jsonl, traces
+   ├─ Bedrock Converse via instance role (daily caps in config.yaml api.bedrock_daily)
+   └─ CloudWatch /gaffer/app: container stdout (awslogs) + JSONL files (CloudWatch agent)
+```
+
+## Resources (all tagged `Project=gaffer`)
+
+| Resource | Id / name | Settings |
+|---|---|---|
+| EC2 instance | `i-0ed7553a2ab9a1d16` (`Name=gaffer`) | **m7i-flex.large** (2 vCPU Intel, 8 GiB), AL2023 x86_64 `ami-0ddbd63d0e3325a92`, subnet `subnet-090b2cd96603f2658` (2a), IMDSv2 required, hop limit 2, no key pair |
+| Root volume | `vol-0bb27f75edf65854d` | 30 GB gp3, encrypted, deleted with the instance |
+| Elastic IP | `13.210.196.109` (`eipalloc-047975f2cae632e36`) | attached to the instance |
+| Security group | `sg-04e763c223e8e3339` (`gaffer-web`) | inbound TCP 80 from anywhere only; no SSH (Session Manager instead) |
+| S3 bucket | `gaffer-demo-221039325928` | private (all 4 public-access blocks), SSE-S3, `assets/` 14 files 593.6 MB + `src/` tarballs |
+| Log group | `/gaffer/app` | 14-day retention; streams `app`, `llm_calls`, `analysis_trace`, `agent_trace`, `alerts`, `chat_trace`, `posture_trace` |
+| Metric filters | `analyses-completed`, `bedrock-calls` | metrics `Gaffer/AnalysesCompleted` (pattern `"analysis_done"`), `Gaffer/BedrockCalls` (one per `llm_calls.jsonl` record) |
+| IAM role | `gaffer-ec2-role` (+ instance profile) | `AmazonSSMManagedInstanceCore` + inline `GafferEc2Access` (Nova 2 Lite / Nova Micro profiles only, the one bucket, the one log group) |
+| IAM policy | `GafferDeploy` on user `Gaffer-dev` | laptop deploy rights, scoped to Sydney and `Project=gaffer` resources |
+| Budget | `gaffer-budget` (existed before) | see "Budget" below |
+
+Policies: `py deploy\aws\make_iam_policies.py <account id> outputs\aws_iam` writes the three
+JSON documents (deploy policy, role policy, trust policy). The role was created in the console by
+the account owner, so `Gaffer-dev` can pass it to EC2 but never create or edit roles.
+
+**Why not Graviton:** the account is on the AWS **Free plan**, which only launches Free-plan
+eligible types. `t4g.large` was refused on 22 Oct with `InvalidParameterCombination: The specified
+instance type is not eligible for Free Tier`. Eligible in Sydney (checked with
+`describe-instance-types --filters Name=free-tier-eligible,Values=true`): t3.micro/small,
+t4g.micro/small, t8i.micro/small, c7i-flex.large, **m7i-flex.large**. So "resize up to c7g.xlarge
+for the demo recording" is not possible on this plan; m7i-flex.large is the largest eligible type.
+
+## Costs (Sydney on-demand prices from the AWS price list, 22 Oct 2026)
+
+| Item | Price | Per day |
+|---|---|---|
+| m7i-flex.large | $0.1197 / h | $2.87 |
+| 30 GB gp3 | $0.096 / GB-month | $0.095 |
+| Public IPv4 (Elastic IP) | $0.005 / h, also while stopped | $0.12 |
+| S3 (0.62 GB) | $0.025 / GB-month | < $0.001 |
+| CloudWatch Logs | $0.67 / GB ingested; 2 custom metrics ≤ $0.30 / month each | ~ $0.01–0.03 |
+| Bedrock (Nova 2 Lite) | capped by `api.bedrock_daily`: 300 calls and $1.00 per UTC day | 22 Oct: 51 calls, $0.053 |
+| **Running total** | **≈ $0.13 / h** | **≈ $3.10 + Bedrock** |
+| **Stopped** (disk + IP only) | | **≈ $0.22** |
+
+22 Oct to 9 Nov running 24/7 ≈ 18 days ≈ **$56** + Bedrock. Free-plan credits on 22 Oct: $139.51.
+The Free plan never charges the card, but the **account closes when the credits reach $0**, so
+watch the credit balance (Billing → Credits), not only the budget.
+
+Data transfer out: one full replay of the 12 clips downloads ~324 MB per viewer; AWS gives
+100 GB/month of data transfer out free.
+
+## Observed on the live server (22 Oct)
+
+| Check | Result |
+|---|---|
+| Image build on the instance (`deploy.sh`) | 53 s; image 897 MB; assets from S3: 14 files, 593.6 MB in 3.5 s; health 200 64 s after the deploy started |
+| `/api/health` from the internet | 200 in 0.57 s; OpenCV `5.0.0`, fingerprint `ca4ff9bbf7b01c6c`, region `ap-southeast-2`, `credentials: iam-role`, 12 replay clips, sample clip present |
+| Live analysis replay (`web/scripts/e2e-teamtrack-replay.mjs`, `BASE_URL=http://13.210.196.109`) | PASS: 12 clips, 11 seek boundaries, 11 playback handoffs, 1×/2×/4×, event reveal at 1085 s, no browser errors |
+| Sample clip (30 s, 1080p) via `POST /api/analyses/sample` | pitch auto-detected (0.993, line error 0.048 m, 754 ms); OpenCV analysis **12.7 s wall** (0.42 s per video s), 60 frames at 2 fps, 26.9 detections/frame, 0 candidates; 1 Bedrock call (coach report) |
+| 6-min 4K upload (the 12 replay clips joined, 360.4 s, 3840×2160) | **1,888 s total (31.5 min)**: detection 464 s (1.29 s per video s; laptop 1.18), teams 12 s, agent 1,412 s (OpenCV re-analysis 1,208 s = the frozen 1,200 s budget). 8 candidates: 1 confirmed, 4 rejected, 3 uncertain; 47 Bedrock calls, $0.049 |
+| Chat through Bedrock (instance role) | "When did White change shape…": 200 in 5.4 s, `grounded: true`, 3 Nova calls |
+| Instance reboot | container back by itself (`unless-stopped`) 5 s after boot; the approved alert, its 8 events, the demo seed (1 event, not duplicated) and the daily usage counter all kept; assets not downloaded again |
+| CloudWatch | all 7 streams arriving (agent_trace only when that file exists); `AnalysesCompleted` = 2, `BedrockCalls` = 51 for 22 Oct, equal to the server's own counter |
+
+## Redeploy after a `git pull`
+
+The repo is private, so the instance never talks to GitHub: the laptop uploads a tarball of one
+**committed** revision (`git archive` ignores uncommitted files).
+
+```powershell
+# laptop, repo root, after the change is committed
+$sha = git rev-parse --short HEAD
+git archive --format=tar.gz -o "$env:TEMP\gaffer-$sha.tar.gz" $sha
+aws s3 cp "$env:TEMP\gaffer-$sha.tar.gz" "s3://gaffer-demo-221039325928/src/gaffer-$sha.tar.gz" --region ap-southeast-2
+```
+
+Then on the instance, as root. Either the browser shell (EC2 console → instance → **Connect →
+Session Manager → Connect**, then `sudo -i`) or from the laptop with
+`py deploy\aws\ssm_run.py i-0ed7553a2ab9a1d16 3600 <file with these lines>`:
+
+```sh
+SHA=<sha>; B=gaffer-demo-221039325928
+aws s3 cp --region ap-southeast-2 s3://$B/src/gaffer-$SHA.tar.gz /tmp/src.tar.gz
+rm -rf /tmp/gb && mkdir /tmp/gb && tar -xzf /tmp/src.tar.gz -C /tmp/gb deploy/ec2
+sh /tmp/gb/deploy/ec2/deploy.sh $B src/gaffer-$SHA.tar.gz
+```
+
+`deploy.sh` unpacks the source, builds the image natively, replaces the container and waits for
+`/api/health` (prints `up: … answered N s after start`, or the last 40 log lines and exit 1). The
+event DB, uploads and logs under `/opt/gaffer/outputs` are untouched; assets already on disk are
+not downloaded again. Expect ~1 min with the Docker cache, a few minutes without.
+
+New instance from scratch: launch as in the table above, then run
+`sh /tmp/gb/deploy/ec2/bootstrap.sh` once (Docker, CloudWatch agent, folders) before `deploy.sh`.
+
+## Stop to save money, start again
+
+```powershell
+aws ec2 stop-instances  --region ap-southeast-2 --instance-ids i-0ed7553a2ab9a1d16
+aws ec2 start-instances --region ap-southeast-2 --instance-ids i-0ed7553a2ab9a1d16
+```
+
+Stopped: ~$0.22/day (disk + Elastic IP). The address stays `13.210.196.109`; Docker and the
+container start by themselves on boot (checked with a reboot, see above). The event DB and every
+file under `/opt/gaffer` are on the EBS volume and survive a stop.
+
+Back up the event DB (consistent copy while the app runs):
+
+```sh
+docker exec gaffer python -c "import sqlite3; s=sqlite3.connect('/app/outputs/api/events.sqlite3'); d=sqlite3.connect('/app/outputs/api/events.backup.sqlite3'); s.backup(d)"
+aws s3 cp /opt/gaffer/outputs/api/events.backup.sqlite3 s3://gaffer-demo-221039325928/backup/events-$(date +%F).sqlite3 --region ap-southeast-2
+```
+
+## Logs and metrics
+
+- CloudWatch → Log groups → `/gaffer/app` (14 days). `app` = uvicorn + `gaffer.*` INFO lines
+  (`analysis_done id=… wall_s=… video_s=… candidates=… bedrock_calls=…`); the other streams are the
+  JSONL files, one record per line. Chat questions are logged as typed by visitors (no names, no
+  IPs; visitors are a random cookie id).
+- CloudWatch → Metrics → `Gaffer` → `AnalysesCompleted`, `BedrockCalls`; use statistic **Sum**,
+  period **1 day**. From the laptop:
+  `aws cloudwatch get-metric-statistics --region ap-southeast-2 --namespace Gaffer --metric-name BedrockCalls --start-time <day>T00:00:00Z --end-time <next day>T00:00:00Z --period 86400 --statistics Sum`
+- On the instance: `docker logs --tail 50 gaffer`, `docker ps`.
+
+## Budget
+
+`gaffer-budget` was $10/month (alerts: actual > 85 %, actual > 100 %, forecast > 100 %); on 22 Oct
+it showed $0.49 actual. At ~$3.10/day the server alone crosses $10 in about 3 days, so the alerts
+would fire before judging starts. Recommended (Billing → Budgets → `gaffer-budget` → Edit; the
+laptop user can only read it):
+
+- **Budgeted amount: $40 / month** (22–31 Oct ≈ 9.3 days × $3.10 ≈ $29 + October so far + Bedrock
+  headroom; 1–9 Nov ≈ $28). Keep it at $40 through judging (27 Oct – 9 Nov).
+- **Alerts:** actual > 50 % ($20), actual > 80 % ($32), actual > 100 % ($40), forecast > 100 %.
+- If the server stays up after 9 Nov, a full month is ~$93: stop or delete it instead of raising
+  the budget.
+- Bedrock stays capped in `config.yaml` (`api.bedrock_daily`: 300 calls, $1.00 per UTC day).
+
+## Delete everything (in this order)
+
+```powershell
+$R = "ap-southeast-2"
+# 0. optional: back up the event DB to S3 first (see above), then download what you want to keep
+# 1. instance (also deletes its 30 GB root volume: DeleteOnTermination = true)
+aws ec2 terminate-instances --region $R --instance-ids i-0ed7553a2ab9a1d16
+aws ec2 wait instance-terminated --region $R --instance-ids i-0ed7553a2ab9a1d16
+# 2. Elastic IP (charged while it exists, even unattached)
+aws ec2 release-address --region $R --allocation-id eipalloc-047975f2cae632e36
+# 3. security group (only after the instance is gone)
+aws ec2 delete-security-group --region $R --group-id sg-04e763c223e8e3339
+# 4. log group (removes both metric filters; the metrics expire on their own)
+aws logs delete-log-group --region $R --log-group-name /gaffer/app
+# 5. bucket: empty it, then delete it
+aws s3 rm s3://gaffer-demo-221039325928 --recursive --region $R
+aws s3api delete-bucket --bucket gaffer-demo-221039325928 --region $R
+```
+
+In Git Bash prefix the `logs` command with `MSYS_NO_PATHCONV=1` (it rewrites `/gaffer/app`).
+Then in the console (needs the account owner): IAM → Roles → `gaffer-ec2-role` → Delete (removes
+its inline policy and instance profile); IAM → Users → `Gaffer-dev` → remove `GafferDeploy`;
+IAM → Policies → `GafferDeploy` → Delete. Check EC2 → Volumes and Elastic IPs are empty in
+Sydney. Keep or delete `gaffer-budget` as you like (budgets are free).
