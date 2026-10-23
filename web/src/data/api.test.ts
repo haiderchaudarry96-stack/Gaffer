@@ -6,7 +6,6 @@ import { ApiError, ApiNotConfigured, apiBase, apiConfigured, apiUrl, type Http }
 import {
   analysisFrameUrl,
   confirmPitch,
-  estimateProcessingSeconds,
   setPitchPoints,
   getAnalysisStatus,
   getSampleClip,
@@ -186,8 +185,11 @@ describe('analysis API client', () => {
     expect(() => validateTraceStep({ ...step, kind: 'nonsense' })).toThrow(/kind/)
   })
 
-  it('estimates processing from the measured 1.2 s per second of video', () => {
-    expect(estimateProcessingSeconds(300)).toBe(360)
+  it('keeps the measured server ETA and agent-check budget separate', async () => {
+    const http = fakeHttp({
+      'GET /api/analyses/an_1': () => json(status({ eta_s: 42, agent_eta_s: 125 })),
+    })
+    await expect(getAnalysisStatus('an_1', { http, base: BASE })).resolves.toMatchObject({ eta_s: 42, agent_eta_s: 125 })
   })
 })
 

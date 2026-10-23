@@ -673,6 +673,26 @@ api:
   sample_clip:                    # "Try it with a sample clip" (scripts/make_sample_clip.py);
     path: data/sample_clips/teamtrack_top_sample_1080p.mp4   # hidden in the UI if missing
     label: "TeamTrack drone clip · 30 s · 1080p"
+    id: teamtrack
+    title: "The demo match (TeamTrack)"
+    note: "The demo match, where shape changes can be found."
+    credit: "Scott et al., TeamTrack, 2024 (MIT licence)"
+    credit_url: "https://arxiv.org/abs/2404.13868"
+    file_name: gaffer_sample_teamtrack_1080p.mp4
+  more_sample_clips:              # further samples, same mechanism (hidden each if its file is missing)
+    - id: zenodo
+      path: data/sample_clips/zenodo_top_view_1080p.mp4   # 1080p copy of data/zenodo/top-view-preview.mp4
+      label: "New ground (Zenodo) · 30 s · 1080p"
+      title: "New ground (Zenodo)"
+      note: "An unseen ground: shows players and teams on a pitch Gaffer was never tuned on. 30 s is too short for a shape change."
+      credit: "Synowiec, Nowak, Kamola, \"Soccer pitch top-view\", DOI 10.5281/zenodo.14867795 (CC BY 4.0)"
+      credit_url: "https://doi.org/10.5281/zenodo.14867795"
+      file_name: gaffer_sample_zenodo_1080p.mp4
+  resolution:                     # low-resolution note on a finished upload (px per metre of pitch,
+    low_px_per_m: 12.0            # from the pitch corners). Below -> one line, never a block.
+                                  # 12.0 = midway between the 720p copy of the demo (9.3 px/m) and
+                                  # a 1080p frame (~14.7 px/m, half of 4K's 29.4): 720p is flagged,
+                                  # a full-pitch 1080p clip is not (DATA_NOTES s13).
   jobs:
     view: top                     # uploads are analysed as a top-down view (only one supported)
     arm: auto                     # auto: Nova arm when Bedrock is configured, else rules; llm; rules

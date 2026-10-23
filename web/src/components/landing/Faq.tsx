@@ -16,7 +16,7 @@ const FAQ = [
   },
   {
     q: 'What does a match cost?',
-    a: 'The language model cost $0.021 per synthetic match (195 calls for ten matches, $0.21). Vision runs on a laptop CPU today: about 1.2–1.4 s per second of drone video, and 2–4 minutes per second look. Cloud hosting costs are not measured yet.',
+    a: 'The language model cost $0.021 per synthetic match (195 calls for ten matches, $0.21). Processing time varies with resolution, hardware and server load; the app reports an estimate from measured frame-processing time after analysis starts. Cloud hosting costs are not measured yet.',
   },
   {
     q: 'What about player privacy?',

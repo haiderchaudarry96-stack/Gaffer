@@ -767,19 +767,23 @@ def test_progress_is_monotonic_and_measured(base_cfg) -> None:
     p = Progress(base_cfg, 120.0, snaps.append)
     p.frames_started(480)
     first = p.snapshot()
-    assert first["progress_detail"]["eta_basis"] == "prior" and first["eta_s"] > 0
+    assert first["progress_detail"]["eta_basis"] == "prior" and first["eta_s"] is None
+    assert first["agent_eta_s"] is not None
     for k in range(1, 50):
         p.frame_done(k)
     mid = p.snapshot()
     assert mid["progress_detail"]["eta_basis"] == "measured"
     assert mid["progress"] >= first["progress"]
+    assert mid["eta_s"] is not None and mid["agent_eta_s"] is not None
     p.set_stage("teams")
+    assert snaps[-1]["eta_s"] is not None
     p.set_stage("agent")
+    assert snaps[-1]["eta_s"] is None and snaps[-1]["agent_eta_s"] is not None
     p.candidates_started(2)
     p.candidate_done(1.0)
     p.set_stage("done")
     end = p.snapshot()
-    assert end["progress"] == 1.0 and end["eta_s"] is None
+    assert end["progress"] == 1.0 and end["eta_s"] is None and end["agent_eta_s"] is None
     assert [s["progress"] for s in snaps] == sorted(s["progress"] for s in snaps)
 
 

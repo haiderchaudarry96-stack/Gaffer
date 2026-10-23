@@ -1,5 +1,5 @@
-import { CheckCircle2, XCircle } from 'lucide-react'
-import { SECONDS_PER_VIDEO_SECOND } from '../../data/analysis'
+import { CheckCircle2, ChevronDown, XCircle } from 'lucide-react'
+import { useLayoutEffect, useRef } from 'react'
 
 /** A pitch outline from a camera's point of view: a trapezoid (top near/far) plus a halfway line. */
 function Pitch({ near, far, y0 = 20, y1 = 76, clip = false }: { near: number; far: number; y0?: number; y1?: number; clip?: boolean }) {
@@ -65,12 +65,18 @@ const CARDS = [
   },
 ]
 
-/** What footage works, with the upload limits and a realistic wait (before choosing a file). */
-export default function FootageGuide() {
-  const perMinute = Math.round(60 * SECONDS_PER_VIDEO_SECOND / 6) / 10 // minutes of processing per video minute
+/** What footage works, with upload limits; compact mode keeps the guidance collapsed. */
+export default function FootageGuide({ compact = false }: { compact?: boolean }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  useLayoutEffect(() => {
+    if (detailsRef.current) detailsRef.current.open = !compact
+  }, [compact])
+
   return (
-    <section aria-labelledby="footage-guide-title" className="rounded-2xl border border-line bg-bg p-4">
-      <h3 id="footage-guide-title" className="text-sm font-semibold text-text">What footage works</h3>
+    <details ref={detailsRef} className="group rounded-2xl border border-line bg-bg p-4">
+      <summary id="footage-guide-title" className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-text [&::-webkit-details-marker]:hidden">
+        What footage works <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden="true" />
+      </summary>
       <ul className="mt-3 grid gap-3 sm:grid-cols-3">
         {CARDS.map((c) => (
           <li key={c.title} className={`rounded-xl border p-3 ${c.ok ? 'border-accent/50' : 'border-line'}`}>
@@ -87,9 +93,8 @@ export default function FootageGuide() {
       </ul>
       <p className="mt-3 text-xs text-muted">
         Limits: up to <strong className="text-text">6 minutes</strong> and <strong className="text-text">500 MB</strong>, MP4 or MOV,
-        two teams in clearly different shirts. Expect about {perMinute} minutes of processing per minute of video on
-        the demo server (a 6-minute clip takes roughly {Math.round(6 * perMinute)} minutes), plus the agent’s checks.
+        two teams in clearly different shirts.
       </p>
-    </section>
+    </details>
   )
 }

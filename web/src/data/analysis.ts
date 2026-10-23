@@ -64,6 +64,8 @@ export interface AnalysisStatus {
   progress: number
   /** server's estimate of the remaining seconds, if it has one */
   eta_s: number | null
+  /** remaining estimated budget for agent checks, separate from the server ETA */
+  agent_eta_s: number | null
   error: string | null
   pitch: PitchInfo | null
   /** the uploaded video as the server read it */
@@ -78,13 +80,6 @@ export interface AnalysisResult {
   alerts: Alert[]
   trace: TraceStep[]
   report: CoachReport | null
-}
-
-/** Measured on the laptop CPU for the drone view (CLAUDE.md key numbers: 1.2-1.4 s per s of video). */
-export const SECONDS_PER_VIDEO_SECOND = 1.2
-
-export function estimateProcessingSeconds(videoSeconds: number): number {
-  return Math.round(videoSeconds * SECONDS_PER_VIDEO_SECOND)
 }
 
 function corners(v: unknown, path: string): [number, number][] | null {
@@ -117,6 +112,7 @@ export function validateStatus(raw: unknown): AnalysisStatus {
   const p = num(s.progress, 'analysis.progress')
   if (p < 0 || p > 1) throw new DataError(`analysis.progress: expected 0..1, got ${p}`)
   if (s.eta_s !== null && s.eta_s !== undefined) num(s.eta_s, 'analysis.eta_s')
+  if (s.agent_eta_s !== null && s.agent_eta_s !== undefined) num(s.agent_eta_s, 'analysis.agent_eta_s')
   let video: AnalysisStatus['video'] = null
   if (s.video && typeof s.video === 'object') {
     const v = obj(s.video, 'analysis.video')
@@ -128,6 +124,7 @@ export function validateStatus(raw: unknown): AnalysisStatus {
     stage: s.stage as AnalysisStage,
     progress: p,
     eta_s: (s.eta_s as number | null) ?? null,
+    agent_eta_s: (s.agent_eta_s as number | null) ?? null,
     error: typeof s.error === 'string' ? s.error : null,
     pitch: validatePitch(s.pitch),
     video,

@@ -32,7 +32,7 @@ export default function Results() {
           'Detection F1 0.912 within 1 m (precision 0.858, recall 0.974) on the TeamTrack drone eval clips, one match. Most precision misses are referees and staff, which the ground truth does not label. Side view: 0.78 within 2 m.',
           'Team colour right for 98.6 % of players on the drone eval clips at 4 fps tracking; 2.4 % left “unknown”. Side view: 92.1 %.',
           'Who decides: fixed rules give every verdict. Nova 2 Lite on Amazon Bedrock picks the calls and writes the explanation; its decisions matched the rules-only run on 68 / 68 synthetic candidates, so the LLM adds nothing to the decisions.',
-          'Speed, drone view, laptop CPU, no GPU: about 1.2–1.4 s of processing per second of video at 4 fps tracking; a second look at a 145 s window at 4 fps took 171.6 s; a camera check 8–13 s.',
+          'Processing time varies with video resolution, server hardware and load. The app reports an estimate from measured frame-processing time once analysis starts.',
         ]}
       />
     </Section>

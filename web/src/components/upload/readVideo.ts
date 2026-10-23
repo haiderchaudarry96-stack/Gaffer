@@ -1,6 +1,7 @@
 /** Reads a local video's duration, size and first frame in the browser (nothing is uploaded). */
 export interface LocalVideoInfo {
   file: File
+  bytes: number
   url: string
   duration: number
   width: number
@@ -14,7 +15,7 @@ export interface LocalVideoInfo {
 
 /** A file the browser cannot decode (e.g. an MPEG-4 Part 2 or HEVC codec): upload-only. */
 export function unreadableVideo(file: File): LocalVideoInfo {
-  return { file, url: URL.createObjectURL(file), duration: 0, width: 0, height: 0, frameUrl: '', frameT: 0, previewable: false }
+  return { file, bytes: file.size, url: URL.createObjectURL(file), duration: 0, width: 0, height: 0, frameUrl: '', frameT: 0, previewable: false }
 }
 
 const OK_TYPES = ['video/mp4', 'video/quicktime']
@@ -25,14 +26,22 @@ export function isAcceptedVideo(file: File): boolean {
 }
 
 export function readVideo(file: File): Promise<LocalVideoInfo> {
+  return readVideoSource(file, URL.createObjectURL(file), file.size)
+}
+
+/** Reads metadata and a thumbnail from an existing URL, used for the server-hosted sample. */
+export function readVideoUrl(file: File, url: string, bytes: number): Promise<LocalVideoInfo> {
+  return readVideoSource(file, url, bytes)
+}
+
+function readVideoSource(file: File, url: string, bytes: number): Promise<LocalVideoInfo> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file)
     const v = document.createElement('video')
     v.preload = 'auto'
     v.muted = true
     v.playsInline = true
     const fail = () => {
-      URL.revokeObjectURL(url)
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
       reject(new Error('This browser cannot open this video. Try an H.264 MP4.'))
     }
     v.onerror = fail
@@ -41,13 +50,23 @@ export function readVideo(file: File): Promise<LocalVideoInfo> {
       v.currentTime = Math.min(0.1, v.duration / 2)
     }
     v.onseeked = () => {
-      const c = document.createElement('canvas')
-      // keep the frame light: at most 1280 px wide for the on-screen preview
-      const scale = Math.min(1, 1280 / v.videoWidth)
-      c.width = Math.round(v.videoWidth * scale)
-      c.height = Math.round(v.videoHeight * scale)
-      c.getContext('2d')!.drawImage(v, 0, 0, c.width, c.height)
-      resolve({ file, url, duration: v.duration, width: v.videoWidth, height: v.videoHeight, frameUrl: c.toDataURL('image/jpeg', 0.85), frameT: v.currentTime, previewable: true })
+      // Let the browser present the sought frame before drawing it. Some mobile decoders emit
+      // `seeked` before the decoded image is ready, which otherwise produces a black thumbnail.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const c = document.createElement('canvas')
+        // keep the frame light: at most 1280 px wide for the on-screen preview
+        const scale = Math.min(1, 1280 / v.videoWidth)
+        c.width = Math.round(v.videoWidth * scale)
+        c.height = Math.round(v.videoHeight * scale)
+        let frameUrl = ''
+        try {
+          c.getContext('2d')!.drawImage(v, 0, 0, c.width, c.height)
+          frameUrl = c.toDataURL('image/jpeg', 0.85)
+        } catch {
+          // Cross-origin sample playback can expose metadata while blocking canvas extraction.
+        }
+        resolve({ file, bytes, url, duration: v.duration, width: v.videoWidth, height: v.videoHeight, frameUrl, frameT: v.currentTime, previewable: true })
+      }))
     }
     v.src = url
   })

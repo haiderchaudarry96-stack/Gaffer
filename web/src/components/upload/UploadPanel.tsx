@@ -4,17 +4,15 @@ import Dialog from '../app/Dialog'
 import { Button } from '../ui/Button'
 import PitchPoints from './PitchPoints'
 import FootageGuide from './FootageGuide'
-import { formatBytes, formatDuration, isAcceptedVideo, readVideo, unreadableVideo, type LocalVideoInfo } from './readVideo'
+import { formatBytes, formatDuration, isAcceptedVideo, readVideo, readVideoUrl, unreadableVideo, type LocalVideoInfo } from './readVideo'
 import { apiConfigured } from '../../data/api'
 import {
   analysisFrameUrl,
   confirmPitch,
-  estimateProcessingSeconds,
   getAnalysisStatus,
   getSampleClip,
   loadAnalysisResult,
   needsPitchStep,
-  SECONDS_PER_VIDEO_SECOND,
   setPitchPoints,
   startSampleAnalysis,
   STAGE_LABELS,
@@ -71,8 +69,11 @@ export default function UploadPanel({
   const [dragOver, setDragOver] = useState(false)
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const uploadButtonRef = useRef<HTMLButtonElement>(null)
+  const selectedCardRef = useRef<HTMLDivElement>(null)
   const alive = useRef(true)
   const [sample, setSample] = useState<SampleClip | null>(null)
+  const [selectedSample, setSelectedSample] = useState(false)
 
   // "Try it with a sample clip": only when the server holds one (hidden otherwise)
   useEffect(() => {
@@ -90,6 +91,25 @@ export default function UploadPanel({
       alive.current = false
     }
   }, [])
+
+  useEffect(() => {
+    if (step.kind !== 'choose' || !video || reading) return
+    requestAnimationFrame(() => {
+      uploadButtonRef.current?.focus({ preventScroll: true })
+      const card = selectedCardRef.current
+      if (!card) return
+      const bounds = card.getBoundingClientRect()
+      const scrollport = card.closest('.overflow-y-auto')?.getBoundingClientRect()
+      const visibleTop = scrollport?.top ?? 0
+      const visibleBottom = scrollport?.bottom ?? window.innerHeight
+      if (bounds.top < visibleTop || bounds.bottom > visibleBottom) {
+        card.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          block: 'nearest',
+        })
+      }
+    })
+  }, [step.kind, video, reading])
 
   const pick = async (file: File | undefined) => {
     if (!file) return
@@ -111,6 +131,7 @@ export default function UploadPanel({
       }
       if (video) URL.revokeObjectURL(video.url)
       setVideo(info)
+      setSelectedSample(false)
       setPoints([])
       setStraightDown(false)
     } catch (e) {
@@ -153,29 +174,34 @@ export default function UploadPanel({
     }
   }
 
-  /** connected: the server analyses its own sample clip as an unknown upload (pitch check runs) */
+  /** Select the server-held sample so the coach can review it before Upload. */
   const trySample = async () => {
     if (!sample) return
-    const info: LocalVideoInfo = { file: new File([], sample.fileName, { type: 'video/mp4' }), url: sample.videoUrl,
-      duration: 0, width: 0, height: 0, frameUrl: '', frameT: 0, previewable: true }
-    setVideo(info)
-    setStep({ kind: 'progress', status: null, upload: 1 })
+    setReading(true)
+    setFileError(null)
     try {
-      const created = await startSampleAnalysis()
-      const v = created.video
-      setVideo({ ...info, duration: v?.duration_s ?? 0, width: v?.width ?? 0, height: v?.height ?? 0 })
-      await route(created)
+      const file = new File([], sample.fileName, { type: 'video/mp4' })
+      const info = await readVideoUrl(file, sample.videoUrl, sample.bytes)
+      if (video?.url.startsWith('blob:')) URL.revokeObjectURL(video.url)
+      setVideo(info)
+      setSelectedSample(true)
+      setPoints([])
+      setStraightDown(false)
     } catch (e) {
-      fail(e, { kind: 'choose' })
+      setFileError(e instanceof Error ? e.message : 'Could not read the sample video.')
+    } finally {
+      setReading(false)
     }
   }
 
   /** connected: upload first, the server decides the pitch step */
   const upload = async () => {
     if (!video) return
-    setStep({ kind: 'progress', status: null, upload: 0 })
+    setStep({ kind: 'progress', status: null, upload: selectedSample ? 1 : 0 })
     try {
-      const created = await uploadVideo(video.file, (f) => alive.current && setStep({ kind: 'progress', status: null, upload: f }))
+      const created = selectedSample
+        ? await startSampleAnalysis()
+        : await uploadVideo(video.file, (f) => alive.current && setStep({ kind: 'progress', status: null, upload: f }))
       await route(created)
     } catch (e) {
       fail(e, { kind: 'choose' })
@@ -206,7 +232,6 @@ export default function UploadPanel({
     void pick(e.dataTransfer.files?.[0])
   }
 
-  const est = video ? estimateProcessingSeconds(video.duration) : 0
   const title =
     step.kind === 'confirm'
       ? 'Is this your pitch?'
@@ -233,7 +258,7 @@ export default function UploadPanel({
 
         {step.kind === 'choose' && (
           <div className="space-y-5">
-            <label
+            {!video && <label
               htmlFor="upload-file"
               onDragOver={(e) => {
                 e.preventDefault()
@@ -253,10 +278,24 @@ export default function UploadPanel({
                 type="file"
                 accept="video/mp4,video/quicktime,.mp4,.mov"
                 className="sr-only"
-                onChange={(e) => void pick(e.target.files?.[0])}
+                onChange={(e) => {
+                  void pick(e.target.files?.[0])
+                  e.currentTarget.value = ''
+                }}
               />
-            </label>
-            {connected && sample && (
+            </label>}
+            {video && <input
+              ref={inputRef}
+              id="upload-file"
+              type="file"
+              accept="video/mp4,video/quicktime,.mp4,.mov"
+              className="sr-only"
+              onChange={(e) => {
+                void pick(e.target.files?.[0])
+                e.currentTarget.value = ''
+              }}
+            />}
+            {!video && connected && sample && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
                 <div>
                   <p className="font-medium text-text">No video at hand?</p>
@@ -267,7 +306,6 @@ export default function UploadPanel({
                 </Button>
               </div>
             )}
-            <FootageGuide />
             {reading && (
               <p className="flex items-center gap-2 text-sm text-muted" role="status">
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Reading the video in your browser…
@@ -279,29 +317,39 @@ export default function UploadPanel({
               </p>
             )}
             {video && (
-              <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-line bg-surface p-4">
+              <>
+              <p className="text-sm font-medium text-text" role="status">Video ready. Check the details and press Upload.</p>
+              <div ref={selectedCardRef} className="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 rounded-2xl border border-line bg-surface p-3 shadow-sm sm:flex sm:gap-4 sm:p-4">
                 {video.frameUrl ? (
-                  <img src={video.frameUrl} alt="" className="h-16 w-28 rounded-lg object-cover" />
+                  <img src={video.frameUrl} alt="Video thumbnail" className="h-14 w-20 rounded-lg object-cover sm:h-16 sm:w-28" />
                 ) : (
-                  <span className="grid h-16 w-28 place-items-center rounded-lg bg-surface-2" aria-hidden="true">
+                  <span className="grid h-14 w-20 place-items-center rounded-lg bg-surface-2 sm:h-16 sm:w-28" aria-hidden="true">
                     <FileVideo className="size-6 text-muted" />
                   </span>
                 )}
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-2 font-medium break-all text-text">
+                <div className="min-w-0 sm:flex-1">
+                  <p className="flex items-center gap-2 font-medium break-words text-text [overflow-wrap:anywhere]">
                     <FileVideo className="size-4 shrink-0 text-muted" aria-hidden="true" /> {video.file.name}
                   </p>
                   <p className="mt-1 font-mono text-sm text-muted">
-                    {formatBytes(video.file.size)}
+                    {formatBytes(video.bytes)}
                     {video.previewable ? ` · ${formatDuration(video.duration)} · ${video.width}×${video.height}` : ''}
                   </p>
                   {!video.previewable && <p className="mt-1 text-xs text-muted">This browser can’t preview it; Gaffer’s server reads it with OpenCV.</p>}
                 </div>
-                <Button onClick={() => (connected ? void upload() : setStep({ kind: 'place' }))}>
-                  {connected ? 'Upload' : 'Next'} <ArrowRight className="size-4" aria-hidden="true" />
-                </Button>
+                <div className="col-span-2 flex items-center justify-end gap-2 sm:ml-auto">
+                  <Button ref={uploadButtonRef} className="min-h-12 px-7 text-base" onClick={() => (connected ? void upload() : setStep({ kind: 'place' }))}>
+                    Upload <ArrowRight className="size-4" aria-hidden="true" />
+                  </Button>
+                  <button type="button" className="min-h-10 px-2 text-sm font-semibold text-muted underline-offset-4 hover:text-text hover:underline" onClick={() => inputRef.current?.click()}>
+                    Change file
+                  </button>
+                </div>
               </div>
+              <p className="text-sm text-muted">Processing time depends on resolution and the server; the estimate appears once analysis starts.</p>
+              </>
             )}
+            <FootageGuide compact={Boolean(video)} />
           </div>
         )}
 
@@ -324,7 +372,7 @@ export default function UploadPanel({
                 <ArrowLeft className="size-4" aria-hidden="true" /> Back
               </Button>
               <div className="flex items-center gap-3">
-                <span className="text-sm text-muted">About {formatDuration(est)} of processing, plus agent checks</span>
+                <span className="text-sm text-muted">Processing time depends on resolution and the server; the estimate appears once analysis starts.</span>
                 <Button onClick={startOffline} disabled={points.length !== 4}>
                   Start analysis
                 </Button>
@@ -359,7 +407,7 @@ export default function UploadPanel({
                 No, let me adjust
               </Button>
               <div className="flex items-center gap-3">
-                <span className="text-sm text-muted">About {formatDuration(estimateProcessingSeconds(step.status.video?.duration_s ?? video.duration))} of processing, plus agent checks</span>
+                <span className="text-sm text-muted">Processing time depends on resolution and the server; the estimate appears once analysis starts.</span>
                 <Button disabled={busy} onClick={() => void send(() => confirmPitch(step.status.id), step)}>
                   {busy ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />} Yes, looks right
                 </Button>
@@ -394,7 +442,7 @@ export default function UploadPanel({
                 <ArrowLeft className="size-4" aria-hidden="true" /> Back
               </Button>
               <div className="flex items-center gap-3">
-                <span className="text-sm text-muted">About {formatDuration(estimateProcessingSeconds(step.status.video.duration_s))} of processing, plus agent checks</span>
+                <span className="text-sm text-muted">Processing time depends on resolution and the server; the estimate appears once analysis starts.</span>
                 <Button disabled={points.length !== 4 || busy} onClick={() => void send(() => setPitchPoints(step.status.id, points), step)}>
                   {busy && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />} Start analysis
                 </Button>
@@ -425,7 +473,7 @@ export default function UploadPanel({
           </div>
         )}
 
-        {step.kind === 'progress' && video && <Progress step={step} est={estimateProcessingSeconds(step.status?.video?.duration_s ?? video.duration)} />}
+        {step.kind === 'progress' && video && <Progress step={step} />}
 
         {step.kind === 'error' && (
           <div className="space-y-4" role="alert">
@@ -441,7 +489,7 @@ export default function UploadPanel({
   )
 }
 
-function Progress({ step, est }: { step: Extract<Step, { kind: 'progress' }>; est: number }) {
+function Progress({ step }: { step: Extract<Step, { kind: 'progress' }> }) {
   const st = step.status
   // queued: the upload is done and the analyser has not picked it up yet
   const current = st?.status === 'queued' ? 'detecting' : (st?.stage ?? 'uploading')
@@ -474,11 +522,18 @@ function Progress({ step, est }: { step: Extract<Step, { kind: 'progress' }>; es
         </div>
       )}
       {st && 'calibration_message' in st && <p className="text-sm text-muted" aria-live="polite">{String(st.calibration_message)}</p>}
-      <p className="text-sm text-muted">
-        Estimate: about {SECONDS_PER_VIDEO_SECOND} s of processing per second of video
-        {est > 0 ? ` (${formatDuration(est)} for this file)` : ''}, plus agent checks
-        {st?.eta_s != null ? `; the server says about ${formatDuration(st.eta_s)} left` : ''}.
-      </p>
+      <div className="space-y-1 text-sm text-muted" aria-live="polite">
+        {st?.stage === 'agent' ? (
+          <p>OpenCV processing is complete; agent checks are in progress.</p>
+        ) : st?.eta_s != null ? (
+          <p>Server estimate: about {formatDuration(st.eta_s)} remaining.</p>
+        ) : (
+          <p>Server estimate appears after the first frames are measured.</p>
+        )}
+        {st?.agent_eta_s != null && st.agent_eta_s > 0 && (
+          <p>agent checks: up to {Math.ceil(st.agent_eta_s / 60)} min</p>
+        )}
+      </div>
     </div>
   )
 }

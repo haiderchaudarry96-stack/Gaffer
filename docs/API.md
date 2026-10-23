@@ -84,7 +84,8 @@ filesystem path. A missing clip makes the replay endpoint return a coach-readabl
   "stage": "detecting",           // uploading | detecting | teams | agent | done
   "stage_label": "Detecting players (OpenCV)",
   "progress": 0.157,              // 0..1 overall, never goes backwards
-  "eta_s": 76.8,                  // seconds left (null when unknown / done)
+  "eta_s": 76.8,                  // server work left; null until measured / during agent / done
+  "agent_eta_s": 420.0,            // estimated remaining agent-check budget, separate from eta_s
   "error": null,                  // coach-readable when failed
   "progress_detail": {"elapsed_s": 16.0, "eta_basis": "measured",
                       "frames": {"done": 410, "total": 720}, "candidates": {"done": 0, "total": 3},
@@ -116,12 +117,15 @@ closed once queued (`409`). After a server restart, a `running` analysis becomes
 ("upload it again") and `queued` ones are queued again.
 
 **Progress and ETA are measured, never invented.** `progress = elapsed / (elapsed + remaining)`.
-*Remaining* = frames left × this upload's measured seconds per frame (detecting), + the team /
-tactics step (~5 % of detection, Phase 2), + candidates left × the measured time per checked
-candidate — before the first one is checked, `api.jobs.eta_frames_per_candidate` (755) × the
-upload's own seconds per frame (4K drone ≈ 226 s; Phase 3 measured 104–252 s + an 8–13 s camera
-check). Before any frame is timed, the priors `api.jobs.prior_s_per_video_s` (1.2) and
-`prior_s_per_candidate` (200) are used and `eta_basis` says `"prior"`.
+The total `remaining` used for progress includes server work and agent checks. `eta_s` reports the
+server part only: while detecting it stays null until five frames establish this upload's measured
+seconds per frame, then includes remaining frames and the team/tactics work. It is null during the
+agent stage and after completion. `agent_eta_s` reports the agent-check budget separately; it is
+estimated from candidates left × measured time per checked candidate, or before the first check
+from `api.jobs.eta_frames_per_candidate` (755) × the upload's own seconds per frame (4K drone ≈
+226 s; Phase 3 measured 104–252 s + an 8–13 s camera check). Before any frame is timed, the
+progress calculation uses `api.jobs.prior_s_per_video_s` (1.2) and `prior_s_per_candidate` (200);
+`progress_detail.eta_basis` says `"prior"`, but the UI does not present that prior as a server ETA.
 
 ### Persisted event records (N1)
 

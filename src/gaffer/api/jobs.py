@@ -129,7 +129,7 @@ class Progress:
         self.emit(force=True)
 
     # ---- estimates
-    def remaining(self) -> tuple[float, str]:
+    def remaining(self) -> tuple[float, float, float, str]:
         now = time.perf_counter()
         basis = "prior"
         in_stage = now - self.stage_t0
@@ -167,12 +167,14 @@ class Progress:
         if self.stage == "agent" and not self.cand_s:
             agent_left = max(0.0, agent_left - in_stage)
         if self.stage == "done":
-            return 0.0, "measured"
-        return detect_left + teams_left + agent_left + 2.0, basis
+            return 0.0, 0.0, 0.0, "measured"
+        server_left = detect_left + teams_left + (2.0 if self.stage != "agent" else 0.0)
+        total_left = server_left + agent_left
+        return total_left, server_left, agent_left, basis
 
     def snapshot(self) -> dict[str, Any]:
         elapsed = time.perf_counter() - self.t0
-        left, basis = self.remaining()
+        left, server_left, agent_left, basis = self.remaining()
         p = 1.0 if self.stage == "done" else min(0.99, elapsed / max(elapsed + left, 1e-9))
         p = max(p, self.last_progress)  # never goes backwards
         self.last_progress = p
@@ -182,8 +184,11 @@ class Progress:
             detail["frames"] = {"done": self.frames_done, "total": self.frames_total}
         if self.cands_total is not None:
             detail["candidates"] = {"done": self.cands_done, "total": self.cands_total}
+        server_eta_ready = (self.stage not in ("done", "agent")
+                            and (self.stage != "detecting" or self.frames_done >= 5))
         return {"stage": self.stage, "progress": round(p, 4),
-                "eta_s": None if self.stage == "done" else round(left, 1),
+                "eta_s": round(server_left, 1) if server_eta_ready else None,
+                "agent_eta_s": None if self.stage == "done" else round(agent_left, 1),
                 "progress_detail": detail}
 
     def emit(self, force: bool = False) -> None:
