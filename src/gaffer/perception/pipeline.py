@@ -81,7 +81,7 @@ from gaffer.schema import ContractError, MatchState
 
 GENERATOR = "perception.pipeline v1.0"
 STAGES = ("decode", "geometry", "detection", "static_filter", "tracking", "team_features",
-          "team_fit", "labelling", "assemble", "debug_video")
+          "team_fit", "labelling", "assemble", "debug_video", "calibration_diagnostics")
 
 
 class PipelineError(RuntimeError):
@@ -489,16 +489,20 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     if debug_video is not None:
         write_debug_video(debug_video, out_recs, model, cfg, view, jscale, rows, fps)
         timing["debug_video"] += time.perf_counter() - t8
+    t9 = time.perf_counter()
     selfcal["diagnostics"] = calibration_diagnostics(
-        records, match, team_model, removed, detections_seen, int(cfg["tactics"]["min_players"])
+        records, match, team_model, removed, detections_seen, int(cfg["tactics"]["min_players"]),
+        float(pcfg["self_calibration"]["calibration_tiers"]["healthy_ranges"]
+              ["duplicate_radius_m"])
     )
+    timing["calibration_diagnostics"] += time.perf_counter() - t9
     return PipelineResult(match, records, team_model, dict(timing), view, b - a, inferred,
                           selfcal)
 
 
 def calibration_diagnostics(records: list[FrameRecord], match: MatchState, team_model: TeamModel,
                             removed: dict[str, int], detections_seen: int,
-                            min_players: int) -> dict[str, float | int]:
+                            min_players: int, duplicate_radius_m: float) -> dict[str, float | int]:
     """Return scalar-only diagnostics for the optional perception calibration loop."""
     import statistics
 
@@ -516,6 +520,27 @@ def calibration_diagnostics(records: list[FrameRecord], match: MatchState, team_
         coverage[side] = covered / max(len(frames), 1)
     players_per_frame = [len(r.boxes) for r in tracked]
     gates = [float(v) for v in team_model.gates]
+    outfield_counts = {side: [] for side in ("home", "away")}
+    duplicate_detections = 0
+    labelled_detections = 0
+    for record in tracked:
+        for side in ("home", "away"):
+            outfield_counts[side].append(sum(
+                team == side and role == "outfield"
+                for team, role in zip(record.teams, record.roles, strict=True)))
+        positions: dict[str, list[np.ndarray]] = {"home": [], "away": []}
+        for point, team in zip(record.xy, record.teams, strict=True):
+            if team in positions:
+                positions[team].append(point)
+                labelled_detections += 1
+        for points in positions.values():
+            if len(points) < 2:
+                continue
+            xy = np.asarray(points, dtype=float)
+            distances = np.linalg.norm(xy[:, None, :] - xy[None, :, :], axis=2)
+            close = distances < duplicate_radius_m
+            np.fill_diagonal(close, False)
+            duplicate_detections += int(np.any(close, axis=1).sum())
     return {
         "detections": int(detections_seen),
         "outside_pitch_detections": int(removed.get("outside_pitch", 0)),
@@ -531,6 +556,12 @@ def calibration_diagnostics(records: list[FrameRecord], match: MatchState, team_
         "team_gate_home": gates[0] if gates else 0.0,
         "team_gate_away": gates[1] if len(gates) > 1 else 0.0,
         "tracked_frames": len(tracked),
+        "outfield_points_home": (float(statistics.fmean(outfield_counts["home"]))
+                                 if outfield_counts["home"] else 0.0),
+        "outfield_points_away": (float(statistics.fmean(outfield_counts["away"]))
+                                 if outfield_counts["away"] else 0.0),
+        "duplicate_detections": duplicate_detections,
+        "duplicate_share": duplicate_detections / max(labelled_detections, 1),
     }
 
 

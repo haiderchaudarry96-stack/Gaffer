@@ -553,47 +553,58 @@ $0.0012):** completed / `unclear`, 4 exact citations; the code downgraded Nova's
 window before 16:30 is too uncertain (confidence 0.30 < 0.45). It ships in
 `samples/w900_1260/demo_events_seed.json`.
 
-## Optional perception calibration loop (23 Oct 2026)
+## Tiered perception calibration loop (23 Oct 2026, Part 1 build)
 
-`src/gaffer/perception/calibration_loop.py` adds an opt-in calibration pass around the existing
-OpenCV pipeline. `perception.self_calibration.agentic.enabled` is **false by default**. The first
-OpenCV result summarizes only numeric counts and shares: detections outside the pitch, team-label
-shares, static detections, players per frame, per-team formation coverage, and the two fitted team
-gate values. The Bedrock user payload contains this numeric object only; it contains no pixels,
-coordinates, video names, or upload text. The configured model id and existing Bedrock client,
-usage logging, daily API budget, and per-analysis caps are used.
+`src/gaffer/perception/calibration_loop.py` now runs two independent default-off switches under
+`perception.self_calibration.calibration_tiers`. Prompt 1 self-calibration remains the baseline.
+When Tier 1 is enabled, the confirmed pitch's four detected corner edges are normalized by the
+configured pitch dimensions. If the resulting pixels/metre is strictly below the configured 14.7,
+`local_scale` is disabled. At exactly 14.7, it stays enabled.
 
-The response must be one structured tool choice, use a setting path and range from the
-`allowed_settings` config list, and include a short reason citing a diagnostic name and value. The
-code checks the schema, range, step, reason length, and citation. OpenCV reruns the same configured
-analysis window up to two times. A deterministic score from label share and formation coverage,
-with penalties for outside/static detections and player-count deviation, decides whether each
-rerun beats the best measured pass by `min_score_gain`. Nova's own rating never decides acceptance.
-The trace records baseline diagnostics, proposals, rerun measurements, acceptance, or default
-fallback in `outputs/agent_trace.jsonl`; the upload progress view exposes the current coach-readable
-message. Bedrock failure, throttling, invalid tool output, or an OpenCV rerun failure restores the
-Prompt 1 settings. The switches and settings from Prompt 1 remain the baseline.
+OpenCV diagnostics are scalar counts/shares: existing outside-pitch share, team label share per
+team, static detections, players per frame, formation coverage per team and team-colour gates,
+plus average outfield points per team and the share of team-labelled detections with a same-team
+neighbour inside the configured 1.5 m radius. The configured health checks are outfield points per
+team <=12, duplicate share <=0.15, and team-labelled share >=0.8. Healthy full-pass diagnostics
+skip Tier 2 entirely. If unhealthy, OpenCV establishes a Tier 1 short-window baseline and Nova is
+asked only if that window remains unhealthy. The window starts at the configured first confident
+pitch frame (1 s) and defaults to 60 s. Nova can choose only configured setting paths and ranges;
+its reason must cite a scalar diagnostic. OpenCV evaluates proposals against the same short window.
+Only measured improvement can be kept, after which the full analysis is run once with that setting.
+Invalid JSON, out-of-range choices, Bedrock failure or no measured improvement retain Tier 1.
+`outputs/agent_trace.jsonl` records the Tier 1 rule, health checks, whether Nova was asked, and the
+measured keep/reject result. No coordinates, pixels, filenames or user-provided text go to Bedrock.
 
-**Measurement status:** the default remains **OFF**. A paired Nova-versus-default comparison has
-not been established, so there is no evidence that Nova helped and no tuning decision was made.
-The existing baseline records report Zenodo unseen-test P/R/F1 at 1 m of 0.765/0.970/0.855, team
-accuracy 0.98, team-label share 0.95, 31.7 detections/frame, and strict formation coverage 0.96 /
-0.76. The existing TeamTrack eval and eval2 baselines report raw F1 0.9185 / 0.9296, settled-team
-accuracy 0.9835 / 0.9876, team-label share 0.9901 / 0.9875, and 24.46 / 24.51 detections/frame.
-These are previously recorded deterministic results, not new paired measurements from this loop.
-The separate 900–1260 s consistency upload previously found White's 16:30 change; it did not save
-the requested P/R/F1 metrics for that same upload.
+### 23 Oct wrap-up correction
 
-One real Nova 2 Lite call completed in ap-southeast-2 (1,302 input tokens, 95 output tokens,
-3,020.8 ms; estimated cost $0.0006281 from the configured token prices). It returned a valid
-structured choice, `static.min_share = 0.75`, and cited the numeric static-blob share. Its reason
-called 0.75 a “lower” value although the deterministic setting is 0.6. The OpenCV rerun was
-interrupted before measurement, so this call proves only the connected schema/tool path; it does
-not prove a useful setting change. The Zenodo run consumed more than 11 minutes of aggregate CPU
-time before its first pass produced diagnostics; it was stopped during the proposed rerun. The
-360 s consistency upload has a previously measured perception runtime of 777.8 s, so a new full
-upload comparison was not started. Completed loop overhead remains unmeasured. A rough estimate
-for two full TeamTrack retries is 1,556 s plus model latency, based on the earlier 777.8 s/pass; this
-is not a measurement. This session used 1 of 20 allowed real calls and about $0.0006281 of the
-$0.05 cap. Do not enable the switch until paired held-out measurements show a clear benefit
-without worsening the reported metrics.
+The earlier **69% duplicate** observation came from a generated clip at **7.4 px/m**. It was
+not the TeamTrack result. On the real TeamTrack 720p copy (auto-detected **9.3 px/m**), Prompt 1
+defaults measured **5.9% duplicates**. The Tier 1 local-scale rule made this clip worse:
+detections/frame fell **21.8 → 12.8**, White outfield points fell **8.3 → 2.6**, and team-labelled
+share fell **0.86 → 0.77**. These are short-window perception-only observations, not a held-out
+accuracy evaluation.
+
+The health check now requires **7–12 outfield points per team**, duplicate share ≤0.15, and
+team-labelled share ≥0.8. Tier 2 may propose the config-listed boolean
+perception.self_calibration.local_scale (on/off) as well as the numeric settings; OpenCV's
+measured diagnostic score still decides whether a proposal is kept. In this TeamTrack quick check
+the diagnostics were healthy, so Tier 2 was never triggered and no Nova call or choice occurred.
+Both Tier 1 and Tier 2 remain **OFF**. **Part 2 was not run**; no ON/OFF benefit claim is made.
+
+The earlier Nova choice static.min_share = 0.75 included the incorrect reason that 0.75 was
+“lower than 0.6”. The proposed OpenCV rerun did not complete, so that choice was never measured
+or retained.
+
+**Part 1 quick check (not a final ON/OFF decision):** the ignored 720p derivative of the TeamTrack
+900-1260 s clip is 1280x720 at 29.97 fps, duration 360.36 s. Pitch auto-detection accepted the
+outline at 0.99 confidence; the estimated scale is 9.3104 px/m, below the Tier 1 threshold. On
+0-120 s, the deterministic baseline measured 21.8 detections/frame, 8.308 / 9.475 outfield points
+per team, 0.0592 duplicate share, and 0.8591 team-labelled share. Tier 1 disabled local scale and
+measured 12.812 detections/frame, 2.642 / 6.392 outfield points per team, 0.0990 duplicate share,
+and 0.7655 team-labelled share. This short pass looks worse on player counts and labelling, so it
+is a cautionary observation, not evidence to enable the rule. With Tier 1 rule off and Tier 2 on,
+the 0-120 s diagnostics again met all configured health checks; Nova was not called, no choice was
+made, and no extra trial/full rerun seconds were added. Diagnostics computation time was added to
+pipeline stage timing after the first quick-check runs, so their timing totals omit that small
+stage. Part 2 must measure complete timing and held-out Zenodo plus full TeamTrack consistency
+results before deciding whether either switch should be enabled.

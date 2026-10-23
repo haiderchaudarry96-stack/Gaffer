@@ -440,7 +440,7 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
     from gaffer.api.calib import CLIPS_NAME, job_config
     from gaffer.perception.detector import DetectorError
     from gaffer.perception.pipeline import PipelineError, run, write_outputs
-    from gaffer.perception.pitch import CalibrationError
+    from gaffer.perception.pitch import Calibration, CalibrationError, image_corners
     from gaffer.perception.video import VideoError
     from gaffer.schema import ContractError
 
@@ -456,6 +456,18 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
     prog.emit(force=True)
 
     # 1-2. perception (OpenCV) -> MatchState
+    calibration = Calibration.for_view(cfg, view)
+    pitch = st.get("pitch") or {}
+    detection = pitch.get("detection") or {}
+    corners = detection.get("corners") or pitch.get("corners")
+    if not corners:
+        corners = image_corners(calibration.mapper(), float(cfg["pitch"]["length_m"]),
+                                float(cfg["pitch"]["width_m"]))
+    from gaffer.perception.calibration_loop import pixels_per_metre, tier1_config
+
+    px_per_m = pixels_per_metre(corners, float(cfg["pitch"]["length_m"]),
+                                float(cfg["pitch"]["width_m"]))
+    cfg, tier1_rule_applied = tier1_config(cfg, px_per_m)
     try:
         with counting_frames(prog):
             res = run(job_dir / CLIPS_NAME, view=view, cfg=cfg, match_id=match_id,
@@ -465,23 +477,31 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
     if prog.stage == "detecting":
         prog.set_stage("teams")
     calibration_summary = {"enabled": False, "calls": 0, "cost_usd": 0.0,
-                           "extra_s": 0.0, "kept": False}
-    agentic = cfg["perception"]["self_calibration"].get("agentic", {})
-    if agentic.get("enabled"):
+                           "extra_s": 0.0, "kept": False,
+                           "tier1_rule_applied": tier1_rule_applied}
+    tiers = cfg["perception"]["self_calibration"]["calibration_tiers"]
+    if tiers["tier1"]["enabled"] or tiers["tier2"]["enabled"]:
         from gaffer.config import repo_path
         from gaffer.perception.calibration_loop import run_calibration_loop
 
         outcome = run_calibration_loop(
             initial=res, cfg=cfg,
-            run=lambda trial_cfg: run(job_dir / CLIPS_NAME, view=view, cfg=trial_cfg,
-                                      match_id=match_id),
+            run=lambda trial_cfg, start_s, end_s: run(
+                job_dir / CLIPS_NAME, view=view, cfg=trial_cfg, start_s=start_s, end_s=end_s,
+                match_id=f"{match_id}_tier2"),
+            full_run=lambda final_cfg: run(job_dir / CLIPS_NAME, view=view, cfg=final_cfg,
+                                           debug_video=(job_dir / "debug.mp4")
+                                           if j.get("debug_video") else None,
+                                           match_id=match_id),
             llm_factory=mgr.llm_factory,
             trace_path=repo_path(cfg["agent"]["outputs"]["trace"]), usage=mgr.usage,
-            on_message=lambda msg: mgr.update(aid, calibration_message=msg))
+            on_message=lambda msg: mgr.update(aid, calibration_message=msg),
+            px_per_m=px_per_m)
         res, cfg = outcome["result"], outcome["config"]
         calibration_summary = {
             "enabled": True, "calls": outcome["calls"], "cost_usd": outcome["cost_usd"],
             "extra_s": outcome["elapsed_s"], "kept": outcome["kept"],
+            "tier1_rule_applied": outcome["tier1_rule_applied"],
             "tokens_in": outcome["tokens_in"], "tokens_out": outcome["tokens_out"],
             "message": outcome["message"],
         }

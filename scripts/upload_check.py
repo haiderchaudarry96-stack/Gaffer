@@ -23,6 +23,7 @@ from -> to within `eval.synthetic.tolerance_s`.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 import time
@@ -142,15 +143,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cfg", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--perception-only", action="store_true")
     ap.add_argument("--compare-demo", action="store_true")
-    ap.add_argument("--agentic-calibration", action="store_true",
-                    help="compare an opt-in calibration loop with the first OpenCV pass")
+    ap.add_argument("--agentic-calibration", "--tier2", dest="tier2", action="store_true",
+                    help="enable numeric-only Tier 2 after configured health checks")
+    ap.add_argument("--tier1", action="store_true",
+                    help="apply the Tier 1 low-pixels-per-metre rule")
+    ap.add_argument("--start-s", type=float, default=None, help="analysis window start")
+    ap.add_argument("--end-s", type=float, default=None, help="analysis window end")
     ap.add_argument("--demo-offset-s", type=float, default=900.0,
                     help="match time of the upload's first frame for --compare-demo")
     ap.add_argument("--corners", default=None,
                     help="JSON 4 points instead of confirming the auto-detected outline")
     args = ap.parse_args(argv)
-    if args.agentic_calibration and not args.perception_only:
-        ap.error("--agentic-calibration requires --perception-only")
+    if args.tier2 and not args.perception_only:
+        ap.error("--tier2 requires --perception-only")
 
     from fastapi.testclient import TestClient
 
@@ -204,40 +209,73 @@ def main(argv: list[str] | None = None) -> int:
         from gaffer.agent.context import MatchContext
         from gaffer.api.calib import CLIPS_NAME, job_config
         from gaffer.api.main import _bedrock_factory
+        from gaffer.perception.calibration_loop import pixels_per_metre, tier1_config
         from gaffer.perception.pipeline import run, write_outputs
+        from gaffer.perception.pitch import Calibration, image_corners
 
         jcfg = job_config(cfg, job_dir)
-        res = run(job_dir / CLIPS_NAME, view=cfg["api"]["jobs"]["view"], cfg=jcfg,
-                  match_id=f"up_{aid}")
+        start_s, end_s = args.start_s, args.end_s
+        cal = Calibration.for_view(jcfg, cfg["api"]["jobs"]["view"])
+        pitch = st.get("pitch") or {}
+        detection = pitch.get("detection") or {}
+        corners = detection.get("corners") or pitch.get("corners")
+        if not corners:
+            corners = image_corners(cal.mapper(), float(cfg["pitch"]["length_m"]),
+                                    float(cfg["pitch"]["width_m"]))
+        px_per_m = pixels_per_metre(corners, float(cfg["pitch"]["length_m"]),
+                                    float(cfg["pitch"]["width_m"]))
+        run_cfg = copy.deepcopy(jcfg)
+        if args.tier1:
+            run_cfg["perception"]["self_calibration"]["calibration_tiers"]["tier1"]\
+                ["enabled"] = True
+            run_cfg, _ = tier1_config(run_cfg, px_per_m)
+        res = run(job_dir / CLIPS_NAME, view=cfg["api"]["jobs"]["view"], cfg=run_cfg,
+                  start_s=start_s, end_s=end_s, match_id=f"up_{aid}")
         baseline = res
         calibration = None
-        if args.agentic_calibration:
+        if args.tier1 or args.tier2:
             from gaffer.perception.calibration_loop import run_calibration_loop
 
-            agentic_cfg = with_overrides(
-                jcfg, ["perception.self_calibration.agentic.enabled=true"])
+            tier_cfg = copy.deepcopy(run_cfg)
+            tiers = tier_cfg["perception"]["self_calibration"]["calibration_tiers"]
+            tiers["tier1"]["enabled"] = bool(args.tier1)
+            tiers["tier2"]["enabled"] = bool(args.tier2)
             calibration = run_calibration_loop(
-                initial=baseline, cfg=agentic_cfg,
-                run=lambda trial_cfg: run(job_dir / CLIPS_NAME,
-                                          view=cfg["api"]["jobs"]["view"], cfg=trial_cfg,
-                                          match_id=f"up_{aid}_agentic"),
-                llm_factory=_bedrock_factory(agentic_cfg),
-                trace_path=repo_path(agentic_cfg["agent"]["outputs"]["trace"]),
-                usage=Usage(agentic_cfg, str(out / "usage.json")))
+                initial=baseline, cfg=tier_cfg,
+                run=lambda trial_cfg, trial_start, trial_end: run(
+                    job_dir / CLIPS_NAME, view=cfg["api"]["jobs"]["view"], cfg=trial_cfg,
+                    start_s=trial_start, end_s=trial_end, match_id=f"up_{aid}_tier2"),
+                full_run=lambda final_cfg: run(
+                    job_dir / CLIPS_NAME, view=cfg["api"]["jobs"]["view"], cfg=final_cfg,
+                    start_s=start_s, end_s=end_s, match_id=f"up_{aid}_tier2_full"),
+                llm_factory=_bedrock_factory(tier_cfg) if args.tier2 else None,
+                trace_path=repo_path(tier_cfg["agent"]["outputs"]["trace"]),
+                usage=Usage(tier_cfg, str(out / "usage.json")), px_per_m=px_per_m)
             res = calibration["result"]
-            report["agentic_calibration"] = {key: calibration[key] for key in
-                                              ("kept", "calls", "cost_usd", "elapsed_s",
-                                               "message")}
+            report["calibration_tiers"] = {
+                key: calibration[key] for key in
+                ("tier1_rule_applied", "kept", "calls", "cost_usd", "elapsed_s", "message")}
         write_outputs(res, job_dir / "match_state.json")
         ctx = MatchContext(res.match, jcfg, view=cfg["api"]["jobs"]["view"])
         cands = [{"event_id": c.id, "team": c.team, "t": float(c.t), "from": c.from_,
                   "to": c.to, "decision": "not checked (perception only)"}
                  for c in ctx.candidates]
         report["perception"] = {"timing_s": {k: round(v, 1) for k, v in res.timing.items()},
+                                "perception_seconds": round(sum(res.timing.values()), 1),
                                 "s_per_video_s": round(sum(res.timing.values())
-                                                       / res.video_seconds, 2)}
+                                                       / res.video_seconds, 2),
+                                "detections_per_frame": round(
+                                    sum(len(record.boxes) for record in res.records
+                                        if record.output)
+                                    / max(sum(record.output for record in res.records), 1), 3),
+                                "diagnostics": res.selfcal.get("diagnostics", {}),
+                                "pixels_per_metre": round(px_per_m, 4),
+                                "tier1_rule_applied": bool(args.tier1 and px_per_m < float(
+                                    run_cfg["perception"]["self_calibration"]["calibration_tiers"]
+                                    ["tier1"]["local_scale_min_px_per_m"]))}
+        print("quick diagnostics: " + json.dumps(report["perception"], separators=(",", ":")))
         print(res.timing_table())
-        if args.agentic_calibration and args.compare_demo:
+        if args.tier2 and args.compare_demo:
             from gaffer.perception.video import VideoSource
             from gaffer.teamtrack import find_clips, load_gt
 

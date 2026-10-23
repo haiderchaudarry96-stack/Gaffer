@@ -160,31 +160,37 @@ perception:
     gate: {percentile: 90, scale: 1.5, min_sep_frac: 0.15, max_sep_frac: 0.7}  # scale x the
                                   # team's percentile distance, within these fractions of the
                                   # distance between the two team colours (replaces gate/min_gate)
-    agentic:                      # optional numeric-only Nova suggestions, measured by OpenCV
-      enabled: false              # remains OFF until the unseen and TeamTrack evals show a win
-      max_retries: 2              # OpenCV reruns after the deterministic first pass
-      max_calls_per_analysis: 2   # includes client retries; also bounded by the API daily cap
-      max_cost_usd_per_analysis: 0.005
-      max_input_tokens: 2000      # reserve enough for tool schema + numeric diagnostics
-      max_tokens: 180
-      min_reason_chars: 1
-      max_reason_chars: 240
-      min_score_gain: 0.01        # minimum measured internal diagnostic score improvement
-      temperature: 0.0
-      step_tolerance: 0.000001    # floating-point tolerance for configured setting increments
-      no_change_tolerance: 0.000000001
-      allowed_settings:           # only these paths and values can be proposed
-        perception.self_calibration.gate.scale: {min: 1.0, max: 1.8, step: 0.1}
-        perception.self_calibration.gate.percentile: {min: 75, max: 95, step: 5}
-        perception.self_calibration.pitch_mask_margin_m: {min: 0.5, max: 2.0, step: 0.25}
-        perception.self_calibration.static.min_share: {min: 0.5, max: 0.8, step: 0.05}
-      quality:
-        expected_players_per_frame: 22
-        players_per_frame_tolerance: 12
-        player_deviation_cap: 1.0
-        score_weights: {team_labelled_share: 0.45, formation_coverage: 0.45,
-                        outside_pitch_share: 0.05, static_blob_share: 0.05,
-                        players_per_frame_deviation: 0.10}
+    calibration_tiers:           # default-off measured rules first, then numeric-only Nova
+      tier1:
+        enabled: false            # existing Prompt 1 settings remain the baseline
+        local_scale_min_px_per_m: 14.7  # below this scale, local blob-size scaling is disabled
+      healthy_ranges:              # Nova is skipped when all three checks are healthy
+        min_outfield_points_per_team: 7
+        max_outfield_points_per_team: 12
+        max_duplicate_share: 0.15
+        duplicate_radius_m: 1.5
+        min_team_labelled_share: 0.8
+      tier2:
+        enabled: false            # no real Bedrock call until explicitly enabled
+        window_start_s: 1.0       # auto-detect reference frame; coach confirms this pitch
+        window_s: 60.0            # short OpenCV proposal trial, before any full-video rerun
+        max_retries: 2
+        max_calls_per_analysis: 2 # includes client retries; also bounded by the API daily cap
+        max_cost_usd_per_analysis: 0.005
+        max_input_tokens: 2000
+        max_tokens: 180
+        min_reason_chars: 20
+        max_reason_chars: 240
+        min_health_improvement: 0.000001
+        temperature: 0.0
+        step_tolerance: 0.000001
+        no_change_tolerance: 0.000000001
+        allowed_settings:           # only these paths and values can be proposed
+          perception.self_calibration.local_scale: {values: [false, true]}
+          perception.self_calibration.gate.scale: {min: 1.0, max: 1.8, step: 0.1}
+          perception.self_calibration.gate.percentile: {min: 75, max: 95, step: 5}
+          perception.self_calibration.pitch_mask_margin_m: {min: 0.5, max: 2.0, step: 0.25}
+          perception.self_calibration.static.min_share: {min: 0.5, max: 0.8, step: 0.05}
   teams:                          # per footage: names, display colours, shirt-colour hints
     home: {name: White, colour: "#f0f0f0", shirt_hint: "#f0f0f0"}   # TeamTrack TeamID 0
     away: {name: Blue, colour: "#1f3a8a", shirt_hint: "#2848a0"}    # TeamTrack TeamID 1

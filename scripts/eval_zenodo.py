@@ -317,13 +317,17 @@ def main(argv: list[str] | None = None) -> int:
         from gaffer.api.usage import Usage
         from gaffer.perception.calibration_loop import run_calibration_loop
 
-        agentic_cfg = with_overrides(rcfg, ["perception.self_calibration.agentic.enabled=true"])
+        agentic_cfg = with_overrides(
+            rcfg, ["perception.self_calibration.calibration_tiers.tier2.enabled=true"])
         out_dir = repo_path(f"outputs/eval_zenodo_{args.tag}_agentic")
         out_dir.mkdir(parents=True, exist_ok=True)
         calibration = run_calibration_loop(
             initial=baseline, cfg=agentic_cfg,
-            run=lambda trial_cfg: run(video, view="top", cfg=trial_cfg,
-                                      match_id=f"zenodo_preview_{args.tag}_agentic"),
+            run=lambda trial_cfg, start_s, end_s: run(
+                video, view="top", cfg=trial_cfg, start_s=start_s, end_s=end_s,
+                match_id=f"zenodo_preview_{args.tag}_tier2"),
+            full_run=lambda final_cfg: run(video, view="top", cfg=final_cfg,
+                                           match_id=f"zenodo_preview_{args.tag}_tier2_full"),
             llm_factory=_bedrock_factory(agentic_cfg),
             trace_path=repo_path(agentic_cfg["agent"]["outputs"]["trace"]),
             usage=Usage(agentic_cfg, str(out_dir / "usage.json")))
