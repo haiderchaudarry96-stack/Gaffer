@@ -273,6 +273,7 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     grass_tried = False
     notes: list[str] = []
     removed = {"outside_pitch": 0, "static": 0}
+    detections_seen = 0
     dv = pcfg["debug_video"]
     want_video = debug_video is not None
     rows = dv["side_rows"] if view == "side" else [0, src.height]
@@ -298,6 +299,7 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
                 detector.configure(sc, grass)
         det = detector.detect(frame, g.mapper)
         persons = det.persons()
+        detections_seen += len(persons)
         t3 = time.perf_counter()
         timing["detection"] += t3 - t2
         xy = g.mapper.to_pitch(foot_xy(persons.boxes, foot_mode)) if len(persons) \
@@ -469,7 +471,8 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     on = [k for k, v in sc.summary().items() if v]
     selfcal = {"switches": sc.summary(), "grass": grass.to_dict() if grass else None,
                "removed": removed,
-               "working_scale": float(getattr(detector, "scale", 1.0))}
+               "working_scale": float(getattr(detector, "scale", 1.0)),
+               "detections_seen": detections_seen}
     if on:
         notes.append(f"self-calibration: {', '.join(on)}; removed {removed['outside_pitch']} "
                      f"detections outside the pitch, {removed['static']} static"
@@ -486,8 +489,49 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     if debug_video is not None:
         write_debug_video(debug_video, out_recs, model, cfg, view, jscale, rows, fps)
         timing["debug_video"] += time.perf_counter() - t8
+    selfcal["diagnostics"] = calibration_diagnostics(
+        records, match, team_model, removed, detections_seen, int(cfg["tactics"]["min_players"])
+    )
     return PipelineResult(match, records, team_model, dict(timing), view, b - a, inferred,
                           selfcal)
+
+
+def calibration_diagnostics(records: list[FrameRecord], match: MatchState, team_model: TeamModel,
+                            removed: dict[str, int], detections_seen: int,
+                            min_players: int) -> dict[str, float | int]:
+    """Return scalar-only diagnostics for the optional perception calibration loop."""
+    import statistics
+
+    tracked = [r for r in records if r.output]
+    total = sum(len(r.teams) for r in tracked)
+    labelled = {side: sum(team == side for r in tracked for team in r.teams)
+                for side in ("home", "away")}
+    frames = match.frames
+    coverage: dict[str, float] = {}
+    for side in ("home", "away"):
+        covered = 0
+        for frame in frames:
+            players = [p for p in frame.players if p.team == side and p.role == "outfield"]
+            covered += int(len(players) >= min_players)
+        coverage[side] = covered / max(len(frames), 1)
+    players_per_frame = [len(r.boxes) for r in tracked]
+    gates = [float(v) for v in team_model.gates]
+    return {
+        "detections": int(detections_seen),
+        "outside_pitch_detections": int(removed.get("outside_pitch", 0)),
+        "outside_pitch_share": (removed.get("outside_pitch", 0) / max(detections_seen, 1)),
+        "team_labelled_share": sum(labelled.values()) / max(total, 1),
+        "team_labelled_share_home": labelled["home"] / max(total, 1),
+        "team_labelled_share_away": labelled["away"] / max(total, 1),
+        "static_blobs": int(removed.get("static", 0)),
+        "static_blob_share": removed.get("static", 0) / max(detections_seen, 1),
+        "players_per_frame": statistics.fmean(players_per_frame) if players_per_frame else 0.0,
+        "formation_coverage_home": coverage["home"],
+        "formation_coverage_away": coverage["away"],
+        "team_gate_home": gates[0] if gates else 0.0,
+        "team_gate_away": gates[1] if len(gates) > 1 else 0.0,
+        "tracked_frames": len(tracked),
+    }
 
 
 def write_debug_video(path: str | Path, recs: list[FrameRecord], model: PitchModel,

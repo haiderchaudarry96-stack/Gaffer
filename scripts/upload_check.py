@@ -79,6 +79,61 @@ def clock(t: float) -> str:
     return f"{int(t) // 60:02d}:{int(t) % 60:02d}"
 
 
+class _TeamTrackUploadSource:
+    """Map upload-relative time to the matching TeamTrack annotation frame."""
+
+    def __init__(self, fps: float, clips: list[Any], offset_s: float) -> None:
+        self.fps, self.clips, self.offset_s = float(fps), clips, float(offset_s)
+
+    def locate(self, t: float) -> tuple[int, int] | None:
+        """Return (clip index, frame index) for a time within the uploaded sequence."""
+        match_t = self.offset_s + float(t)
+        for index, clip in enumerate(self.clips):
+            if clip.start_s <= match_t < clip.end_s:
+                return index, int(round((match_t - clip.start_s) * self.fps))
+        return None
+
+
+def _formation_coverage(match: Any, cfg: dict[str, Any]) -> dict[str, float | None]:
+    """Share of frames with enough outfield players for each team."""
+    from gaffer.tactics.common import TacticsConfig, extract_team_frames
+
+    tc = TacticsConfig.from_config(cfg)
+    frames = extract_team_frames(match, tc)
+    return {side: (sum(len(frame.outfield) >= tc.min_players for frame in frames[side])
+                   / len(frames[side]) if frames[side] else None)
+            for side in ("home", "away")}
+
+
+def _white_change(result: Any, cfg: dict[str, Any], offset_s: float) -> bool:
+    """Check whether the known White 16:30 change is present among candidates."""
+    from gaffer.agent.context import MatchContext
+
+    ctx = MatchContext(result.match, cfg, view="top")
+    tolerance = float(cfg["eval"]["synthetic"]["tolerance_s"])
+    return any(c.team == "home" and c.to == "3-4-3"
+               and abs(float(c.t) + offset_s - 990.0) <= tolerance for c in ctx.candidates)
+
+
+def _score_teamtrack_upload(result: Any, cfg: dict[str, Any], clips: list[Any], gts: list[Any],
+                            fps: float, offset_s: float) -> dict[str, Any]:
+    """Score detection, team labels, and formation coverage on the TeamTrack upload window."""
+    from eval_tracking import score as tracking_score
+
+    mapped = _TeamTrackUploadSource(fps, clips, offset_s)
+    scored = tracking_score(result, cfg, "top", mapped, gts,
+                            float(cfg["tracking"]["eval"]["match_m"]["top"]))
+    return {"precision": scored["detection"]["raw"]["precision"],
+            "recall": scored["detection"]["raw"]["recall"],
+            "f1": scored["detection"]["raw"]["f1"],
+            "team_accuracy": scored["teams"]["accuracy_settled"],
+            "team_label_share": round(1 - scored["teams"]["unknown_share"], 4),
+            "detections_per_frame": scored["detection"]["det_per_frame"],
+            "formation_coverage": _formation_coverage(result.match, cfg),
+            "white_16_30_change_found": _white_change(result, cfg, offset_s),
+            "scoring_frames": scored["frames"]}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--video", required=True)
@@ -87,11 +142,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cfg", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--perception-only", action="store_true")
     ap.add_argument("--compare-demo", action="store_true")
+    ap.add_argument("--agentic-calibration", action="store_true",
+                    help="compare an opt-in calibration loop with the first OpenCV pass")
     ap.add_argument("--demo-offset-s", type=float, default=900.0,
                     help="match time of the upload's first frame for --compare-demo")
     ap.add_argument("--corners", default=None,
                     help="JSON 4 points instead of confirming the auto-detected outline")
     args = ap.parse_args(argv)
+    if args.agentic_calibration and not args.perception_only:
+        ap.error("--agentic-calibration requires --perception-only")
 
     from fastapi.testclient import TestClient
 
@@ -144,11 +203,31 @@ def main(argv: list[str] | None = None) -> int:
     if args.perception_only:
         from gaffer.agent.context import MatchContext
         from gaffer.api.calib import CLIPS_NAME, job_config
+        from gaffer.api.main import _bedrock_factory
         from gaffer.perception.pipeline import run, write_outputs
 
         jcfg = job_config(cfg, job_dir)
         res = run(job_dir / CLIPS_NAME, view=cfg["api"]["jobs"]["view"], cfg=jcfg,
                   match_id=f"up_{aid}")
+        baseline = res
+        calibration = None
+        if args.agentic_calibration:
+            from gaffer.perception.calibration_loop import run_calibration_loop
+
+            agentic_cfg = with_overrides(
+                jcfg, ["perception.self_calibration.agentic.enabled=true"])
+            calibration = run_calibration_loop(
+                initial=baseline, cfg=agentic_cfg,
+                run=lambda trial_cfg: run(job_dir / CLIPS_NAME,
+                                          view=cfg["api"]["jobs"]["view"], cfg=trial_cfg,
+                                          match_id=f"up_{aid}_agentic"),
+                llm_factory=_bedrock_factory(agentic_cfg),
+                trace_path=repo_path(agentic_cfg["agent"]["outputs"]["trace"]),
+                usage=Usage(agentic_cfg, str(out / "usage.json")))
+            res = calibration["result"]
+            report["agentic_calibration"] = {key: calibration[key] for key in
+                                              ("kept", "calls", "cost_usd", "elapsed_s",
+                                               "message")}
         write_outputs(res, job_dir / "match_state.json")
         ctx = MatchContext(res.match, jcfg, view=cfg["api"]["jobs"]["view"])
         cands = [{"event_id": c.id, "team": c.team, "t": float(c.t), "from": c.from_,
@@ -158,6 +237,27 @@ def main(argv: list[str] | None = None) -> int:
                                 "s_per_video_s": round(sum(res.timing.values())
                                                        / res.video_seconds, 2)}
         print(res.timing_table())
+        if args.agentic_calibration and args.compare_demo:
+            from gaffer.perception.video import VideoSource
+            from gaffer.teamtrack import find_clips, load_gt
+
+            clips = find_clips("top", cfg, ["train"])
+            gts = [load_gt(clip.csv).boxes for clip in clips]
+            fps = VideoSource(job_dir / CLIPS_NAME).native_fps
+            offset = float(args.demo_offset_s)
+            before = _score_teamtrack_upload(baseline, cfg, clips, gts, fps, offset)
+            after = _score_teamtrack_upload(res, cfg, clips, gts, fps, offset)
+            report["calibration_comparison"] = {"deterministic_default": before,
+                                                 "agentic": after}
+            print("\nTeamTrack consistency upload comparison (perception only)")
+            print("variant      P      R     F1   team acc  label share  det/frame  cov H/A  White")
+            for label, metrics in (("default", before), ("agentic", after)):
+                cov = metrics["formation_coverage"]
+                print(f"{label:10s} {metrics['precision']:.3f} {metrics['recall']:.3f} "
+                      f"{metrics['f1']:.3f} {metrics['team_accuracy']:.3f} "
+                      f"{metrics['team_label_share']:.3f} {metrics['detections_per_frame']:.2f} "
+                      f"{cov['home']:.3f}/{cov['away']:.3f} "
+                      f"{metrics['white_16_30_change_found']}")
     else:
         jobs.run_one(aid)
         done = jobs.get(aid) or {}

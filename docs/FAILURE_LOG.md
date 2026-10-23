@@ -632,3 +632,23 @@ Delete this section before submitting.
 **What happened:** An unfamiliar walkthrough changed the setup context after an advice response had already been saved. The API correctly returned HTTP 409 rather than replace a response associated with another coach side/objective/available-role set, but the card displayed `Tactical advice failed`, which did not explain the saved decision.
 
 **Fix:** When the event already has a coach response, the UI keeps its original suggestion and response visible. If the current setup differs, it explains that the saved response stays linked to its original context and cannot be overwritten. Browser E2E against the persisted-response/context-mismatch case passed. The stranger has been asked to confirm the revised copy; do not count that final confirmation until received.
+
+### [2026-10-23] Agentic calibration comparison exceeded the local evaluation time box
+**Stage:** optional OpenCV self-calibration evaluation
+**Severity:** measurement incomplete; feature remains disabled
+
+**What happened:** The paired Zenodo test command used more than 11 minutes of aggregate CPU
+time. Its first OpenCV pass completed and produced diagnostics, then Nova returned one structured
+choice (`static.min_share = 0.75`) in 3.02 s. Its reason cited the static-blob share but incorrectly
+called 0.75 a “lower” value although the deterministic setting is 0.6. The process was stopped
+during the proposed OpenCV rerun, before measurement or acceptance. The prior six-minute TeamTrack
+consistency upload took 777.8 s for perception; a fresh full comparison was not started. A quick
+attempt to reuse an old annotation-derived oracle for the auto-calibrated upload produced
+implausible P/R/F1 and was excluded because the two saved states do not share the same per-upload
+calibration mapping.
+
+**Impact:** The connected structured tool path works, but no Nova-versus-default comparison or
+measured loop overhead was obtained. The request used 1,302 input / 95 output tokens, estimated
+$0.0006281; session total is 1 real call, under the 20 call / $0.05 cap. Keep
+`perception.self_calibration.agentic.enabled` false. Existing deterministic metrics remain context
+only; they are not evidence that the new loop helps.

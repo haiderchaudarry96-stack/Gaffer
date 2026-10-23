@@ -257,6 +257,7 @@ class BedrockClient:
                 )
                 if not retryable:
                     self._log(model, purpose, attempt, t0, error=err)
+                    err.attempts = attempt
                     raise err from exc
                 delay = min(self.max_delay, self.base_delay * 2 ** (attempt - 1))
                 self._sleep(delay + self._rng.uniform(0, delay * 0.25))

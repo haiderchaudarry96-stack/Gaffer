@@ -464,6 +464,27 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
         raise _pipeline_error(exc) from exc
     if prog.stage == "detecting":
         prog.set_stage("teams")
+    calibration_summary = {"enabled": False, "calls": 0, "cost_usd": 0.0,
+                           "extra_s": 0.0, "kept": False}
+    agentic = cfg["perception"]["self_calibration"].get("agentic", {})
+    if agentic.get("enabled"):
+        from gaffer.config import repo_path
+        from gaffer.perception.calibration_loop import run_calibration_loop
+
+        outcome = run_calibration_loop(
+            initial=res, cfg=cfg,
+            run=lambda trial_cfg: run(job_dir / CLIPS_NAME, view=view, cfg=trial_cfg,
+                                      match_id=match_id),
+            llm_factory=mgr.llm_factory,
+            trace_path=repo_path(cfg["agent"]["outputs"]["trace"]), usage=mgr.usage,
+            on_message=lambda msg: mgr.update(aid, calibration_message=msg))
+        res, cfg = outcome["result"], outcome["config"]
+        calibration_summary = {
+            "enabled": True, "calls": outcome["calls"], "cost_usd": outcome["cost_usd"],
+            "extra_s": outcome["elapsed_s"], "kept": outcome["kept"],
+            "tokens_in": outcome["tokens_in"], "tokens_out": outcome["tokens_out"],
+            "message": outcome["message"],
+        }
     match_path, _ = write_outputs(res, job_dir / "match_state.json")
     perception = {"timing_s": {k: round(v, 2) for k, v in res.timing.items()},
                   "s_per_video_s": round(sum(res.timing.values()) / max(res.video_seconds, 1e-9),
@@ -543,11 +564,16 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
     # Charge the verifier/explanation/report calls before the separate posture budget checks
     # remaining daily capacity. Posture has its own persisted per-event and per-match budget.
     ex = explainer.stats()
-    base_calls = budget.run_calls + ex["calls"] + reporter.calls
-    base_cost = budget.run_cost + ex["cost_usd"] + reporter.cost
+    base_calls = budget.run_calls + ex["calls"] + reporter.calls + calibration_summary["calls"]
+    base_cost = (budget.run_cost + ex["cost_usd"] + reporter.cost
+                 + calibration_summary["cost_usd"])
     if mgr.usage is not None and base_calls:
-        mgr.usage.add_bedrock(base_calls, base_cost, budget.run_tokens.get("in", 0),
-                              budget.run_tokens.get("out", 0))
+        # Calibration already charged its daily call/cost budget before the remaining Bedrock
+        # arm was selected. Do not charge those same calls twice here.
+        mgr.usage.add_bedrock(
+            base_calls - calibration_summary["calls"],
+            base_cost - calibration_summary["cost_usd"],
+            budget.run_tokens.get("in", 0), budget.run_tokens.get("out", 0))
 
     posture_summary = {"eligible_events": 0, "calls": 0, "cost_usd": 0.0}
     if mgr.event_store is not None:
@@ -639,7 +665,8 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
                "bedrock": {"calls": calls, "cost_usd": round(cost, 5)},
                "posture": posture_summary,
                "report_source": rep["source"], "rules_fingerprint": rules_fingerprint(cfg),
-               "opencv_reanalysis_s": round(vb.spent_s, 1)}
+               "opencv_reanalysis_s": round(vb.spent_s, 1),
+               "self_calibration": calibration_summary}
     prog.set_stage("done")
     mgr.update(aid, status="done", stage="done", progress=1.0, eta_s=0.0, summary=summary,
                finished_utc=now_utc(), match_id=match_id)

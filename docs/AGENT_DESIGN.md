@@ -552,3 +552,48 @@ stored one. N4 advice re-checks each cited value, unit and window against the ev
 $0.0012):** completed / `unclear`, 4 exact citations; the code downgraded Nova's label because the
 window before 16:30 is too uncertain (confidence 0.30 < 0.45). It ships in
 `samples/w900_1260/demo_events_seed.json`.
+
+## Optional perception calibration loop (23 Oct 2026)
+
+`src/gaffer/perception/calibration_loop.py` adds an opt-in calibration pass around the existing
+OpenCV pipeline. `perception.self_calibration.agentic.enabled` is **false by default**. The first
+OpenCV result summarizes only numeric counts and shares: detections outside the pitch, team-label
+shares, static detections, players per frame, per-team formation coverage, and the two fitted team
+gate values. The Bedrock user payload contains this numeric object only; it contains no pixels,
+coordinates, video names, or upload text. The configured model id and existing Bedrock client,
+usage logging, daily API budget, and per-analysis caps are used.
+
+The response must be one structured tool choice, use a setting path and range from the
+`allowed_settings` config list, and include a short reason citing a diagnostic name and value. The
+code checks the schema, range, step, reason length, and citation. OpenCV reruns the same configured
+analysis window up to two times. A deterministic score from label share and formation coverage,
+with penalties for outside/static detections and player-count deviation, decides whether each
+rerun beats the best measured pass by `min_score_gain`. Nova's own rating never decides acceptance.
+The trace records baseline diagnostics, proposals, rerun measurements, acceptance, or default
+fallback in `outputs/agent_trace.jsonl`; the upload progress view exposes the current coach-readable
+message. Bedrock failure, throttling, invalid tool output, or an OpenCV rerun failure restores the
+Prompt 1 settings. The switches and settings from Prompt 1 remain the baseline.
+
+**Measurement status:** the default remains **OFF**. A paired Nova-versus-default comparison has
+not been established, so there is no evidence that Nova helped and no tuning decision was made.
+The existing baseline records report Zenodo unseen-test P/R/F1 at 1 m of 0.765/0.970/0.855, team
+accuracy 0.98, team-label share 0.95, 31.7 detections/frame, and strict formation coverage 0.96 /
+0.76. The existing TeamTrack eval and eval2 baselines report raw F1 0.9185 / 0.9296, settled-team
+accuracy 0.9835 / 0.9876, team-label share 0.9901 / 0.9875, and 24.46 / 24.51 detections/frame.
+These are previously recorded deterministic results, not new paired measurements from this loop.
+The separate 900–1260 s consistency upload previously found White's 16:30 change; it did not save
+the requested P/R/F1 metrics for that same upload.
+
+One real Nova 2 Lite call completed in ap-southeast-2 (1,302 input tokens, 95 output tokens,
+3,020.8 ms; estimated cost $0.0006281 from the configured token prices). It returned a valid
+structured choice, `static.min_share = 0.75`, and cited the numeric static-blob share. Its reason
+called 0.75 a “lower” value although the deterministic setting is 0.6. The OpenCV rerun was
+interrupted before measurement, so this call proves only the connected schema/tool path; it does
+not prove a useful setting change. The Zenodo run consumed more than 11 minutes of aggregate CPU
+time before its first pass produced diagnostics; it was stopped during the proposed rerun. The
+360 s consistency upload has a previously measured perception runtime of 777.8 s, so a new full
+upload comparison was not started. Completed loop overhead remains unmeasured. A rough estimate
+for two full TeamTrack retries is 1,556 s plus model latency, based on the earlier 777.8 s/pass; this
+is not a measurement. This session used 1 of 20 allowed real calls and about $0.0006281 of the
+$0.05 cap. Do not enable the switch until paired held-out measurements show a clear benefit
+without worsening the reported metrics.

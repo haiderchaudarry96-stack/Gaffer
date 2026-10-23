@@ -283,6 +283,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--image", type=float, default=None, help="save a snapshot at this second")
     ap.add_argument("--image-out", default=None)
     ap.add_argument("--save", action="store_true", help="write the MatchState too")
+    ap.add_argument("--agentic-calibration", action="store_true",
+                    help="compare the deterministic pass with the opt-in measured loop")
     args = ap.parse_args(argv)
     cfg = with_overrides(load_config(), args.cfg)
     z = cfg["zenodo"]
@@ -308,11 +310,32 @@ def main(argv: list[str] | None = None) -> int:
     except (VideoError, CalibrationError, PipelineError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    baseline = res
+    calibration = None
+    if args.agentic_calibration:
+        from gaffer.api.main import _bedrock_factory
+        from gaffer.api.usage import Usage
+        from gaffer.perception.calibration_loop import run_calibration_loop
+
+        agentic_cfg = with_overrides(rcfg, ["perception.self_calibration.agentic.enabled=true"])
+        out_dir = repo_path(f"outputs/eval_zenodo_{args.tag}_agentic")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        calibration = run_calibration_loop(
+            initial=baseline, cfg=agentic_cfg,
+            run=lambda trial_cfg: run(video, view="top", cfg=trial_cfg,
+                                      match_id=f"zenodo_preview_{args.tag}_agentic"),
+            llm_factory=_bedrock_factory(agentic_cfg),
+            trace_path=repo_path(agentic_cfg["agent"]["outputs"]["trace"]),
+            usage=Usage(agentic_cfg, str(out_dir / "usage.json")))
+        res = calibration["result"]
     src = VideoSource(video)
     off = int(z["frame_offset"])
     tune = score(res, ann, cfg, off, src.native_fps, tuple(z["tune_s"]), None)
     test = score(res, ann, cfg, off, src.native_fps, tuple(z["test_s"]),
                  tune["teams"]["naming"])
+    baseline_tune = score(baseline, ann, cfg, off, src.native_fps, tuple(z["tune_s"]), None)
+    baseline_test = score(baseline, ann, cfg, off, src.native_fps, tuple(z["test_s"]),
+                          baseline_tune["teams"]["naming"])
     corners = corner_check(res, ann, off, src.native_fps, cal, L, W, tuple(z["tune_s"]))
     report = {"tag": args.tag, "overrides": args.cfg, "autodetect": auto,
               "autodetect_vs_annotations": corners, "selfcal": res.selfcal,
@@ -320,6 +343,10 @@ def main(argv: list[str] | None = None) -> int:
               "timing_s": {k: round(v, 2) for k, v in res.timing.items()},
               "s_per_video_s": round(sum(res.timing.values()) / res.video_seconds, 2),
               "tune": tune, "test": test, "wall_s": round(time.perf_counter() - t0, 1)}
+    if args.agentic_calibration and calibration is not None:
+        report["deterministic_baseline"] = {"tune": baseline_tune, "test": baseline_test}
+        report["agentic_calibration"] = {k: calibration[k] for k in
+                                         ("kept", "calls", "cost_usd", "elapsed_s", "message")}
     out = repo_path(f"outputs/eval_zenodo_{args.tag}.json")
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")
     if args.save:

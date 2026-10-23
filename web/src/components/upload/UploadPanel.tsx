@@ -473,6 +473,7 @@ function Progress({ step, est }: { step: Extract<Step, { kind: 'progress' }>; es
           <p className="mt-2 font-mono text-sm text-text">{Math.round(st.progress * 100)} %</p>
         </div>
       )}
+      {st && 'calibration_message' in st && <p className="text-sm text-muted" aria-live="polite">{String(st.calibration_message)}</p>}
       <p className="text-sm text-muted">
         Estimate: about {SECONDS_PER_VIDEO_SECOND} s of processing per second of video
         {est > 0 ? ` (${formatDuration(est)} for this file)` : ''}, plus agent checks
