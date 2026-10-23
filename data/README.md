@@ -100,6 +100,29 @@ points to the list:
 
 Paths are relative to the list file; `start_s` is the clip's start in match seconds.
 
+## Zenodo "Soccer pitch top-view" (unseen ground) — CC BY 4.0
+
+> Kamil Synowiec, Michał Nowak, Mariusz Kamola. *Soccer pitch top-view: how it can help in
+> player location accuracy estimation and improvement* (dataset). Zenodo, 2025.
+> DOI: 10.5281/zenodo.14867795. Licence: Creative Commons Attribution 4.0 International.
+
+- Files (gitignored, `data/zenodo/`): `top-view-preview.mp4` (142,198,416 bytes, SHA-256
+  `2987a675f504c35cd65a6c4e4032eda7ba49f2d07d397a9905e6d9928b37d2c6`) and
+  `annotations/top-view-1.csv` (from `annotations-top-view.zip`, SHA-256 of the zip
+  `edff77f9e01724683b59306c6665dd20fd04403fd9762083320c957492acef2d`; of the CSV
+  `90e83cd369e5e20ddf1f03da1083cc8d0952f3b352bc1d33e35a592f255250b1`), plus
+  `annotations/annotations-preview.csv` (the record's 5-frame sample).
+- Re-download: `https://zenodo.org/records/14867795` → `top-view-preview.mp4` and
+  `annotations-top-view.zip` (password-protected; the password `10.5281/zenodo.14867794` is
+  given in the record description). Extract `annotations-top-view/top-view-1.csv` to
+  `data/zenodo/annotations/`.
+- Format: `frame_id, player_id, team (left/right), x_pos, y_pos (pitch metres, y from the top
+  of the image), jersey_nr, role (player/goalkeeper/referee/other), gps_name`. **Annotation
+  frame = preview video frame + 1900** (measured, `config.yaml zenodo.frame_offset`); frames
+  0–800 of the preview are annotated.
+- Used for: the unseen-ground test of the drone perception only (`scripts/eval_zenodo.py`).
+  Settings may be chosen on the first 10 s; 10–26.7 s is the unseen test.
+
 ## Calibration (`data/calibration/`, ours, MIT)
 
 - `top_points.json`, `side_points.json`: hand-picked pitch landmarks (pixel positions on one

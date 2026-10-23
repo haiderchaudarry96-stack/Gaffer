@@ -157,7 +157,13 @@ class ClassicalSettings:
 
 
 class ClassicalBlobDetector:
-    """Grass-background subtraction + geometry for a top-down view (see module docstring)."""
+    """Grass-background subtraction + geometry for a top-down view (see module docstring).
+
+    Per-video self-calibration (`perception/selfcal.py`, all off unless configured): `grass`
+    (this video's grass colour: grass-coloured pixels are background; with `shadows`, darker
+    grass too, and thin elongated blobs are rejected), `local_scale` (blob size limits and box
+    size from the homography at each blob; a working resolution of `working_px_per_m`).
+    """
 
     name = "classical"
 
@@ -165,11 +171,37 @@ class ClassicalBlobDetector:
                  roi: dict[str, float]) -> None:
         self.s, self.model, self.roi = s, model, roi
         self.debug: dict[str, np.ndarray] = {}
+        self.grass: Any = None  # selfcal.GrassModel
+        self.shadows = False
+        self.shadow: dict[str, Any] = {}
+        self.local_scale = False
+        self.working_px_per_m: float | None = None
+        self.track_owner = False  # keep debug["owner"]: the detection each fg pixel feeds
+        self.scale = s.scale  # working scale of the last frame
+
+    def configure(self, sc: Any, grass: Any = None) -> None:
+        """Apply `selfcal.SelfCalSettings` (and a learnt `GrassModel`)."""
+        self.grass = grass if (sc.grass_model or sc.shadows) else None
+        self.shadows = bool(sc.shadows)
+        self.shadow = dict(sc.shadow)
+        self.local_scale = bool(sc.local_scale)
+        self.working_px_per_m = float(sc.working_px_per_m) if sc.local_scale else None
+        self.track_owner = bool(getattr(sc, "crop_foreground", False))
+
+    def _working_scale(self, mapper: PitchMapper) -> float:
+        """`s.scale`, or (local scale on) the scale giving `working_px_per_m` pixels per metre,
+        rounded to 1/8 (TeamTrack 29.4 px/m -> 0.5 exactly) and never above 1."""
+        if self.working_px_per_m is None:
+            return self.s.scale
+        native = _px_per_m(mapper, self.model)
+        sc = float(np.clip(self.working_px_per_m / max(native, 1e-6), 0.125, 1.0))
+        return max(0.125, round(sc * 8) / 8)
 
     def foreground(self, frame: np.ndarray, mapper: PitchMapper) -> tuple[np.ndarray, float]:
         """Foreground mask at working scale and the local px-per-metre at that scale."""
         s = self.s
-        small = cv2.resize(frame, None, fx=s.scale, fy=s.scale, interpolation=cv2.INTER_AREA)
+        scale = self.scale = self._working_scale(mapper)
+        small = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         h, w = small.shape[:2]
         lab = cv2.cvtColor(small, cv2.COLOR_BGR2Lab)
         # spatial background: median over a neighbourhood much larger than a player
@@ -180,10 +212,12 @@ class ClassicalBlobDetector:
         diff = cv2.absdiff(lab, bg).astype(np.float32)
         dist = np.sqrt((diff * np.array(s.lab_weights, np.float32)) ** 2 @ np.ones(3, np.float32))
         fg = (dist >= s.diff_threshold).astype(np.uint8) * 255
+        if self.grass is not None:  # this video's grass colour (and its shadows) = background
+            fg[self.grass.mask_bgr(small, self.shadows)] = 0
 
         from gaffer.perception.drift import ScaledMapper
 
-        sm = ScaledMapper(mapper, s.scale)
+        sm = ScaledMapper(mapper, scale)
         ppm = _px_per_m(sm, self.model)
         roi = pitch_roi(sm, self.model, shape=(h, w), **self.roi)
         lines = painted_lines_mask(sm, self.model, (h, w), max(1, int(round(s.line_width_m * ppm))))
@@ -208,36 +242,72 @@ class ClassicalBlobDetector:
     def detect(self, frame: np.ndarray, mapper: PitchMapper) -> Detections:
         s = self.s
         fg, ppm = self.foreground(frame, mapper)
-        a_min, a_max = s.min_area_m2 * ppm**2, s.max_area_m2 * ppm**2
-        single = s.single_area_m2 * ppm**2
+        scale = self.scale
         n, labels, stats, cents = cv2.connectedComponentsWithStats(fg, connectivity=8)
-        centres, areas = [], []
+        if n <= 1:
+            return Detections.empty()
+        # expected player size (pixels per metre at working scale): one value for the pitch, or
+        # (local scale on) the homography's own scale at each blob
+        if self.local_scale:
+            from gaffer.perception.drift import ScaledMapper
+            from gaffer.perception.selfcal import local_px_per_m
+
+            ppm_b = np.r_[ppm, local_px_per_m(ScaledMapper(mapper, scale), cents[1:])]
+        else:
+            ppm_b = np.full(n, ppm)
+        thin_w = float(self.shadow.get("thin_width_m", 0.3))
+        max_el = float(self.shadow.get("max_elongation", 4.0))
+        centres, areas, sizes = [], [], []
+        # owner[y, x] = index of the detection a foreground pixel belongs to (-1: none): a
+        # split blob's pixels go to their own k-means part, so each part's colour is its own
+        owner = np.full(fg.shape, -1, np.int32) if self.track_owner else None
         band = self.debug["lines"] > 0
         inside = np.bincount(labels[band], minlength=n)  # pixels of each blob inside the band
         for i in range(1, n):
             area = stats[i, cv2.CC_STAT_AREA]
+            p2 = ppm_b[i] ** 2
+            a_min, a_max, single = s.min_area_m2 * p2, s.max_area_m2 * p2, s.single_area_m2 * p2
             if area < a_min or area > a_max or inside[i] >= s.max_inside_lines * area:
                 continue
+            if self.shadows:  # long thin blobs (pole shadows, fence lines) are not players
+                x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
+                bw, bh = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+                sub = (labels[y0:y0 + bh, x0:x0 + bw] == i).astype(np.uint8)
+                from gaffer.perception.selfcal import blob_axes
+
+                major, minor = blob_axes(sub)
+                if minor / ppm_b[i] < thin_w and major >= max_el * max(minor, 1e-6):
+                    continue
             k = int(round(area / single)) if area >= s.split_factor * single else 1
             if k <= 1:
+                if owner is not None:
+                    x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
+                    bw, bh = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+                    win = owner[y0:y0 + bh, x0:x0 + bw]
+                    win[labels[y0:y0 + bh, x0:x0 + bw] == i] = len(centres)
                 centres.append(cents[i])
-                areas.append(area)
+                areas.append(area / single)
+                sizes.append(ppm_b[i])
                 continue
             ys, xs = np.nonzero(labels == i)
             pts = np.stack([xs, ys], axis=1).astype(np.float32)
             crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
             cv2.setRNGSeed(42)
             _, lab_k, ctr = cv2.kmeans(pts, k, None, crit, 3, cv2.KMEANS_PP_CENTERS)
+            if owner is not None:
+                owner[ys, xs] = len(centres) + lab_k.ravel()
             for j in range(k):
                 centres.append(ctr[j])
-                areas.append(float((lab_k.ravel() == j).sum()))
+                areas.append(float((lab_k.ravel() == j).sum()) / single)
+                sizes.append(ppm_b[i])
+        if owner is not None:
+            self.debug["owner"] = owner
         if not centres:
             return Detections.empty()
-        c = np.array(centres, dtype=float) / s.scale
-        side = s.box_size_m * ppm / s.scale
-        boxes = np.stack([c[:, 0] - side / 2, c[:, 1] - side / 2,
-                          np.full(len(c), side), np.full(len(c), side)], axis=1)
-        scores = np.clip(np.array(areas) / single, 0.0, 1.0)
+        c = np.array(centres, dtype=float) / scale
+        side = s.box_size_m * np.array(sizes, dtype=float) / scale
+        boxes = np.stack([c[:, 0] - side / 2, c[:, 1] - side / 2, side, side], axis=1)
+        scores = np.clip(np.array(areas), 0.0, 1.0)
         return Detections(boxes, scores, np.full(len(c), PERSON, dtype=int))
 
 

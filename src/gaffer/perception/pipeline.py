@@ -40,7 +40,15 @@ import cv2
 import numpy as np
 
 from gaffer.config import load_config, repo_path
-from gaffer.perception.detector import BALL, DetectorError, make_detector
+from gaffer.perception.detector import (
+    BALL,
+    PERSON,
+    Detections,
+    DetectorError,
+    _px_per_m,
+    make_detector,
+    painted_lines_mask,
+)
 from gaffer.perception.drift import GeometryProvider
 from gaffer.perception.matchstate import (
     ObservedFrame,
@@ -51,6 +59,13 @@ from gaffer.perception.matchstate import (
 )
 from gaffer.perception.pitch import Calibration, CalibrationError, PitchMapper, PitchModel
 from gaffer.perception.render import annotate_frame, compose, draw_minimap
+from gaffer.perception.selfcal import (
+    GrassModelError,
+    SelfCalSettings,
+    estimate_grass,
+    inside_pitch,
+    static_detections,
+)
 from gaffer.perception.team_classifier import (
     TeamClassifierError,
     TeamModel,
@@ -65,8 +80,8 @@ from gaffer.perception.video import VideoError, VideoSource
 from gaffer.schema import ContractError, MatchState
 
 GENERATOR = "perception.pipeline v1.0"
-STAGES = ("decode", "geometry", "detection", "tracking", "team_features", "team_fit",
-          "labelling", "assemble", "debug_video")
+STAGES = ("decode", "geometry", "detection", "static_filter", "tracking", "team_features",
+          "team_fit", "labelling", "assemble", "debug_video")
 
 
 class PipelineError(RuntimeError):
@@ -107,6 +122,7 @@ class PipelineResult:
     view: str
     video_seconds: float
     directions_inferred: bool
+    selfcal: dict[str, Any] = field(default_factory=dict)  # switches, grass model, removals
 
     def timing_table(self) -> str:
         """Per-stage timing summary (seconds, ms per tracked frame, share of the total)."""
@@ -250,11 +266,20 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     tracker = PlayerTracker(TrackerSettings.from_config(cfg, view), track_fps)
     if hasattr(detector, "reset"):
         detector.reset(track_fps)  # stateful background model: learns at this rate
+    sc = SelfCalSettings.from_config(cfg, view)  # per-video self-calibration (selfcal.py)
+    if hasattr(detector, "configure"):
+        detector.configure(sc)
+    grass = None
+    grass_tried = False
+    notes: list[str] = []
+    removed = {"outside_pitch": 0, "static": 0}
     dv = pcfg["debug_video"]
     want_video = debug_video is not None
     rows = dv["side_rows"] if view == "side" else [0, src.height]
     jscale = float(dv["width_px"]) / src.width
 
+    # pass 1: decode, geometry, detection, team features (tracking runs after the static-object
+    # filter, which needs the whole run; with that switch off the result is identical)
     records: list[FrameRecord] = []
     t0 = time.perf_counter()
     for k, (t, _, _, frame) in enumerate(src.frames(times)):
@@ -263,16 +288,40 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
         g = geo.for_frame(frame)
         t2 = time.perf_counter()
         timing["geometry"] += t2 - t1
+        if sc.needs_grass and not grass_tried:  # this video's grass colour, first frame
+            grass_tried = True
+            try:
+                grass = estimate_grass(frame, g.mapper, model, sc.grass, sc.shadow)
+            except GrassModelError as exc:
+                notes.append(f"grass model not learnt ({exc}); fixed grass thresholds used")
+            if hasattr(detector, "configure"):
+                detector.configure(sc, grass)
         det = detector.detect(frame, g.mapper)
         persons = det.persons()
         t3 = time.perf_counter()
         timing["detection"] += t3 - t2
-        ids = tracker.update(persons)
-        t4 = time.perf_counter()
-        timing["tracking"] += t4 - t3
-        feats, ok = shirt_features(frame, persons.boxes, ts)
         xy = g.mapper.to_pitch(foot_xy(persons.boxes, foot_mode)) if len(persons) \
             else np.zeros((0, 2))
+        det_ids = np.arange(len(persons))  # index in the detector's output (owner image)
+        if sc.pitch_mask and len(persons):  # nothing outside the confirmed pitch (+ margin)
+            keep = inside_pitch(xy, model.length, model.width, sc.pitch_mask_margin_m)
+            removed["outside_pitch"] += int((~keep).sum())
+            persons, xy, det_ids = persons.select(keep), xy[keep], det_ids[keep]
+        t4 = time.perf_counter()
+        exclude = None
+        if sc.crop_exclude_lines and len(persons):  # painted lines stay out of shirt crops
+            band = max(1, int(round(sc.crop_line_band_m * _px_per_m(g.mapper, model))))
+            exclude = painted_lines_mask(g.mapper, model, frame.shape[:2], band)
+        include, owner_ids = None, None
+        dbg = getattr(detector, "debug", {})
+        if sc.crop_foreground and "owner" in dbg:  # each detection's own pixels
+            include = (dbg["owner"], float(getattr(detector, "scale", 1.0)))
+            owner_ids = det_ids
+        elif sc.crop_foreground and "fg" in dbg:
+            include = (dbg["fg"], float(getattr(detector, "scale", 1.0)))
+        feats, ok = shirt_features(frame, persons.boxes, ts,
+                                   grass if sc.grass_model else None, sc.shadows, exclude,
+                                   include, owner_ids)
         ball = None
         balls = det.select(det.classes == BALL)
         if len(balls):
@@ -290,7 +339,8 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
             timing["debug_video"] += time.perf_counter() - tj
             t4 += time.perf_counter() - tj  # not a team-feature cost
         records.append(FrameRecord(
-            t=t, output=is_out[t], boxes=persons.boxes, scores=persons.scores, track_ids=ids,
+            t=t, output=is_out[t], boxes=persons.boxes, scores=persons.scores,
+            track_ids=np.full(len(persons), -1, dtype=int),
             xy=xy, feats=feats, feat_ok=ok, ball=ball,
             quality={"players_detected": int(len(persons)), "homography_ok": bool(g.homography_ok),
                      "reprojection_error_m": g.reprojection_error_m, "camera_cut": False},
@@ -300,6 +350,26 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
         if progress and (k + 1) % 20 == 0:
             print(f"  [{k + 1}/{len(times)}] t={t:.1f}s {len(persons)} players, "
                   f"{(t0 - t1) * 1000:.0f} ms", flush=True)
+
+    # static objects: detections recurring at the same pitch point over the run (selfcal.py)
+    t5 = time.perf_counter()
+    if sc.static_objects and records:
+        flags = static_detections([r.xy for r in records], [r.t for r in records], sc.static)
+        for r, f in zip(records, flags, strict=True):
+            if f.any():
+                keep = ~f
+                removed["static"] += int(f.sum())
+                r.boxes, r.scores, r.xy = r.boxes[keep], r.scores[keep], r.xy[keep]
+                r.feats, r.feat_ok = r.feats[keep], r.feat_ok[keep]
+                r.track_ids = r.track_ids[keep]
+                r.quality["players_detected"] = int(keep.sum())
+    timing["static_filter"] += time.perf_counter() - t5
+    # pass 2: tracking
+    t5 = time.perf_counter()
+    for r in records:
+        r.track_ids = tracker.update(Detections(r.boxes, r.scores,
+                                                np.full(len(r.boxes), PERSON, dtype=int)))
+    timing["tracking"] += time.perf_counter() - t5
 
     out_recs = [r for r in records if r.output]
     med = float(np.median([len(r.boxes) for r in out_recs])) if out_recs else 0.0
@@ -317,7 +387,8 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
             if records else np.zeros((0, 3))
         hints = {s: pcfg["teams"][s]["shirt_hint"] for s in ("home", "away")}
         try:
-            team_model = fit_team_model(feats_all, hints, ts, seed=int(cfg.get("seed", 42)))
+            team_model = fit_team_model(feats_all, hints, ts, seed=int(cfg.get("seed", 42)),
+                                        adaptive=sc.gate if sc.adaptive_gate else None)
         except TeamClassifierError as exc:
             raise TooFewPlayersError(str(exc)) from exc
     t6 = time.perf_counter()
@@ -373,7 +444,6 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     inferred = directions is None
     if directions is None:
         directions = infer_attacking_direction(observed(out_recs, False), model.length)
-    notes = []
     if directions is None:
         directions = {"home": "right", "away": "left"}
         notes.append("attacking direction could not be inferred (a team was never seen); "
@@ -396,6 +466,14 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     notes.append(f"view {view}, detector {detector.name}, tracking {track_fps:g} fps, output "
                  f"{fps:g} fps, window {a:.1f}-{b:.1f} s; camera_cut not evaluated (static "
                  "cameras)")
+    on = [k for k, v in sc.summary().items() if v]
+    selfcal = {"switches": sc.summary(), "grass": grass.to_dict() if grass else None,
+               "removed": removed,
+               "working_scale": float(getattr(detector, "scale", 1.0))}
+    if on:
+        notes.append(f"self-calibration: {', '.join(on)}; removed {removed['outside_pitch']} "
+                     f"detections outside the pitch, {removed['static']} static"
+                     + (f"; grass hue {grass.hue_lo:.0f}-{grass.hue_hi:.0f}" if grass else ""))
     match = assemble(  # validates against the contract (ContractError if anything is off)
         match_id or _match_id(str(source)), "video", fps, model.length, model.width,
         observed(out_recs, True), teams, directions,
@@ -408,7 +486,8 @@ def run(source: str | Path, *, view: str | None = None, start_s: float | None = 
     if debug_video is not None:
         write_debug_video(debug_video, out_recs, model, cfg, view, jscale, rows, fps)
         timing["debug_video"] += time.perf_counter() - t8
-    return PipelineResult(match, records, team_model, dict(timing), view, b - a, inferred)
+    return PipelineResult(match, records, team_model, dict(timing), view, b - a, inferred,
+                          selfcal)
 
 
 def write_debug_video(path: str | Path, recs: list[FrameRecord], model: PitchModel,

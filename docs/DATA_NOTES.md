@@ -205,3 +205,43 @@ the oracle search for sustained formation changes (Phase 3 Task E), never tuning
   `…_1020_1050`) are ~2× the median size: fractional box values, as in `…_1620_1650` above.
 - **Geometry:** the full-length oracle (`--set full`, 3,601 frames at 2 fps) re-anchors every
   frame with `homography_ok` in **100 %** of frames, line error median 0.085 m, max 0.114 m.
+
+## 12. Zenodo "Soccer pitch top-view" preview (unseen ground, added 23 Oct, checked by script)
+
+Synowiec, Nowak, Kamola, Zenodo 10.5281/zenodo.14867795, CC BY 4.0 (`docs/DATA_SOURCES.md`).
+Used only to test whether the drone perception generalises (`scripts/eval_zenodo.py`).
+
+- **Video** `top-view-preview.mp4`: 3840×2160, 30.0 fps, 900 frames (30.0 s), H.264, 142 MB.
+  Whole pitch visible from straight above (pitch ~3,090 × 2,000 px, **29.4 px/m**, the same
+  scale as TeamTrack). Artificial turf, **low sun**: every player casts a shadow about as long
+  as they are tall, two light poles cast 12–15 m shadows across the pitch, a fence and its
+  shadow run along the far touchline, a stand / running track beyond the right goal line,
+  staff, substitutes in bibs and spare balls beyond both touchlines. The drone drifts up to
+  37 px during the 30 s (per-frame re-anchoring absorbs it, line error 0.07–0.14 m).
+- **Kits:** one team in red shirts with white parts, one in white shirts with dark shorts;
+  keepers in their own colours, a referee, assistant referees / staff near the lines.
+- **Grass / shadow colour (HSV, OpenCV 8-bit):** sunlit turf hue 43–50 (p1–p99), saturation
+  p1 ~55, brightness median 151. Shadowed turf: brightness ~84 in pole shadows and 23–76 in
+  the core of player shadows, hue shifted towards cyan (46–56 in pole shadows, median 66 in
+  player-shadow cores: lit by the blue sky only), saturation *higher* than sunlit turf
+  (135–184). TeamTrack turf: hue 42–55, no shadows (overcast).
+- **Annotations** `top-view-1.csv` (from `annotations-top-view.zip`): one row per person per
+  frame: `frame_id, player_id, team (left/right), x_pos, y_pos, jersey_nr, role
+  (player/goalkeeper/referee/other), gps_name`. Pitch metres, **x along the length from the
+  left goal line, y from the top touchline of the image** (contract y = 68 − y_pos). 11 + 11
+  players (incl. keepers), 1 referee and ~2.3 "other" people (assistant referees / staff by
+  the lines) per frame. `annotations-preview.csv` equals frames 1800–1804 of `top-view-1.csv`,
+  but those are **not** the preview video's first frames.
+- **Time mapping (measured):** annotation `frame_id` = **video frame + 1900**. Found by matching
+  OpenCV detections (auto-detected pitch, per-frame re-anchoring) to the annotations: recall
+  within 0.7 m over 27 sampled frames is 0.976 at +1900, 0.972 / 0.956 at ±1 frame, 0.47 at
+  +1886; the best offset per frame is stable over the clip (slope 1). Video frames 0–800 are
+  annotated (26.7 s); 801–899 are not.
+- **Pitch auto-detect** (frame at 1 s): accepted, confidence 0.987, line error 0.082 m. Against
+  the corners implied by the annotations (RANSAC homography from 988 detection ↔ annotation
+  pairs in 0–10 s): corner errors 0.85 / 0.96 / 1.74 / 0.27 m, i.e. one corner is 1.7 m off by
+  the "every corner ≤ 1 m" rule (not isolated: our markings fit the painted lines to 0.08 m,
+  so the annotation's own reconstruction may contribute; players still match within 1 m with
+  recall 0.97–1.0). Reported as a miss by that rule.
+- **Split used in the 23 Oct session:** settings chosen on the first third (0–10 s) and the
+  TeamTrack dev clip only; 10–26.7 s is the unseen test.

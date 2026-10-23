@@ -41,7 +41,7 @@ from typing import Any
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from gaffer.config import load_config, repo_path
+from gaffer.config import load_config, repo_path, with_overrides
 from gaffer.evaluation import match_distance, prf
 from gaffer.perception.detector import DetectorError
 from gaffer.perception.pipeline import PipelineError, PipelineResult, run, write_outputs
@@ -183,7 +183,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="second eval set (teamtrack.clip_sets), scored as one window")
     ap.add_argument("--start", type=float, default=None, help="limit the window (match s)")
     ap.add_argument("--end", type=float, default=None)
-    ap.add_argument("--tag", default="")
+    ap.add_argument("--tag", default="", help="suffix of the output files (with --save also "
+                    "of the MatchState, so tagged runs never overwrite the official ones)")
+    ap.add_argument("--cfg", action="append", default=[], metavar="KEY=VALUE",
+                    help="config override for this run, e.g. "
+                         "perception.self_calibration.static_objects=true")
     ap.add_argument("--whole-source", action="store_true",
                     help="run the pipeline over every clip (tracks continue across the dev/eval "
                          "boundary) but score only the selected clips")
@@ -191,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="also write outputs/match_state_<view>_<fps>fps.json (+ .teams.json) "
                          "and outputs/debug_<view>_<fps>fps.mp4 for every tracking rate")
     args = ap.parse_args(argv)
+    cfg = with_overrides(cfg, args.cfg)
     view = args.view
     try:
         lists = repo_path(cfg["teamtrack"]["clip_lists"])
@@ -219,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     for tf in args.track_fps:
         print(f"== {view}, tracking at {tf:g} fps, run {ra:.0f}-{rb:.0f} s, scored {a:.0f}-"
               f"{b:.0f} s ({args.set or ('DEV' if args.dev else 'eval')})", flush=True)
-        stem = f"{view}_{args.set}_{tf:g}fps" if args.set else f"{view}_{tf:g}fps"
+        stem = (f"{view}_{args.set}_{tf:g}fps" if args.set else f"{view}_{tf:g}fps") + args.tag
         try:
             res = run(src.uri, view=view, start_s=ra, end_s=rb, track_fps=tf, cfg=cfg,
                       progress=True,
@@ -253,7 +258,8 @@ def main(argv: list[str] | None = None) -> int:
     note = ("second eval set: never used for tuning, but NOT independent of the first eval "
             "set (same match, same camera, neighbouring minutes)") if args.set else None
     out.write_text(json.dumps({"view": view, "dev": args.dev, "set": args.set or
-                               ("dev" if args.dev else "eval"), "note": note, "window": [a, b],
+                               ("dev" if args.dev else "eval"), "note": note, "overrides": args.cfg,
+                               "window": [a, b],
                                "run_window": [ra, rb],
                                "results": {**old, **results}}, indent=2), encoding="utf-8")
     print(f"-> {out}")

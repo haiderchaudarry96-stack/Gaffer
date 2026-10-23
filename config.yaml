@@ -134,6 +134,32 @@ perception:
                                   # middle of the 0.5-0.9 plateau, no GT player flagged)
   static_object: {min_s: 20.0, max_spread_m: 0.3}   # a track that stays within 0.3 m (p95) for
                                   # 20 s+ is an object (spare balls behind a goal), not a person
+  self_calibration:               # per-video self-calibration (perception/selfcal.py, 23 Oct):
+                                  # learnt from each video, OpenCV only; each part is a switch
+                                  # measured on and off (FAILURE_LOG 2026-10-23, unseen ground)
+    views: [top]                  # cameras it applies to (the side view is unchanged)
+    pitch_mask: true              # drop detections outside the confirmed pitch + margin
+    pitch_mask_margin_m: 1.5      # throw-ins and keepers on the line stay
+    grass_model: true             # this video's grass colour (HSV, inside the pitch, first frame)
+    grass: {analysis_width_px: 960, inset_m: 1.0, line_band_m: 1.0, min_saturation: 20,
+            min_value: 20, min_pixels: 5000, hue_window: 20, hue_percentiles: [1, 99],
+            hue_margin: [3, 8], saturation_factor: 0.7, value_frac: 0.7}
+    shadows: true                 # darker grass (shadows) = background; thin long blobs rejected
+    shadow: {value_frac: 0.10, hue_extra: 35, saturation_frac: 1.0, thin_width_m: 0.5,
+             max_elongation: 4.0}
+    local_scale: true             # player size from the homography at each blob; working scale
+    working_px_per_m: 14.7        # = TeamTrack 29.4 px/m x 0.5 (detector.classical.scale)
+    static_objects: true          # detections recurring at the same pitch point over the run
+    static: {radius_m: 0.5, min_share: 0.6, min_frames: 30, min_span_s: 20.0}
+    crop_exclude_lines: false     # painted lines left out of the team-colour crops. OFF: on the
+                                  # Zenodo tuning third it lowered team accuracy 0.96 -> 0.85,
+                                  # TeamTrack dev neutral (95.5 vs 95.2 % right team), 23 Oct
+    crop_line_band_m: 0.3
+    crop_foreground: true         # team colour from the player's own foreground pixels only
+    adaptive_gate: true           # team-colour gate from this video's colour distribution:
+    gate: {percentile: 90, scale: 1.5, min_sep_frac: 0.15, max_sep_frac: 0.7}  # scale x the
+                                  # team's percentile distance, within these fractions of the
+                                  # distance between the two team colours (replaces gate/min_gate)
   teams:                          # per footage: names, display colours, shirt-colour hints
     home: {name: White, colour: "#f0f0f0", shirt_hint: "#f0f0f0"}   # TeamTrack TeamID 0
     away: {name: Blue, colour: "#1f3a8a", shirt_hint: "#2848a0"}    # TeamTrack TeamID 1
@@ -203,6 +229,18 @@ teamtrack:
     "0": {side: home, name: White, colour: "#f0f0f0"}
     "1": {side: away, name: Blue, colour: "#1f3a8a"}
   clip_lists: data/clips          # <match_id>.clips.json written by the oracle / pipeline
+
+zenodo:                           # unseen drone footage (scripts/eval_zenodo.py, 23 Oct): Synowiec,
+  # Nowak, Kamola, "Soccer pitch top-view ...", Zenodo 10.5281/zenodo.14867795, CC BY 4.0
+  video: data/zenodo/top-view-preview.mp4          # 3840x2160, 30 fps, 900 frames (30 s)
+  annotations: data/zenodo/annotations/top-view-1.csv   # from annotations-top-view.zip
+  # annotation frame_id = video frame + 1900, measured by matching detections to annotations
+  # (recall at 0.7 m peaks at 1900 over 27 frames; 1-frame steps around it drop 2-4 points).
+  # Annotations exist for video frames 0-800 only (26.7 s); the y axis runs from the image top.
+  frame_offset: 1900
+  tune_s: [0.0, 10.0]             # first third: the only Zenodo frames settings may be chosen on
+  test_s: [10.0, 26.7]            # unseen test (the annotated rest; 26.7-30 s has no annotations)
+  calibration_dir: outputs/zenodo/calibration      # auto-detected 4 corners (as in the upload path)
 
 drift:                            # per-frame re-anchoring of the top view (perception/drift.py)
   scale: 0.25                     # alignment on a quarter-resolution line image

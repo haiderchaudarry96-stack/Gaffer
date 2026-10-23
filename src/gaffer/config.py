@@ -66,3 +66,26 @@ def repo_path(relative: str | os.PathLike[str]) -> Path:
     """Resolve a config path (relative to the repo root) to an absolute path."""
     p = Path(relative)
     return p if p.is_absolute() else REPO_ROOT / p
+
+
+def with_overrides(cfg: dict[str, Any], sets: list[str] | None) -> dict[str, Any]:
+    """A deep copy of `cfg` with `a.b.c=value` overrides applied (values YAML-parsed), for
+    measuring a config switch on and off from the command line. Unknown keys are an error, so
+    a typo never silently measures the default."""
+    import copy
+
+    out = copy.deepcopy(cfg)
+    for s in sets or []:
+        key, sep, raw = s.partition("=")
+        if not sep:
+            raise ConfigError(f"override {s!r} must look like a.b.c=value")
+        parts = key.strip().split(".")
+        d = out
+        for p in parts[:-1]:
+            if not isinstance(d.get(p), dict):
+                raise ConfigError(f"override {key}: no config section {p!r}")
+            d = d[p]
+        if parts[-1] not in d:
+            raise ConfigError(f"override {key}: no config key {parts[-1]!r}")
+        d[parts[-1]] = yaml.safe_load(raw)
+    return out
