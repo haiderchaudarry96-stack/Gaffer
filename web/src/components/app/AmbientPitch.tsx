@@ -4,6 +4,8 @@
  * wave) that are not formations. With prefers-reduced-motion it is a still image.
  */
 
+import type { CSSProperties } from 'react'
+
 // pitch 105 x 68 m drawn in a 110 x 73 box (2.5 m margin), like the real minimap
 const W = 105
 const H = 68
@@ -28,22 +30,19 @@ export default function AmbientPitch({ reduced, className = '' }: { reduced: boo
         </g>
         {!reduced && (
           // a slow scan line over the markings: clearly an effect, not a reading
-          <rect x="-2.5" y="-2.5" width="6" height="73" fill="currentColor" fillOpacity="0.06">
-            <animate attributeName="x" values="-8;108;-8" dur="16s" repeatCount="indefinite" />
-          </rect>
+          <rect className="ambient-scan" x="-8" y="-2.5" width="6" height="73" fill="currentColor" fillOpacity="0.06" />
         )}
+        {/* CSS animations (index.css), not SMIL: Chrome sometimes never schedules a SMIL frame for
+            an SVG that React inserts during a slow first load, so the dots stood still. */}
         <g fill="currentColor" fillOpacity="0.32">
           {RING.map(([x, y], i) => {
             const [bx, by] = WAVE[(i * 4) % 11]
-            return (
-              <circle key={i} cx={x} cy={y} r="1.3">
-                {!reduced && (
-                  <animateTransform attributeName="transform" type="translate" dur={`${22 + (i % 4) * 3}s`}
-                    values={`0 0; ${(bx - x).toFixed(1)} ${(by - y).toFixed(1)}; 0 0`} keyTimes="0; 0.5; 1"
-                    calcMode="spline" keySplines="0.45 0 0.55 1; 0.45 0 0.55 1" repeatCount="indefinite" />
-                )}
-              </circle>
-            )
+            const drift = {
+              '--dx': `${(bx - x).toFixed(1)}px`, // px = user units inside the SVG
+              '--dy': `${(by - y).toFixed(1)}px`,
+              animationDuration: `${22 + (i % 4) * 3}s`,
+            } as CSSProperties
+            return <circle key={i} cx={x} cy={y} r="1.3" className={reduced ? undefined : 'ambient-dot'} style={reduced ? undefined : drift} />
           })}
         </g>
       </svg>

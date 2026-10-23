@@ -192,3 +192,36 @@ h3 {
     animation: none;
   }
 }
+
+/* Idle /app pitch (AmbientPitch): each dot drifts to its --dx/--dy offset and back; a faint scan
+   line sweeps across. Decorative only; still with reduced motion. */
+.ambient-dot {
+  animation: ambient-drift 22s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes ambient-drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(var(--dx), var(--dy));
+  }
+}
+.ambient-scan {
+  animation: ambient-scan 16s linear infinite;
+}
+@keyframes ambient-scan {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(116px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient-dot,
+  .ambient-scan {
+    animation: none;
+  }
+}

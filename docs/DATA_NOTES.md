@@ -245,3 +245,43 @@ Used only to test whether the drone perception generalises (`scripts/eval_zenodo
   recall 0.97–1.0). Reported as a miss by that rule.
 - **Split used in the 23 Oct session:** settings chosen on the first third (0–10 s) and the
   TeamTrack dev clip only; 10–26.7 s is the unseen test.
+
+## 13. 720p check (one clip, TeamTrack train split, not held out) (added 23 Oct, checked by script)
+
+`scripts/eval_720p_check.py` (report `outputs/teamtrack_720p_check/report.json`). Same drone
+window, match 900–1260 s (TeamTrack **train** split, the demo window: not held out, and the
+window was chosen because the oracle shows the 16:30 change), default config, **both
+calibration tiers off**, 4 fps, matched at 1 m. Sources: `data/sample_clips/teamtrack_top_0900_1260_4k.mp4`
+(3840×2160) and its 1280×720 H.264 copy `..._720p.mp4` (~9.3 px/m vs ~28 px/m at 4K). Both
+are addressed on the original 12 × 900-frame TeamTrack clip boundaries, so every sampled frame
+has the same match time and GT frame. **GT boxes (4K pixels) are projected for both rows
+through the 4K run's per-frame mapper** (4K calibration + drift re-anchoring); the 720p run
+uses the 4K homography scaled by exactly 3 and scores its own pitch positions.
+
+| metric | 4K | 720p |
+|---|---|---|
+| P / R / F1 at 1 m (raw) | 0.887 / 0.973 / **0.928** | 0.929 / 0.926 / **0.928** |
+| F1, referee-labelled detections removed (P / R) | **0.978** (0.999 / 0.958) | **0.958** (0.996 / 0.924) |
+| detections / frame; referee-labelled / frame | 24.1; 3.0 | 21.9; 1.5 |
+| team accuracy (settled labels; unknown) | **99.0 %** (0.9 %) | **98.5 %** (1.1 %) |
+| team-labelled share of all output detections | 86.6 % | 91.8 % |
+| IDF1; ID switches / player-min; tracks for 22 players | **0.468**; 1.55; 86 | **0.416**; 1.93; 142 |
+| formation exact agreement with oracle, White / Blue (both-confident windows) | **91.7 / 86.2 %** (60 / 65 of 66) | **74.1 / 82.8 %** (54 / 64 of 66) |
+| pipeline uncertain windows, White / Blue | 7.6 / 1.5 % | 16.7 / 3.0 % |
+| coverage (≥ 8 outfield), White / Blue | 94.2 / 97.8 % | 82.2 / 98.6 % |
+| candidates vs oracle (8): matched / same new shape / extra | 8 / 8 / 0 | 7 / 6 / 1 |
+| White 16:30 change (home → 3-4-3 within 90 s of 990 s) | **found** (990 s, read as 4-2-3-1 → 3-4-3) | **found** (same) |
+| s of processing per s of video (laptop CPU) | 1.42 | **0.34** |
+
+- **720p is worse, but not everywhere.** Raw F1 is the same (0.928) only because 720p finds
+  half as many referees / assistant referees (who are unannotated, so they count as false
+  positives at 4K); that same effect raises the 720p team-labelled share. On players alone
+  720p is worse: recall 0.973 → 0.926 (−4.7 points), referee-removed F1 0.978 → 0.958 (−2.0).
+  Team accuracy −0.5 points, IDF1 −0.05 (tracks are fragmented: 142 vs 86, mean length 56 vs
+  101 s). The largest loss is **White's formation agreement, 91.7 → 74.1 % (−17.6 points)**,
+  with White coverage 94 → 82 % and twice the uncertain windows; Blue −3.4 points. Events: one
+  oracle change missed at 720p (home 1200 s 5-3-2 → 4-4-2; the 720p engine has no 5-3-2 at
+  1155 s and reads 4-3-3 → 4-4-2 at 1205 s) and one extra (away 960 s).
+- 720p is **4.2× faster** (geometry and decode shrink most; detection 175 → 74 s).
+- Limits: one 6-minute window from the train split, one match, one 720p encode. The 720p copy
+  is a downscale of the 4K file, not a native 720p camera.

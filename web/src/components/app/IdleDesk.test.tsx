@@ -33,11 +33,15 @@ describe('idle desk (/app before anything is started)', () => {
     const moving = renderToStaticMarkup(<AmbientPitch reduced={false} />)
     expect(moving).toContain('data-decorative="true"')
     expect(moving).toContain('aria-hidden="true"')
-    expect(moving).toMatch(/<animateTransform/)
+    // CSS animations (index.css), not SMIL: SMIL could stay frozen on a slow first load in Chrome
+    expect(moving).not.toMatch(/<animate/)
+    expect((moving.match(/class="ambient-dot"/g) ?? []).length).toBe(11)
+    expect(moving).toMatch(/--dx:-?\d/)
+    expect(moving).toContain('class="ambient-scan"')
     expect((moving.match(/<circle/g) ?? []).length).toBeGreaterThanOrEqual(10 + 1) // 11 dots + centre circle
     const still = renderToStaticMarkup(<AmbientPitch reduced={true} />)
-    expect(still).not.toMatch(/<animate/)
+    expect(still).not.toMatch(/<animate|ambient-dot|ambient-scan/)
     expect(still).toContain('Waiting to start')
-    expect(render(true)).not.toMatch(/<animate/)
+    expect(render(true)).not.toMatch(/<animate|ambient-dot|ambient-scan/)
   })
 })

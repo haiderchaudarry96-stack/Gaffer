@@ -1,5 +1,5 @@
 import { LogoMark } from '../ui/Logo'
-import { COMPETITION_URL, GITHUB_URL, TEAMTRACK_URL } from '../../lib/links'
+import { AUTHOR_URL, COMPETITION_URL, GITHUB_URL, TEAMTRACK_URL } from '../../lib/links'
 
 const ext = { target: '_blank', rel: 'noreferrer' } as const
 const linkCls = 'underline decoration-line underline-offset-4 hover:text-text hover:decoration-muted'
@@ -50,6 +50,20 @@ export default function Footer() {
             <li>Space Grotesk, Inter, JetBrains Mono — SIL OFL 1.1</li>
           </ul>
         </div>
+      </div>
+      <div className="mx-auto max-w-7xl border-t border-line px-4 py-5 sm:px-6">
+        <p className="text-xs text-muted">
+          Designed &amp; built by{' '}
+          <a
+            href={AUTHOR_URL}
+            target="_blank"
+            rel="noopener"
+            className="font-medium text-accent-ink underline-offset-4 hover:underline"
+          >
+            Haider Sultan
+          </a>{' '}
+          · FAST-NUCES, Pakistan
+        </p>
       </div>
     </footer>
   )

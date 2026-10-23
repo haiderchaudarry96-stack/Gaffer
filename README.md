@@ -75,3 +75,7 @@ See `docs/DATA_SOURCES.md` for every source and licence.
 ## Licence
 
 MIT, see `LICENSE`.
+
+---
+
+<sub>Designed &amp; built by [Haider Sultan](https://www.linkedin.com/in/haider-sultan-32209640a) · FAST-NUCES, Pakistan</sub>
