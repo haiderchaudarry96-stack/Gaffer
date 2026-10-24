@@ -202,7 +202,8 @@ def analysis_result(storage: Storage, aid: str, status: dict[str, Any], store: A
             "explanations": explanations,
             "team_model": read_json(storage, f"{aid}/match_state.teams.json"),
             "run_rows": rows,
-            "summary": status.get("summary")}
+            "summary": status.get("summary"),
+            "resolution": status.get("resolution")}
 
 
 def evidence_file(job_dir: Path, event_id: str) -> Path | None:

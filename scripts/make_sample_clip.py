@@ -9,7 +9,7 @@ full pitch check runs):
 * TeamTrack drone clip (default) -> `api.sample_clip.path`. Scott et al., 2024, arXiv 2404.13868,
   MIT licence (data/README.md). H.264 (`avc1`) is tried first so browsers can preview it; if this
   OpenCV build has no H.264 encoder it falls back to `mp4v` (no browser preview).
-* `--source zenodo` -> `api.more_sample_clips[id=zenodo].path`, from `data/zenodo/top-view-preview.mp4`
+* `--source zenodo` -> `api.more_sample_clips[id=zenodo].path`, from the Zenodo preview clip
   (Synowiec, Nowak, Kamola, DOI 10.5281/zenodo.14867795, CC BY 4.0). With `--codec x264` the
   resized frames are encoded with PyAV's libx264 (CRF 23): browser-playable and ~10x smaller than
   OpenCV's Windows Media Foundation H.264, which matters for the plain "Download" link.
@@ -17,6 +17,7 @@ full pitch check runs):
     py scripts/make_sample_clip.py                     # D_20220220_1_1530_1560.mp4 (dev clip)
     py scripts/make_sample_clip.py --clip D_20220220_1_0990_1020.mp4 --seconds 30
     py scripts/make_sample_clip.py --source zenodo --codec x264
+    py scripts/make_sample_clip.py --codec x264 --crf 16   # TeamTrack sample, 32 MB (was 218)
 """
 
 from __future__ import annotations
@@ -79,6 +80,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="auto: H.264 if available (browser preview; ~220 MB on Windows Media "
                          "Foundation), else mp4v; mp4v: ~28 MB, no browser preview; x264: PyAV "
                          "libx264 CRF 23 (default for --source zenodo)")
+    ap.add_argument("--crf", type=int, default=23,
+                    help="x264 quality (lower = larger and closer to the source); default 23. "
+                         "The TeamTrack sample uses 16: at 23 the away team's formation read "
+                         "differently (RECORD 24 Oct)")
     args = ap.parse_args(argv)
     cfg = load_config()
     if args.source == "zenodo":
@@ -99,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     size = (args.width, args.height)
     if codec == "x264":
-        writer: X264Writer | cv2.VideoWriter = X264Writer(out, fps, size)
+        writer: X264Writer | cv2.VideoWriter = X264Writer(out, fps, size, crf=args.crf)
     else:
         writer, _ = open_writer(out, fps, size, ("avc1", "mp4v") if codec == "auto"
                                 else ("mp4v",))

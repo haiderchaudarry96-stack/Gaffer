@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { ArrowLeft, ArrowRight, Check, CloudOff, FileVideo, Loader2, PlayCircle, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CloudOff, Download, FileVideo, Loader2, PlayCircle, Upload } from 'lucide-react'
 import Dialog from '../app/Dialog'
 import { Button } from '../ui/Button'
 import PitchPoints from './PitchPoints'
@@ -10,7 +10,7 @@ import {
   analysisFrameUrl,
   confirmPitch,
   getAnalysisStatus,
-  getSampleClip,
+  getSampleClips,
   loadAnalysisResult,
   needsPitchStep,
   setPitchPoints,
@@ -72,14 +72,14 @@ export default function UploadPanel({
   const uploadButtonRef = useRef<HTMLButtonElement>(null)
   const selectedCardRef = useRef<HTMLDivElement>(null)
   const alive = useRef(true)
-  const [sample, setSample] = useState<SampleClip | null>(null)
-  const [selectedSample, setSelectedSample] = useState(false)
+  const [samples, setSamples] = useState<SampleClip[]>([])
+  const [selectedSample, setSelectedSample] = useState<SampleClip | null>(null)
 
   // "Try it with a sample clip": only when the server holds one (hidden otherwise)
   useEffect(() => {
     if (!open || !connected) return
     let live = true
-    getSampleClip().then((s) => live && setSample(s), () => live && setSample(null))
+    getSampleClips().then((s) => live && setSamples(s), () => live && setSamples([]))
     return () => {
       live = false
     }
@@ -131,7 +131,7 @@ export default function UploadPanel({
       }
       if (video) URL.revokeObjectURL(video.url)
       setVideo(info)
-      setSelectedSample(false)
+      setSelectedSample(null)
       setPoints([])
       setStraightDown(false)
     } catch (e) {
@@ -175,8 +175,7 @@ export default function UploadPanel({
   }
 
   /** Select the server-held sample so the coach can review it before Upload. */
-  const trySample = async () => {
-    if (!sample) return
+  const trySample = async (sample: SampleClip) => {
     setReading(true)
     setFileError(null)
     try {
@@ -184,7 +183,7 @@ export default function UploadPanel({
       const info = await readVideoUrl(file, sample.videoUrl, sample.bytes)
       if (video?.url.startsWith('blob:')) URL.revokeObjectURL(video.url)
       setVideo(info)
-      setSelectedSample(true)
+      setSelectedSample(sample)
       setPoints([])
       setStraightDown(false)
     } catch (e) {
@@ -200,7 +199,7 @@ export default function UploadPanel({
     setStep({ kind: 'progress', status: null, upload: selectedSample ? 1 : 0 })
     try {
       const created = selectedSample
-        ? await startSampleAnalysis()
+        ? await startSampleAnalysis(selectedSample.id)
         : await uploadVideo(video.file, (f) => alive.current && setStep({ kind: 'progress', status: null, upload: f }))
       await route(created)
     } catch (e) {
@@ -295,15 +294,41 @@ export default function UploadPanel({
                 e.currentTarget.value = ''
               }}
             />}
-            {!video && connected && sample && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4">
+            {!video && connected && samples.length > 0 && (
+              <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
                 <div>
-                  <p className="font-medium text-text">No video at hand?</p>
-                  <p className="text-sm text-muted">{sample.label}, held by this server ({formatBytes(sample.bytes)}). It goes through the same pitch check as an upload.</p>
+                  <p className="font-medium text-text">No video at hand? Try a sample clip</p>
+                  <p className="text-sm text-muted">Held by this server. Each goes through the same pitch check as an upload. You can also download the file and upload it yourself.</p>
                 </div>
-                <Button variant="ghost" onClick={() => void trySample()}>
-                  <PlayCircle className="size-4" aria-hidden="true" /> Try it with a sample clip
-                </Button>
+                <ul className="grid gap-3 sm:grid-cols-2">
+                  {samples.map((sample) => (
+                    <li key={sample.id} className="flex flex-col gap-3 rounded-xl border border-line bg-bg p-4">
+                      <div className="space-y-1">
+                        <p className="font-medium text-text">{sample.title}</p>
+                        <p className="text-sm text-text">{sample.note}</p>
+                        <p className="text-xs text-muted">
+                          {sample.creditUrl ? (
+                            <a href={sample.creditUrl} target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-text">{sample.credit}</a>
+                          ) : sample.credit}
+                          {' · '}{sample.label.split(' · ').slice(1).join(' · ')} · {formatBytes(sample.bytes)}
+                        </p>
+                      </div>
+                      <div className="mt-auto flex flex-wrap items-center gap-2">
+                        <Button variant="ghost" onClick={() => void trySample(sample)}>
+                          <PlayCircle className="size-4" aria-hidden="true" /> Try this clip
+                        </Button>
+                        <a
+                          href={sample.downloadUrl}
+                          download={sample.fileName}
+                          className="inline-flex min-h-10 items-center gap-1.5 px-2 text-sm font-semibold text-muted underline-offset-4 hover:text-text hover:underline"
+                          aria-label={`Download ${sample.title} (${formatBytes(sample.bytes)})`}
+                        >
+                          <Download className="size-4" aria-hidden="true" /> Download
+                        </a>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             {reading && (

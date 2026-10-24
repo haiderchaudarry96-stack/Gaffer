@@ -120,7 +120,7 @@ Paths are relative to the list file; `start_s` is the clip's start in match seco
   of the image), jersey_nr, role (player/goalkeeper/referee/other), gps_name`. **Annotation
   frame = preview video frame + 1900** (measured, `config.yaml zenodo.frame_offset`); frames
   0–800 of the preview are annotated.
-- Used for: the unseen-ground test of the drone perception only (`scripts/eval_zenodo.py`).
+- Used for: the unseen-ground test of the drone perception (`scripts/eval_zenodo.py`) **and, since 24 Oct, as the upload page's second sample clip**: `scripts/make_sample_clip.py --source zenodo` writes a 1920×1080 copy of the preview clip (same 30 s, 900 frames, only the resolution reduced with `cv2.resize`, re-encoded H.264 by PyAV libx264 CRF 23, 20.6 MB) to `data/sample_clips/zenodo_top_view_1080p.mp4` (gitignored). CC BY 4.0 allows this with attribution: the credit (Synowiec, Nowak, Kamola, DOI 10.5281/zenodo.14867795, CC BY 4.0) is shown next to the sample and in the README. The annotations are **not** redistributed.
   Settings may be chosen on the first 10 s; 10–26.7 s is the unseen test.
 
 ## Calibration (`data/calibration/`, ours, MIT)

@@ -46,13 +46,16 @@ class DriftSettings:
     eps: float
     min_correlation: float
     line_mask: dict[str, Any]
+    coarse_factor: float = 0.0  # > 0: ECC first on a copy at this fraction of `scale`, then refine
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any], view: str) -> DriftSettings:
         d = cfg["drift"]
+        c2f = d.get("coarse_to_fine") or {}
         return cls(float(d["scale"]), float(d["blur_sigma_px"]), str(d["motion"]),
                    int(d["iterations"]), float(d["eps"]), float(d["min_correlation"]),
-                   dict(cfg["calibration"]["views"][view]["line_mask"]))
+                   dict(cfg["calibration"]["views"][view]["line_mask"]),
+                   float(c2f.get("factor", 0.5)) if c2f.get("enabled") else 0.0)
 
 
 @dataclass
@@ -119,6 +122,27 @@ def _shift(A: np.ndarray, size: tuple[int, int]) -> float:
     return float(np.linalg.norm(A @ c - c[:2]))
 
 
+def _coarse_start(ref_img: np.ndarray, img: np.ndarray, warp: np.ndarray, s: DriftSettings,
+                  crit: tuple[int, int, float]) -> np.ndarray:
+    """Coarse-to-fine start: ECC on copies at `coarse_factor` of the working scale (a wider basin
+    and ~16x fewer pixels at 0.25), its warp rescaled as the start of the normal ECC. If the coarse
+    pass fails or correlates worse than `min_correlation`, the phase-correlation start is kept."""
+    f = s.coarse_factor
+    rc = cv2.resize(ref_img, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    ic = cv2.resize(img, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    (dxc, dyc), _ = cv2.phaseCorrelate(rc, ic)
+    wc = np.array([[1, 0, dxc], [0, 1, dyc]], dtype=np.float32)
+    try:
+        cc, wc = cv2.findTransformECC(rc, ic, wc, MOTIONS[s.motion], crit, None, 5)
+    except cv2.error:
+        return warp
+    if cc < s.min_correlation:
+        return warp
+    out = wc.astype(np.float32).copy()
+    out[:, 2] /= f  # translation in the finer image's pixels; the linear part is scale-free
+    return out
+
+
 def estimate_alignment(ref_img: np.ndarray, img: np.ndarray, s: DriftSettings,
                        size: tuple[int, int], ref_gray: np.ndarray | None = None,
                        gray: np.ndarray | None = None) -> Alignment:
@@ -132,6 +156,8 @@ def estimate_alignment(ref_img: np.ndarray, img: np.ndarray, s: DriftSettings,
     # ECC warp maps template (reference) coordinates to input (frame) coordinates
     warp = np.array([[1, 0, dx], [0, 1, dy]], dtype=np.float32)
     crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, s.iterations, s.eps)
+    if 0.0 < s.coarse_factor < 1.0:
+        warp = _coarse_start(ref_img, img, warp, s, crit)
     try:
         cc, warp = cv2.findTransformECC(ref_img, img, warp, MOTIONS[s.motion], crit, None, 5)
         if cc >= s.min_correlation:

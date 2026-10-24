@@ -41,7 +41,10 @@ Docker: `deploy/README.md`.
 | `POST /api/analyses` | `multipart/form-data`: `video` (MP4/MOV, required), `known_source` (`true`/`false`/`auto`, optional), `pitch_points` (JSON `[[x,y]×4]` or `[{x,y}×4]`, optional) | `201` **AnalysisStatus** (`queued`, `needs_confirmation` or `needs_corners`) |
 | `GET /api/sample` | — | `{available: false}`, or `{available, label, bytes, video_url, file_name}` for the server's sample clip (`api.sample_clip.path`, made by `scripts/make_sample_clip.py`) |
 | `GET /api/sample/video` | optional `Range` | the sample clip (MP4, for the browser preview); `404` if missing |
-| `POST /api/analyses/sample` | — | like `POST /api/analyses` for the server's sample clip, as an **unknown source** (`known_source=false`: OpenCV pitch auto-detect, then "Is this your pitch?" / 4 corners); `404` if missing |
+| `GET /api/samples` | — | `{samples: [{id, label, title, note, credit, credit_url, bytes, video_url, download_url, file_name}]}`: every sample this server holds (`api.sample_clip` = id `teamtrack`, then `api.more_sample_clips`, e.g. `zenodo`); a sample whose file is missing is left out. `note` is the one line of truth shown on the upload step, `credit` the licence credit |
+| `GET /api/samples/{id}/video` | optional `Range` | the sample (MP4, for the browser preview); `404` for an unknown or missing id |
+| `GET /api/samples/{id}/download` | — | the same file as an attachment (`Content-Disposition`, the sample's `file_name`): the plain Download link |
+| `POST /api/analyses/sample` | optional JSON `{"id": "zenodo"}` (none = the first sample) | like `POST /api/analyses` for that sample, as an **unknown source** (`known_source=false`: OpenCV pitch auto-detect, then "Is this your pitch?" / 4 corners); `404` if missing |
 | `POST /api/analyses/{id}/pitch` | `{"confirmed": true}` or `{"pitch_points": [[x,y]×4]}` | AnalysisStatus (`queued`) |
 | `POST /api/analyses/{id}/start` | the frontend's pitch step: `{"points": [{x,y}×4], "frame": {width, height, t_s}, "straight_down": bool}` | AnalysisStatus (`queued`) |
 | `GET /api/analyses/{id}/pitch-preview` | — | JPEG: the frame with the pitch outline, corners 1–4 and the markings a 4-corner homography puts there |
@@ -318,7 +321,7 @@ a restart): `upload.mp4|mov`, `upload.json`, `status.json`, `video.clips.json`, 
 ## AnalysisResult
 
 `{id, label, kind, match_state, timeline, alerts, trace, report, report_markdown, explanations,
-team_model, run_rows, summary}` — `match_state` and `timeline` are the frozen v1.0 contract
+team_model, run_rows, summary, resolution}` — `resolution` = `{px_per_m, threshold_px_per_m, low, message}`: pixels per metre of the pitch from the confirmed corners and the pitch size in `config.yaml`; `low` is true only strictly below `api.resolution.low_px_per_m` (12.0, midway between the 720p copy of the demo at 9.3 and a 1080p frame at about 14.7), and then `message` is the one line "Lower resolution (about N px per metre): Gaffer is tested mainly on 4K drone video; formations may be read less reliably." It never blocks the analysis. The same object is in `summary.resolution` and in the status while the analysis runs. `match_state` and `timeline` and `timeline` are the frozen v1.0 contract
 (`docs/DATA_CONTRACT.md`; the timeline carries `verification` for decided events), `alerts` are
 contract Alerts with their latest state, `trace` is `agent_trace.jsonl` lines (AGENT_DESIGN §7),
 `report` is the `agent/report.py` JSON (`inputs`, `report`, `source`), `run_rows` the per-candidate

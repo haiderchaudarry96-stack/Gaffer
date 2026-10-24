@@ -463,6 +463,9 @@ def test_upload_end_to_end_agent_confirms_a_real_change(tmp_path, base_cfg) -> N
     st = c.get(f"/api/analyses/{aid}").json()
     assert st["status"] == "done", st.get("error")
     res = c.get(f"/api/analyses/{aid}/result").json()
+    # A3: the generated 960 px clip is ~7 px per metre -> the result carries the low-resolution line
+    assert res["resolution"]["low"] is True and res["summary"]["resolution"] == res["resolution"]
+    assert res["resolution"]["message"].startswith("Lower resolution (about ")
     ex = res["explanations"]
     # What this test protects: the agent confirms White's real switch (right team, new shape
     # 3-5-2, near the true time 1:15) and confirms nothing else (Blue never changes).
@@ -890,6 +893,7 @@ def test_sample_clip_runs_the_unknown_source_pitch_check(tmp_path, base_cfg, vid
     """Fix session 21 Oct: "Try it with a sample clip" analyses a server-held file like an
     upload of an unknown source (OpenCV pitch check), and is hidden when the file is missing."""
     cfg = copy.deepcopy(base_cfg)
+    cfg["api"]["more_sample_clips"] = []
     cfg["api"]["sample_clip"] = {"path": str(tmp_path / "missing.mp4"), "label": "x"}
     c = make_client(tmp_path / "a", cfg)
     assert c.get("/api/sample").json() == {"available": False}
@@ -906,3 +910,32 @@ def test_sample_clip_runs_the_unknown_source_pitch_check(tmp_path, base_cfg, vid
     st = r.json()
     assert st["status"] in ("needs_confirmation", "needs_corners")  # the full pitch check ran
     assert st["source"]["kind"] == "upload" and st["video"]["filename"] == "gaffer_sample_clip.mp4"
+
+
+def test_two_samples_list_download_and_pick_by_id(tmp_path, base_cfg, videos) -> None:
+    """A1 (24 Oct): several samples through the same mechanism: listed with note and credit,
+    a plain download, analysed by id, a missing file left out, an unknown id refused."""
+    cfg = copy.deepcopy(base_cfg)
+    cfg["api"]["sample_clip"] = {"path": str(videos["straight"]), "label": "First",
+                                 "id": "teamtrack", "note": "The demo match.",
+                                 "credit": "Scott et al. (MIT)",
+                                 "file_name": "first.mp4"}
+    cfg["api"]["more_sample_clips"] = [
+        {"id": "zenodo", "path": str(videos["straight"]), "label": "Second", "title": "New ground",
+         "note": "An unseen ground.", "credit": "Synowiec et al. (CC BY 4.0)",
+         "file_name": "second.mp4"},
+        {"id": "gone", "path": str(tmp_path / "missing.mp4"), "label": "Missing"}]
+    c = make_client(tmp_path / "s", cfg)
+    listed = c.get("/api/samples").json()["samples"]
+    assert [s["id"] for s in listed] == ["teamtrack", "zenodo"]  # the missing one is left out
+    assert listed[1]["note"] == "An unseen ground." and listed[1]["credit"].startswith("Synowiec")
+    assert listed[1]["download_url"] == "/api/samples/zenodo/download"
+    dl = c.get("/api/samples/zenodo/download")
+    assert dl.status_code == 200 and "second.mp4" in dl.headers["content-disposition"]
+    assert c.get("/api/samples/zenodo/video", headers={"Range": "bytes=0-99"}).status_code == 206
+    assert c.get("/api/samples/nope/video").status_code == 404
+    assert c.post("/api/analyses/sample", json={"id": "nope"}).status_code == 404
+    r = c.post("/api/analyses/sample", json={"id": "zenodo"})
+    assert r.status_code == 201, r.json()
+    assert r.json()["video"]["filename"] == "second.mp4"
+    assert c.post("/api/analyses/sample").json()["video"]["filename"] == "first.mp4"  # default

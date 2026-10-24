@@ -8,7 +8,8 @@ import {
   confirmPitch,
   setPitchPoints,
   getAnalysisStatus,
-  getSampleClip,
+  getSampleClips,
+  startSampleAnalysis,
   loadAnalysisResult,
   startAnalysis,
   timelineFromContract,
@@ -83,6 +84,8 @@ describe('analysis API client', () => {
         },
         'GET /api/analyses/an_1': () => json(status({ status: 'done', stage: 'done', progress: 1, eta_s: 0 })),
         'GET /api/analyses/an_1/result': () => json({ id: 'an_1', label: 'My match', match_state: matchState, timeline, alerts, trace: [], report: null }),
+        'GET /api/analyses/an_2/result': () => json({ id: 'an_2', label: 'Low res', match_state: matchState, timeline, alerts, trace: [], report: null,
+          resolution: { px_per_m: 9.3, low: true, message: 'Lower resolution (about 9 px per metre): Gaffer is tested mainly on 4K drone video; formations may be read less reliably.' } }),
       },
       status({ status: 'uploaded', stage: 'uploading', progress: 0 }),
     )
@@ -96,9 +99,12 @@ describe('analysis API client', () => {
     expect(done.stage).toBe('done')
     const result = await loadAnalysisResult(up.id, { http, base: BASE })
     expect(result.alerts[0].event_id).toBe('evt_003')
+    expect(result.resolution).toBeNull() // an older server sends none
+    const low = await loadAnalysisResult('an_2', { http, base: BASE })
+    expect(low.resolution).toEqual({ px_per_m: 9.3, low: true, message: expect.stringMatching(/^Lower resolution \(about 9 px per metre\)/) })
     const view = timelineFromContract(result.timeline)
     expect(view.events).toEqual([{ id: 'evt_001', team: 'home', t: 990, from: '4-4-2', to: '3-4-3', status: 'confirmed', reason: 'held' }])
-    expect(http.calls).toEqual(['UPLOAD /api/analyses', 'POST /api/analyses/an_1/start', 'GET /api/analyses/an_1', 'GET /api/analyses/an_1/result'])
+    expect(http.calls).toEqual(['UPLOAD /api/analyses', 'POST /api/analyses/an_1/start', 'GET /api/analyses/an_1', 'GET /api/analyses/an_1/result', 'GET /api/analyses/an_2/result'])
   })
 
   it('reports server errors with the status and detail, and rejects bad payloads', async () => {
@@ -214,11 +220,21 @@ describe('chat API client', () => {
 })
 
 describe('sample clip client', () => {
-  it('is null when the server has no sample, and absolute when it has one', async () => {
-    expect(await getSampleClip({ http: fakeHttp({ 'GET /api/sample': () => json({ available: false }) }), base: BASE })).toBeNull()
-    const http = fakeHttp({ 'GET /api/sample': () => json({ available: true, label: 'Clip', bytes: 10,
-      video_url: '/api/sample/video', file_name: 'gaffer_sample_clip.mp4' }) })
-    expect(await getSampleClip({ http, base: BASE })).toEqual({ label: 'Clip', bytes: 10,
-      videoUrl: `${BASE}/api/sample/video`, fileName: 'gaffer_sample_clip.mp4' })
+  it('is empty when the server has no sample, and lists absolute URLs, notes and credits when it has some', async () => {
+    expect(await getSampleClips({ http: fakeHttp({ 'GET /api/samples': () => json({ samples: [] }) }), base: BASE })).toEqual([])
+    const http = fakeHttp({ 'GET /api/samples': () => json({ samples: [
+      { id: 'zenodo', label: 'New ground · 30 s', title: 'New ground (Zenodo)', note: 'An unseen ground.', credit: 'Synowiec et al.',
+        credit_url: 'https://doi.org/10.5281/zenodo.14867795', bytes: 10, video_url: '/api/samples/zenodo/video',
+        download_url: '/api/samples/zenodo/download', file_name: 'gaffer_sample_zenodo_1080p.mp4' }] }) })
+    expect(await getSampleClips({ http, base: BASE })).toEqual([{ id: 'zenodo', label: 'New ground · 30 s', title: 'New ground (Zenodo)',
+      note: 'An unseen ground.', credit: 'Synowiec et al.', creditUrl: 'https://doi.org/10.5281/zenodo.14867795', bytes: 10,
+      videoUrl: `${BASE}/api/samples/zenodo/video`, downloadUrl: `${BASE}/api/samples/zenodo/download`, fileName: 'gaffer_sample_zenodo_1080p.mp4' }])
+  })
+
+  it('starts a sample by id', async () => {
+    const http = fakeHttp({ 'POST /api/analyses/sample': () => json({ id: 'an_9', status: 'needs_confirmation', stage: 'uploading', progress: 0 }, 201) })
+    const st = await startSampleAnalysis('zenodo', { http, base: BASE })
+    expect(st.id).toBe('an_9')
+    expect(http.calls).toEqual(['POST /api/analyses/sample'])
   })
 })

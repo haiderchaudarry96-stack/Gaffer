@@ -60,6 +60,7 @@ Why it fits: amateur university match, full pitch visible, a **fixed side camera
 | What we use | `top-view-preview.mp4` (drone, top-down, 3840×2160, 30 fps, 30 s; SHA-256 `2987a675…37d2c6`) and `annotations-top-view.zip` → `top-view-1.csv` (per-frame player positions in pitch metres, team left/right, role player/goalkeeper/referee/other; the zip is password-protected, the password `10.5281/zenodo.14867794` is published in the record description) |
 | Local path | `data/zenodo/` (gitignored; re-download from the record) |
 | Used for | the unseen-ground test of the drone perception (`scripts/eval_zenodo.py`, 23 Oct): first third (0–10 s) for choosing settings, the annotated rest (10–26.7 s) as the unseen test; the annotation frame offset (video frame + 1900) was measured by us (`config.yaml zenodo`) |
+| Redistributed | since 24 Oct a 1920×1080 H.264 copy of the preview clip (same content, resolution reduced) is offered as a sample and a download on the app's upload step, with the credit "Synowiec, Nowak, Kamola, *Soccer pitch top-view*, DOI 10.5281/zenodo.14867795, CC BY 4.0"; the annotations are not redistributed |
 | Not used | the full-length zips (10–19 GB), side-view footage, GPS data |
 
 ### ⚙️ Hard mode (optional): Bil Kleb YouTube clip (CC BY)
@@ -96,7 +97,7 @@ Unlikely, but supported: pitch size and formation templates live in `config.yaml
 |---|---|---|---|---|
 | TeamTrack soccer_top test clips + CSVs | Kaggle atomscott/teamtrack | MIT | 2026-10-09 | main demo, detection/team/formation eval |
 | TeamTrack soccer_side test clips + CSVs | Kaggle atomscott/teamtrack | MIT | 2026-10-09 | fisheye side view, real-world camera |
-| Zenodo top-view preview clip + annotations (Synowiec, Nowak, Kamola) | zenodo.org/records/14867795, DOI 10.5281/zenodo.14867795 | CC BY 4.0 | 2026-10-23 | unseen-ground perception test |
+| Zenodo top-view preview clip + annotations (Synowiec, Nowak, Kamola) | zenodo.org/records/14867795, DOI 10.5281/zenodo.14867795 | CC BY 4.0 | 2026-10-23 | unseen-ground perception test; the 1080p copy of the clip (not the annotations) is also the upload page's second sample, with the credit shown (24 Oct) |
 | Bil Kleb U13 clip | YouTube 3vxIlarKxjw | CC BY | pending file | pan/zoom stress test |
 | YOLOX-S ONNX (`object_detection_yolox_2022nov.onnx`) | OpenCV Model Zoo | Apache 2.0 (verified) | 2026-10-09 | `perception/detector.py` |
 | Bedrock Amazon Nova 2 Lite (`global.amazon.nova-2-lite-v1:0`), fallback Nova Micro (`apac.amazon.nova-micro-v1:0`) | Amazon Bedrock, ap-southeast-2 | AWS service / model terms | 2026-10-09 | agent reasoning |

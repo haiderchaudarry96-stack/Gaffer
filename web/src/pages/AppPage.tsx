@@ -574,6 +574,9 @@ export default function AppPage() {
                 {' '}<button type="button" onClick={toggleLive} className="font-medium text-accent-ink underline underline-offset-4 hover:text-text">
                   {live ? 'Show the full result' : 'Replay in match time'}
                 </button>
+                {uploaded?.result.resolution?.low && uploaded.result.resolution.message && (
+                  <span role="note" data-testid="low-resolution-note" className="mt-1 block text-warn">{uploaded.result.resolution.message}</span>
+                )}
               </p>
             )}
             {/* mobile order: stage, alert, timeline; desktop: stage + timeline left, alert right */}

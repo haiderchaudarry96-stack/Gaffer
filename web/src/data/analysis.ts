@@ -80,6 +80,24 @@ export interface AnalysisResult {
   alerts: Alert[]
   trace: TraceStep[]
   report: CoachReport | null
+  /** pixels per metre of the pitch and, below the server's threshold, one plain line (never blocks) */
+  resolution: ResolutionNote | null
+}
+
+export interface ResolutionNote {
+  px_per_m: number | null
+  low: boolean
+  message: string | null
+}
+
+function resolutionNote(v: unknown): ResolutionNote | null {
+  if (v === null || v === undefined) return null
+  const r = obj(v, 'result.resolution')
+  return {
+    px_per_m: typeof r.px_per_m === 'number' ? r.px_per_m : null,
+    low: r.low === true,
+    message: typeof r.message === 'string' ? r.message : null,
+  }
 }
 
 function corners(v: unknown, path: string): [number, number][] | null {
@@ -197,23 +215,44 @@ export async function uploadVideo(file: File, onProgress?: (fraction: number) =>
 }
 
 export interface SampleClip {
+  id: string
   label: string
+  title: string
+  /** one line of truth about what this sample shows */
+  note: string
+  credit: string
+  creditUrl: string | null
   bytes: number
   videoUrl: string
+  /** plain file download, for anyone who wants to test with the file */
+  downloadUrl: string
   fileName: string
 }
 
-/** The server's sample clip ("Try it with a sample clip"), or null when it has none. */
-export async function getSampleClip(opts?: ApiOptions): Promise<SampleClip | null> {
-  const r = obj(await apiGet('/api/sample', 'Sample clip', opts), 'sample')
-  if (r.available !== true) return null
-  return { label: str(r.label, 'sample.label'), bytes: num(r.bytes, 'sample.bytes'),
-    videoUrl: apiUrl(str(r.video_url, 'sample.video_url'), opts), fileName: str(r.file_name, 'sample.file_name') }
+/** The server's sample clips ("Try it with a sample clip"); empty when it holds none. */
+export async function getSampleClips(opts?: ApiOptions): Promise<SampleClip[]> {
+  const r = obj(await apiGet('/api/samples', 'Sample clips', opts), 'samples')
+  return arr(r.samples, 'samples.samples').map((raw, i) => {
+    const p = `samples.samples[${i}]`
+    const s = obj(raw, p)
+    return {
+      id: str(s.id, `${p}.id`),
+      label: str(s.label, `${p}.label`),
+      title: typeof s.title === 'string' ? s.title : str(s.label, `${p}.label`),
+      note: typeof s.note === 'string' ? s.note : '',
+      credit: typeof s.credit === 'string' ? s.credit : '',
+      creditUrl: typeof s.credit_url === 'string' ? s.credit_url : null,
+      bytes: num(s.bytes, `${p}.bytes`),
+      videoUrl: apiUrl(str(s.video_url, `${p}.video_url`), opts),
+      downloadUrl: apiUrl(str(s.download_url, `${p}.download_url`), opts),
+      fileName: str(s.file_name, `${p}.file_name`),
+    }
+  })
 }
 
-/** Analyse the server's sample clip as an unknown upload (the full pitch check runs). */
-export async function startSampleAnalysis(opts?: ApiOptions): Promise<AnalysisStatus> {
-  return validateStatus(await apiPost('/api/analyses/sample', {}, 'Sample analysis', opts))
+/** Analyse one of the server's sample clips as an unknown upload (the full pitch check runs). */
+export async function startSampleAnalysis(id: string, opts?: ApiOptions): Promise<AnalysisStatus> {
+  return validateStatus(await apiPost('/api/analyses/sample', { id }, 'Sample analysis', opts))
 }
 
 export async function startAnalysis(id: string, request: PitchPointsRequest, opts?: ApiOptions): Promise<AnalysisStatus> {
@@ -252,5 +291,6 @@ export async function loadAnalysisResult(id: string, opts?: ApiOptions): Promise
     alerts: arr(r.alerts, 'result.alerts').map((a, i) => validateAlert(a, `result.alerts[${i}]`)),
     trace: arr(r.trace, 'result.trace').map((s, i) => validateTraceStep(s, `result.trace[${i}]`)),
     report: r.report == null ? null : validateCoachReport(r.report),
+    resolution: resolutionNote(r.resolution),
   }
 }

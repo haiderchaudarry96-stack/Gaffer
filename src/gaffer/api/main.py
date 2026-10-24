@@ -376,6 +376,7 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
                 "storage": api["storage"].get("backend", "local"),
                 "replay_clips": replay_clips(),
                 "sample_clip": _sample_path() is not None,
+                "sample_clips": list(_sample_entries()),
                 "demo_available": demo.available(),
                 "analyses": {"running": jobs.current, "queued": jobs.queued_count()},
                 "usage_today": usage.snapshot(),
@@ -490,18 +491,37 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     # ------------------------------------------------------------------ sample clip
     # "Try it with a sample clip": a clip this server holds (api.sample_clip.path), analysed
     # exactly like an upload of an unknown source (no saved calibration: full pitch check).
+    # The samples are `api.sample_clip` (id "teamtrack" unless the config says otherwise) followed
+    # by `api.more_sample_clips`; a sample whose file is missing is left out everywhere.
+    def _sample_entries() -> dict[str, tuple[dict[str, Any], Path]]:
+        out: dict[str, tuple[dict[str, Any], Path]] = {}
+        first = api.get("sample_clip")
+        for entry in ([{"id": "teamtrack", **first}] if first else []) + list(
+                api.get("more_sample_clips") or []):
+            p = repo_path(str(entry.get("path", "")) or "_missing_")
+            if p.is_file() and entry["id"] not in out:
+                out[str(entry["id"])] = (entry, p)
+        return out
+
     def _sample_path() -> Path | None:
-        p = repo_path(str(api.get("sample_clip", {}).get("path", "")) or "_missing_")
-        return p if p.is_file() else None
+        entries = _sample_entries()
+        return next(iter(entries.values()))[1] if entries else None
+
+    def _sample_or_404(sid: str) -> tuple[dict[str, Any], Path]:
+        found = _sample_entries().get(sid)
+        if found is None:
+            raise HTTPException(404, "This server has no such sample clip.")
+        return found
 
     @app.get("/api/sample")
     def sample_info() -> dict[str, Any]:
-        p = _sample_path()
-        if p is None:
+        entries = _sample_entries()
+        if not entries:
             return {"available": False}
-        return {"available": True, "label": api["sample_clip"].get("label", "Sample clip"),
+        entry, p = next(iter(entries.values()))
+        return {"available": True, "label": entry.get("label", "Sample clip"),
                 "bytes": p.stat().st_size, "video_url": "/api/sample/video",
-                "file_name": "gaffer_sample_clip.mp4"}
+                "file_name": entry.get("file_name", "gaffer_sample_clip.mp4")}
 
     @app.get("/api/sample/video")
     def sample_video() -> FileResponse:
@@ -510,18 +530,49 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
             raise HTTPException(404, "This server has no sample clip.")
         return FileResponse(p, media_type="video/mp4")
 
+    @app.get("/api/samples")
+    def samples_info() -> dict[str, Any]:
+        """Every sample this server holds: label, one line of truth, credit, size, URLs."""
+        return {"samples": [
+            {"id": sid, "label": e.get("label", "Sample clip"), "title": e.get("title"),
+             "note": e.get("note"), "credit": e.get("credit"), "credit_url": e.get("credit_url"),
+             "bytes": p.stat().st_size, "video_url": f"/api/samples/{sid}/video",
+             "download_url": f"/api/samples/{sid}/download",
+             "file_name": e.get("file_name", f"gaffer_sample_{sid}.mp4")}
+            for sid, (e, p) in _sample_entries().items()]}
+
+    @app.get("/api/samples/{sid}/video")
+    def sample_video_by_id(sid: str) -> FileResponse:
+        return FileResponse(_sample_or_404(sid)[1], media_type="video/mp4")
+
+    @app.get("/api/samples/{sid}/download")
+    def sample_download(sid: str) -> FileResponse:
+        entry, p = _sample_or_404(sid)
+        return FileResponse(p, media_type="video/mp4",
+                            filename=entry.get("file_name", f"gaffer_sample_{sid}.mp4"))
+
     @app.post("/api/analyses/sample", status_code=201)
     async def create_sample_analysis(request: Request) -> dict[str, Any]:
-        p = _sample_path()
-        if p is None:
-            raise HTTPException(404, "This server has no sample clip.")
+        sid: str | None = None
+        try:  # optional body {"id": "zenodo"}; none = the first sample (older clients)
+            body = await request.json()
+            sid = str(body.get("id")) if isinstance(body, dict) and body.get("id") else None
+        except Exception:  # no body / not JSON
+            sid = None
+        if sid is None:
+            first = _sample_entries()
+            if not first:
+                raise HTTPException(404, "This server has no sample clip.")
+            sid = next(iter(first))
+        entry, p = _sample_or_404(sid)
+        name = entry.get("file_name", "gaffer_sample_clip.mp4")
         if jobs.queued_count() >= int(api["jobs"]["max_queued"]):
             raise HTTPException(503, "Gaffer is busy with other analyses. Please try again in a "
                                      "few minutes.")
 
         def run() -> dict[str, Any]:
             with p.open("rb") as fh:  # known=False: treated as an unknown source
-                return _create(request, fh, "gaffer_sample_clip.mp4", False, None)
+                return _create(request, fh, name, False, None)
 
         return await run_in_threadpool(run)
 

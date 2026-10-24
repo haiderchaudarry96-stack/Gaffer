@@ -91,6 +91,9 @@ export default function FootageGuide({ compact = false }: { compact?: boolean })
           </li>
         ))}
       </ul>
+      <p className="mt-3 text-sm text-text">
+        <strong>Best:</strong> 4K or 1080p top-down drone or high fixed camera with the whole pitch visible. 720p works but is less tested: on one 720p test clip players were still found and the main shape change was detected, but formations were read less reliably (74 % vs 92 % agreement with ground truth for one team). Broadcast footage and panning cameras are refused by design.
+      </p>
       <p className="mt-3 text-xs text-muted">
         Limits: up to <strong className="text-text">6 minutes</strong> and <strong className="text-text">500 MB</strong>, MP4 or MOV,
         two teams in clearly different shirts.

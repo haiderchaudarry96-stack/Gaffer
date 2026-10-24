@@ -281,6 +281,10 @@ drift:                            # per-frame re-anchoring of the top view (perc
   eps: 1.0e-5
   min_correlation: 0.6            # ECC correlation below this -> ORB fallback
   views: [top]                   # cameras that drift (side: 0.3 px per clip, static)
+  coarse_to_fine:                # A4 (24 Oct): ECC first on a copy at `factor` x scale, its warp
+    enabled: true                # starts the normal ECC. ON: Zenodo test 4.39 -> 1.29 s per video s
+    factor: 0.5                  # (ORB fallbacks 21 of 24 -> 0), F1 0.8553 -> 0.8533; TeamTrack eval
+                                 # identical (outputs/a4_summary.txt, RECORD 24 Oct)
   homography_ok_max_error_m: 0.5  # per-frame line error above this -> quality.homography_ok false
   # Re-anchored on EVERY sampled frame: eval_drift.py showed per-clip anchors leave 0.105 m median
   # (max 0.36 m: the drone wobbles within a clip) vs 0.036 m per frame, for ~125 ms per frame.

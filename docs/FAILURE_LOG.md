@@ -675,3 +675,14 @@ remain OFF, and **Part 2 was not run**; this quick check does not justify enabli
 
 **Model issue:** The earlier Nova proposal static.min_share = 0.75 described 0.75 as â€œlower than
 0.6â€, which is false. Its OpenCV rerun did not complete; the choice was not measured or retained.
+
+### [2026-10-24] Heavily compressed sample clip changed the analysis (CRF 23 re-encode of the TeamTrack sample)
+
+**Stage:** sample-clip preparation (upload page)
+**Severity:** changed a formation read; sample re-encode rejected, current file unchanged
+
+**What happened:** To shrink the 218 MB TeamTrack sample, a CRF 23 H.264 copy (8.6 MB, same 1080p frames) was analysed through the normal upload path next to the original. Pitch detection was identical (14.0 px per metre), but Blue's formation read **4-2-3-1 instead of 5-3-2**, White's confidence fell 0.63 → 0.54, visible players dropped (home 10.1 → 9.7) and referee-labelled detections fell **180 → 75**; 8.7 % of the original's detections had no partner within 2 m.
+
+**Why:** Low-contrast small blobs (distant players, staff) are the first thing a strong compression removes; the detector is tuned on high-bitrate footage. A re-encode that looks the same to a viewer is not the same input to the pipeline.
+
+**Impact / mitigation:** The CRF 23 copy was rejected. CRF 16 (32.3 MB) reproduces the original's result (same formations, 0 candidates, median position difference 0.03 m, partner missing for 3.7 %); CRF 12 (63.2 MB) is no closer. This is also a limit for users: heavily compressed uploads can change a formation read (limitation to mention with the 720p result). Files: `outputs/sample_clip_reencode.json`, `scripts/compare_sample_clips.py`.

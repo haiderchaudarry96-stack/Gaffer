@@ -228,3 +228,38 @@ def test_drift_recovers_known_shift() -> None:
     assert al.method == "ecc"
     # A maps frame pixels back to the reference: undoes the shift
     np.testing.assert_allclose(al.A @ np.array([500.0, 300.0, 1.0]), [491.0, 306.0], atol=0.5)
+
+
+def _drift_settings(coarse: float) -> DriftSettings:
+    return DriftSettings(scale=0.25, blur_sigma_px=2.0, motion="affine", iterations=100, eps=1e-5,
+                         min_correlation=0.6, line_mask={"kernel_px": 15, "threshold": 30,
+                                                         "max_saturation": 90},
+                         coarse_factor=coarse)
+
+
+def test_drift_coarse_to_fine_matches_the_normal_path_and_stays_off_by_default() -> None:
+    """A4 (24 Oct): the coarse-to-fine ECC start gives the same alignment as the normal path on a
+    small shift and recovers a larger one; the config switch is on (measured) and turns it off."""
+    from gaffer.config import load_config
+
+    cfg = load_config()
+    assert cfg["drift"]["coarse_to_fine"]["enabled"] is True  # measured on 24 Oct (RECORD)
+    assert DriftSettings.from_config(cfg, "top").coarse_factor == 0.5
+    off = {**cfg, "drift": {**cfg["drift"], "coarse_to_fine": {"enabled": False, "factor": 0.5}}}
+    assert DriftSettings.from_config(off, "top").coarse_factor == 0.0  # the switch turns it off
+    ref = grass((1080, 1920))
+    draw_lines(ref)
+    for shift in ((9.0, -6.0), (40.0, 24.0)):
+        A_true = np.array([[1, 0, shift[0]], [0, 1, shift[1]]])
+        frame = cv2.warpAffine(ref, A_true, (1920, 1080), borderMode=cv2.BORDER_REPLICATE)
+        plain, c2f = _drift_settings(0.0), _drift_settings(0.5)
+        a0 = estimate_alignment(alignment_image(ref, plain), alignment_image(frame, plain), plain,
+                                (1920, 1080))
+        a1 = estimate_alignment(alignment_image(ref, c2f), alignment_image(frame, c2f), c2f,
+                                (1920, 1080))
+        assert a1.method == "ecc"
+        probe = np.array([500.0, 300.0, 1.0])
+        want = [500.0 - shift[0], 300.0 - shift[1]]
+        np.testing.assert_allclose(a1.A @ probe, want, atol=0.6)
+        if a0.method == "ecc":  # the normal path may lose the large shift; if not, same answer
+            np.testing.assert_allclose(a1.A @ probe, a0.A @ probe, atol=0.6)

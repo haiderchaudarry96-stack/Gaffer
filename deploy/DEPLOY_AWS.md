@@ -108,6 +108,25 @@ not downloaded again. Expect ~1 min with the Docker cache, a few minutes without
 New instance from scratch: launch as in the table above, then run
 `sh /tmp/gb/deploy/ec2/bootstrap.sh` once (Docker, CloudWatch agent, folders) before `deploy.sh`.
 
+## Second sample clip (24 Oct): files that must reach S3
+
+The upload page offers two samples (`api.sample_clip` = TeamTrack, `api.more_sample_clips` = Zenodo).
+The TeamTrack sample is in the bucket, but as the old 218 MB file: **replace it with the 32 MB re-encode** (same key, so the container's size check fetches the new file at the next start; commands below). The Zenodo one is new (1920x1080, 20.6 MB, made by
+`py scripts\make_sample_clip.py --source zenodo`). The container fetches every object under
+`assets/` into the same path under `/app` at start, so the key must be the repo-relative path:
+
+```powershell
+aws s3 cp data\sample_clips\zenodo_top_view_1080p.mp4 s3://gaffer-demo-221039325928/assets/data/sample_clips/zenodo_top_view_1080p.mp4 --region ap-southeast-2
+# the TeamTrack sample, 218 MB -> 32 MB (made with: py scripts\make_sample_clip.py --codec x264 --crf 16)
+aws s3 cp data\sample_clips\teamtrack_top_sample_1080p.mp4 s3://gaffer-demo-221039325928/assets/data/sample_clips/teamtrack_top_sample_1080p.mp4 --region ap-southeast-2
+aws s3 ls s3://gaffer-demo-221039325928/assets/data/sample_clips/ --region ap-southeast-2 --human-readable
+```
+
+Then redeploy the code (the new `/api/samples` endpoints and the low-resolution note are code):
+the "Redeploy after a `git pull`" steps above. `deploy.sh` recreates the container and the start
+script downloads the new file into `/opt/gaffer/assets/sample_clips`. Check
+`curl http://13.210.196.109/api/samples` lists both ids.
+
 ## Stop to save money, start again
 
 ```powershell

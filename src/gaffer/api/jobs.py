@@ -473,6 +473,10 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
     px_per_m = pixels_per_metre(corners, float(cfg["pitch"]["length_m"]),
                                 float(cfg["pitch"]["width_m"]))
     cfg, tier1_rule_applied = tier1_config(cfg, px_per_m)
+    from gaffer.api.resolution import resolution_note
+
+    resolution = resolution_note(px_per_m, mgr.cfg)  # a line in the result when low; no block
+    mgr.update(aid, resolution=resolution)
     try:
         with counting_frames(prog):
             res = run(job_dir / CLIPS_NAME, view=view, cfg=cfg, match_id=match_id,
@@ -691,6 +695,7 @@ def run_analysis(mgr: JobManager, aid: str) -> None:
                "posture": posture_summary,
                "report_source": rep["source"], "rules_fingerprint": rules_fingerprint(cfg),
                "opencv_reanalysis_s": round(vb.spent_s, 1),
+               "resolution": resolution,
                "self_calibration": calibration_summary}
     prog.set_stage("done")
     mgr.update(aid, status="done", stage="done", progress=1.0, eta_s=0.0, summary=summary,

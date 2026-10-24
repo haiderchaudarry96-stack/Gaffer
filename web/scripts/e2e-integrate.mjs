@@ -1,4 +1,4 @@
-/* global document */
+/* global document, window */
 // End-to-end check of the combined app (one uvicorn serving web/dist + /api), with the
 // pre-installed Chromium (no browser download). Screenshots -> screenshots/integrate/.
 //

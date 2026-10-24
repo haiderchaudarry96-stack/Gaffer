@@ -1,0 +1,29 @@
+flowchart TD
+  U["Coach uploads a match video<br/>or replays the recorded TeamTrack match"] --> S3A[("S3<br/>clips, samples, model")]
+  S3A --> PER
+  subgraph EC2["EC2 · one container · ap-southeast-2 · IAM instance role"]
+    direction TB
+    subgraph PER["OpenCV 5 perception"]
+      direction TB
+      SC["Self-calibration<br/>grass and shadow model, static objects"] --> PI["Pitch and homography<br/>auto-detected corners, ECC re-anchoring"]
+      PI --> DE["Detection<br/>classical blobs / cv2.dnn YOLOX"]
+      DE --> TR["Tracking + team colours<br/>ByteTrack, cv2.kmeans"]
+    end
+    TR --> MS[("match_state.json<br/>frozen contract v1.0")]
+    MS --> TE["Tactics engine<br/>formation per 30 s window, hysteresis"]
+    TE --> CA["Candidate shape changes"]
+    CA --> AG{{"Agent per candidate · Nova 2 Lite<br/>rules decide, LLM orchestrates"}}
+    AG -- "check_frame_quality" --> OV1["OpenCV: camera still?<br/>lines fitted? cuts?"]
+    OV1 --> AG
+    AG -- "reanalyse_window" --> OV2["OpenCV: re-read the window<br/>at 4 to 6 fps"]
+    OV2 --> AG
+    AG --> RU["Rules: persistence, revert,<br/>return leg, coverage"]
+    RU -- "confirmed" --> EV["render_evidence<br/>annotated frame + before/after shapes"]
+    RU -- "rejected or uncertain<br/>reason shown, no alert" --> NO["No alert"]
+    EV --> PA["propose_alert<br/>status: pending"]
+  end
+  AG <--> BR["Amazon Bedrock · Nova 2 Lite<br/>Converse API<br/>numbers and short text, never pixels"]
+  PA --> CO{"Coach approves<br/>or rejects"}
+  CO --> AL[("alerts.jsonl")]
+  PA -. "logs, metrics" .-> CW[("CloudWatch<br/>/gaffer/app")]
+  UI["Web app: video + 2D pitch +<br/>timeline + alert + chat"] <--> EC2
