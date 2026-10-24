@@ -101,6 +101,8 @@ export default function Stage({
   const t = useClockTime(clock, 8)
   const rangeId = useId()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const standbyRef = useRef<HTMLVideoElement>(null)
+  const [activeSlot, setActiveSlot] = useState(0)
   const [activeClip, setActiveClip] = useState<string | null>(null)
   const [replayError, setReplayError] = useState<{ source: TeamTrackReplay; message: string } | null>(null)
   // a file the browser failed to decode at runtime (by url); it then counts as not playable
@@ -112,8 +114,10 @@ export default function Stage({
     const el = videoRef.current
     if (!el) return
     if (replay) {
-      const source = new TeamTrackVideoSource(el, replay.clips, (clip) => setActiveClip(clip.id),
-        (message) => setReplayError({ source: replay, message }))
+      // two elements: one plays, the other loads the next 30 s clip (no hitch at the boundary)
+      const els = standbyRef.current ? [el, standbyRef.current] : [el]
+      const source = new TeamTrackVideoSource(els, replay.clips, (clip) => setActiveClip(clip.id),
+        (message) => setReplayError({ source: replay, message }), setActiveSlot)
       clock.attachSource(source.now)
       onVideo(source)
       return () => {
@@ -162,17 +166,24 @@ export default function Stage({
         <div data-layout="side-by-side"
           className="mx-auto mt-3 grid w-[calc(100%-1.5rem)] grid-cols-1 gap-3 sm:w-[calc(100%-2rem)] min-[900px]:grid-cols-2">
           <div data-panel="video" className="min-w-0 overflow-hidden rounded-xl border border-line bg-black">
-            <div className="aspect-video">
+            <div className="relative aspect-video">
               {replay ? (
-                <video
-                  key="teamtrack-replay"
-                  ref={videoRef}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  className="size-full bg-black object-contain"
-                  aria-label={`Recorded TeamTrack match video, ${activeClip ?? 'loading segment'}`}
-                />
+                <>
+                  <video
+                    key="teamtrack-replay-0"
+                    ref={videoRef}
+                    muted
+                    playsInline
+                    {...replayVideoProps(0, activeSlot, activeClip)}
+                  />
+                  <video
+                    key="teamtrack-replay-1"
+                    ref={standbyRef}
+                    muted
+                    playsInline
+                    {...replayVideoProps(1, activeSlot, activeClip)}
+                  />
+                </>
               ) : file && filePlayable ? (
                 <video
                   key={file.url}
@@ -265,4 +276,18 @@ export default function Stage({
       </div>
     </section>
   )
+}
+
+/** One of the two stacked replay elements; only the playing one is visible and labelled. */
+function replayVideoProps(slot: number, activeSlot: number, activeClip: string | null) {
+  const active = slot === activeSlot
+  return {
+    'data-replay-video': slot,
+    preload: 'metadata',
+    className: 'absolute inset-0 size-full bg-black object-contain',
+    // initial only: the player switches opacity directly at the boundary (React never resets it)
+    style: { opacity: slot === 0 ? 1 : 0 },
+    'aria-hidden': active ? undefined : true,
+    'aria-label': active ? `Recorded TeamTrack match video, ${activeClip ?? 'loading segment'}` : undefined,
+  } as const
 }

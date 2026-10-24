@@ -46,18 +46,29 @@ def open_writer(path: Path, fps: float, size: tuple[int, int],
 class X264Writer:
     """BGR frames -> H.264 MP4 through PyAV (libx264, yuv420p, faststart); same API as needed."""
 
-    def __init__(self, path: Path, fps: float, size: tuple[int, int], crf: int = 23) -> None:
+    def __init__(self, path: Path, fps: float | Fraction, size: tuple[int, int], crf: int = 23,
+                 *, time_base: Fraction | None = None,
+                 options: dict[str, str] | None = None) -> None:
+        """`time_base` + `write(..., pts=)` keep a source's exact frame timestamps;
+        `options` adds libx264 options (e.g. maxrate, bufsize, g)."""
         import av
 
         self._av = av
         self._c = av.open(str(path), "w", options={"movflags": "faststart"})
-        self._s = self._c.add_stream("libx264", rate=Fraction(fps).limit_denominator(1001))
+        rate = fps if isinstance(fps, Fraction) else Fraction(fps).limit_denominator(1001)
+        self._s = self._c.add_stream("libx264", rate=rate)
         self._s.width, self._s.height = size
         self._s.pix_fmt = "yuv420p"
-        self._s.options = {"crf": str(crf), "preset": "medium"}
+        if time_base is not None:
+            self._s.codec_context.time_base = time_base
+            self._s.time_base = time_base
+        self._s.options = {"crf": str(crf), "preset": "medium", **(options or {})}
 
-    def write(self, frame_bgr) -> None:  # noqa: ANN001 - numpy array
+    def write(self, frame_bgr, pts: int | None = None) -> None:  # noqa: ANN001 - numpy array
         vf = self._av.VideoFrame.from_ndarray(frame_bgr, format="bgr24")
+        if pts is not None:
+            vf.pts = pts
+            vf.time_base = self._s.codec_context.time_base
         for packet in self._s.encode(vf):
             self._c.mux(packet)
 

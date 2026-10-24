@@ -26,6 +26,14 @@ class ReplayClip:
     start_s: float
     end_s: float
     path: Path
+    playback_path: Path | None = None
+
+    @property
+    def playback_file(self) -> Path:
+        """What the browser's <video> gets: the 1080p proxy when present, else the original."""
+        if self.playback_path is not None and self.playback_path.is_file():
+            return self.playback_path
+        return self.path
 
     def public(self, base_url: str) -> dict[str, object]:
         return {
@@ -48,6 +56,21 @@ class TeamTrackReplay:
         self.start_s = float(settings.get("start_s", 900))
         self.end_s = float(settings.get("end_s", 1260))
         self.clip_duration_s = float(settings.get("clip_duration_s", 30))
+        playback = settings.get("playback") or {}
+        if not isinstance(playback, dict):
+            playback = {}
+        self.playback_enabled = bool(playback.get("enabled", False))
+        self.playback_root = repo_path(str(playback.get(
+            "root", "data/teamtrack/soccer_top/playback_1080p"))).resolve()
+
+    def playback_status(self, clips: tuple[ReplayClip, ...]) -> str:
+        """"1080p proxies" when every clip has one, "original 4K" when off, else mixed."""
+        if not self.playback_enabled:
+            return "original 4K"
+        proxies = sum(clip.playback_file != clip.path for clip in clips)
+        if proxies == len(clips):
+            return "1080p proxies"
+        return f"1080p proxies for {proxies} of {len(clips)} clips, original 4K for the rest"
 
     def clips(self) -> tuple[ReplayClip, ...]:
         if not self.manifest_path.is_file():
@@ -75,8 +98,12 @@ class TeamTrackReplay:
                 if path.parent != self.video_root or path.suffix.lower() != ".mp4":
                     raise ReplaySourceError(
                         "manifest clip resolves outside the TeamTrack top-view folder")
+                # the proxy name comes from the validated clip, never from a request
+                proxy = (self.playback_root / path.name) if self.playback_enabled else None
+                if proxy is not None and proxy.resolve().parent != self.playback_root:
+                    raise ReplaySourceError("playback proxy resolves outside its folder")
                 selected.append(ReplayClip(f"{start:04d}-{end:04d}", float(start),
-                                           float(end), path))
+                                           float(end), path, proxy))
 
         selected.sort(key=lambda clip: clip.start_s)
         expected_count = round((self.end_s - self.start_s) / self.clip_duration_s)
@@ -103,11 +130,15 @@ class TeamTrackReplay:
         return next((clip for clip in self.clips() if clip.clip_id == clip_id), None)
 
 
-def clip_response(path: Path, range_header: str | None = None
+def clip_response(path: Path, range_header: str | None = None, *, cache_s: int = 0
                   ) -> FileResponse | Response | StreamingResponse:
-    """Serve MP4 files with byte-range support for native browser seeking."""
+    """Serve MP4 files with byte-range support for native browser seeking.
+
+    `cache_s` > 0 lets the browser keep the file (the fixed replay clips never change)."""
     size = path.stat().st_size
     common = {"Accept-Ranges": "bytes", "Content-Disposition": f'inline; filename="{path.name}"'}
+    if cache_s > 0:
+        common["Cache-Control"] = f"public, max-age={cache_s}"
     if not range_header:
         return FileResponse(path, media_type="video/mp4", headers=common)
 

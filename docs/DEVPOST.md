@@ -1,6 +1,6 @@
 # Devpost submission text (draft)
 
-Copy each section into the matching Devpost field. Plain English, no hype. Numbers are from the files named in [`TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md) and cross-checked in [`FINAL_AUDIT.md`](FINAL_AUDIT.md). Placeholders: `TBD-VIDEO` (demo video link), `TBD-REPO` (public repository link).
+Copy each section into the matching Devpost field. Plain English, no hype. Numbers are from the files named in [`TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md) and cross-checked in [`FINAL_AUDIT.md`](FINAL_AUDIT.md). Placeholder: `TBD-VIDEO` (demo video link).
 
 ## Project name
 
@@ -20,7 +20,7 @@ The harder idea was trust. A formation read from video is noisy: a free kick cro
 
 - Reads a match video from a high, fixed or drone camera that sees the whole pitch.
 - Finds and tracks the players with OpenCV 5, tells the two teams apart by shirt colour, and maps every player onto a 2D pitch.
-- Reads each team's formation every few seconds and flags the moment a team switches shape, for example White 4-4-2 → 3-4-3 at 16:30 in the demo match.
+- Reads each team's formation over a 30 s window, updated every 5 s, and flags the moment a team switches shape, for example White 4-4-2 → 3-4-3 at 16:30 in the demo match.
 - Sends an Amazon Bedrock agent (Nova 2 Lite) to verify each flagged change. The agent asks OpenCV whether the camera is still and the pitch is fitted, asks for a second look at a higher frame rate when the first read is thin, and then confirms, rejects or marks the change uncertain, with the reason.
 - Shows the coach a pending alert with the evidence (an annotated frame and the shape before and after). **The coach approves or rejects every alert.**
 - Answers questions in a chat, grounded in the stored results ("I can't answer that" when the data does not say).
@@ -77,15 +77,15 @@ OpenCV 5.0.0 (`cv2.dnn`, `kmeans`, `findHomography`, `findTransformECC`, `phaseC
 
 ## Gallery images (16:9, dark)
 
-`docs/architecture.png` and `docs/agent_workflow.png` (3840 x 2160, readable at 1080p). Light versions for documents: `*_light.png`.
+`docs/architecture.png`, `docs/agent_workflow.png` and `docs/use_cases.png` (3840 x 2160, readable at 1080p). Light versions for documents: `*_light.png`.
 
 ## Try it out
 
 - Live app: https://gaffer-tactics.duckdns.org/ (fallback, plain http: http://13.210.196.109/). If neither opens, see the demo video.
 - Demo video: TBD-VIDEO
-- Code: TBD-REPO (the repository is private until the author makes it public; see `FINAL_AUDIT.md`)
+- Code: https://github.com/haiderchaudarry96-stack/Gaffer
 - Start with: open the app → *Live analysis*; or *Upload your own video* → try the two sample clips. Each sample has a plain Download link if you would rather test with the file.
-- Technical report: [`docs/TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md); Agentic Vision evidence: [`docs/TECHNICAL_REPORT.md#agentic-vision-award-evidence`](TECHNICAL_REPORT.md#agentic-vision-award-evidence)
+- Technical report (PDF, A4): [`docs/Gaffer_Technical_Report.pdf`](Gaffer_Technical_Report.pdf) (Markdown source: [`docs/TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md)); Agentic Vision evidence: [section 6](TECHNICAL_REPORT.md#6-agentic-vision-award-evidence), traces in [Appendix A](TECHNICAL_REPORT.md#appendix-a-agent-trace-examples)
 
 ## Credits
 

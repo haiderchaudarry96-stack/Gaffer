@@ -634,6 +634,10 @@ api:
     start_s: 900
     end_s: 1260
     clip_duration_s: 30
+    # browser playback only: 1080p H.264 copies (scripts/make_playback_proxies.py, same frames and
+    # timestamps). The <video> element gets these; everything that analyses frames keeps the 4K
+    # originals in video_root. Off, or a proxy missing -> the original is served.
+    playback: {enabled: true, root: data/teamtrack/soccer_top/playback_1080p}
     # real OpenCV + Bedrock demo record(s), imported once into an empty DB at startup
     # (scripts/export_demo_seed.py writes it; only records of seed_analysis_id are allowed)
     seed_file: samples/w900_1260/demo_events_seed.json

@@ -4,9 +4,9 @@ Written by the overnight documentation session; updated the same morning (logo a
 
 ## 0. Things only the author can do or confirm
 
-1. **The repository is private.** Devpost judges must be able to see the code: **make the repository public, or give the judges access, before submitting.** Nothing in this session changed that. README, DEVPOST and the report link to files by relative path, which only works once the repo is readable (`TBD-REPO`).
+1. **Repository access.** Devpost judges must be able to see the code. On 24 Oct (evening) https://github.com/haiderchaudarry96-stack/Gaffer answered HTTP 200 to an anonymous request; check in a private browser window that the code is visible before submitting. README, DEVPOST and the report link to https://github.com/haiderchaudarry96-stack/Gaffer (the PDF turns every relative link into a full URL there), which only works once the repo is readable.
 2. **Author name and school.** The README footer says "Haider Sultan · FAST-NUCES, Pakistan"; `docs/DEMO_SCRIPT.md` section 1 uses it, and `git config user.name` agrees. The account e-mail on this machine carries a different name, so please confirm the spelling you want said in the video.
-3. **Placeholders** (section 7): only the demo video link (`TBD-VIDEO`) and the repository link (`TBD-REPO`) are left. `TBD-URL` and `TBD-EC2` were filled on 24 Oct after the deploy.
+3. **Placeholders** (section 7): only the demo video link (`TBD-VIDEO`) is left. `TBD-URL` and `TBD-EC2` were filled on 24 Oct after the deploy, and `TBD-REPO` on 24 Oct (evening) with https://github.com/haiderchaudarry96-stack/Gaffer.
 4. **Deployed on 24 Oct (afternoon)** at revision `13c69e4`: https://gaffer-tactics.duckdns.org/ (Let's Encrypt, Caddy; the plain-http IP link still works), both samples in S3, the new logo, the 32 MB TeamTrack sample, the A4 speed-up. Not yet on the server: the social preview image and its `<meta>` tags (`og-image.png`, `web/index.html`; they need one more commit and redeploy). The two alerts from the 6-minute test upload (`alr_up_de899ff9f46a_evt_001` / `_002`) are pending in the live alert store.
 5. **Budget.** `gaffer-budget` was still $10/month at the last record (22 Oct); the server alone crosses it in about 3 days. Raising it to $40 is a console action (`deploy/DEPLOY_AWS.md`).
 6. The AWS **account id** (221039325928) appears in docs through the bucket name. It is an identifier, not a credential, but it will be public with the repo.
@@ -152,136 +152,142 @@ Run on 24 Oct (re-run in the morning after the logo, `scripts/` and doc changes;
 | rules fingerprint (`gaffer.api.jobs.rules_fingerprint`) | `ca4ff9bbf7b01c6c`, unchanged |
 | `git diff --check` | only LF/CRLF notes, no whitespace errors |
 | `scripts/audit_numbers.py` | 204 claims, 0 not ok (5.1) |
+| Markdown link check over every tracked `*.md` (relative links and `#anchors`, 24 Oct evening, after the report restructure) | 20 files, 109 relative links, 0 broken |
+| `node web/scripts/render-report-pdf.mjs` (24 Oct evening) | `docs/Gaffer_Technical_Report.pdf`: **25 pages**, A4, 5.2 MB; contents page numbers read back from the PDF and stable; header and footer on every page but the title page; fonts embedded as TrueType; 41 internal and 25 external links |
 
 New tests this session: `tests/test_resolution.py` (4), `test_two_samples_list_download_and_pick_by_id`, a resolution assertion in the upload end-to-end test, `test_drift_coarse_to_fine_…`, and 1 web test (sample list and result `resolution`).
 
+
+## 4b. The technical report PDF (24 Oct, evening)
+
+`docs/TECHNICAL_REPORT.md` was restructured into a formal report (title page, executive summary, sections 1–12, references, Appendix A with the agent traces moved from `docs/AGENT_TRACE_EXAMPLES.md`, which is now a pointer, Appendix B). No number, result or claim was changed; prose was shortened and reworded. The Markdown stays the source of truth; `docs/Gaffer_Technical_Report.pdf` (**25 pages**, A4) is rendered from it by `node web/scripts/render-report-pdf.mjs`: Edge through the repo's `playwright-core`, plus pinned npm packages installed into a temp cache, not into `web/package.json`: `marked@18.1.1` (MIT), `pdfjs-dist@6.4.299` (Apache-2.0) and `@fontsource/{inter,space-grotesk,jetbrains-mono}@5.3.0` (OFL-1.1, static builds of the site's fonts). Relative links in the PDF point to `https://github.com/haiderchaudarry96-stack/Gaffer/blob/main/...`. The new use case diagram (`docs/use_cases[_light].png`, `docs/diagrams/use_cases[_light].svg`) comes from the same generator as the other two diagrams.
 
 ## 5. Every number in README / TECHNICAL_REPORT / DEVPOST against its source
 
 ### 5.1 Read from the JSON source by `scripts/audit_numbers.py` (204 claims, 0 not ok)
 
-Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md`). 24 Oct: 150 → 182 claims in the morning (demo-window upload re-check, `eval2` with `coarse_to_fine`, sample re-encode), → 204 after the deploy (EC2 sample timings and the EC2 6-minute upload).
+Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md`). 24 Oct: 150 → 182 claims in the morning (demo-window upload re-check, `eval2` with `coarse_to_fine`, sample re-encode), → 204 after the deploy (EC2 sample timings and the EC2 6-minute upload). The "used in" column follows the report's section numbers since the report was restructured on 24 Oct (evening); only those labels changed, never a stated value.
 
 | used in | claim | stated | source | source says | check |
 |---|---|---|---|---|---|
-| README, REPORT §5C, DEVPOST | one-shot real changes alerted | 34 | `outputs/eval_agent_final.json` `arms/oneshot/summary/alerted_hits` | 34.0 | ok |
-| README, REPORT §5C, DEVPOST | one-shot false alerts | 34 | `outputs/eval_agent_final.json` `arms/oneshot/summary/false_alerts` | 34.0 | ok |
-| README, REPORT §5C, DEVPOST | rules real changes alerted | 32 | `outputs/eval_agent_final.json` `arms/rules/summary/alerted_hits` | 32.0 | ok |
-| README, REPORT §5C, DEVPOST | rules false alerts | 9 | `outputs/eval_agent_final.json` `arms/rules/summary/false_alerts` | 9.0 | ok |
-| README, REPORT §5C, DEVPOST | agent real changes alerted | 32 | `outputs/eval_agent_final.json` `arms/llm/summary/alerted_hits` | 32.0 | ok |
-| README, REPORT §5C, DEVPOST | agent false alerts | 9 | `outputs/eval_agent_final.json` `arms/llm/summary/false_alerts` | 9.0 | ok |
-| REPORT §5C | true changes | 38 | `outputs/eval_agent_final.json` `arms/rules/summary/true_changes` | 38.0 | ok |
-| REPORT §5C | candidates | 68 | `outputs/eval_agent_final.json` `arms/rules/summary/candidates` | 68.0 | ok |
-| REPORT §5C | rules mean alert delay s | 105 | `outputs/eval_agent_final.json` `arms/rules/summary/mean_alert_delay_s` | 105.0 | ok |
-| REPORT §5C | one-shot mean alert delay s | 42 | `outputs/eval_agent_final.json` `arms/oneshot/summary/mean_alert_delay_s` | 42.0 | ok |
-| REPORT §5C | rejected real changes (rules) | 2 | `outputs/eval_agent_final.json` `arms/rules/summary/rejected_hits` | 2.0 | ok |
-| REPORT §5C, DEVPOST | LLM calls | 195 | `outputs/eval_agent_final.json` `llm/llm_calls` | 195.0 | ok |
-| REPORT §5C | LLM calls per candidate | 2.9 | `outputs/eval_agent_final.json` `llm/llm_calls_per_candidate` | 2.9 | ok |
-| REPORT §5C, DEVPOST | Bedrock cost per match USD | 0.021 | `outputs/eval_agent_final.json` `llm/mean_cost_per_match` | 0.021 | ok |
-| REPORT §5C | Bedrock total USD | 0.21 | `outputs/eval_agent_final.json` `llm/cost_usd` | 0.21 | ok |
-| REPORT §5C, DEVPOST | decisions equal to rules (of 68) | 68 | `outputs/eval_agent_final.json` `llm/agreement_with_rules` | 68.0 | ok |
-| REPORT §5C | guard blocks | 0 | `outputs/eval_agent_final.json` `llm/guard_blocks` | 0.0 | ok |
-| REPORT §7.1 | formation accuracy when confident, % | 97.7 | `outputs/eval_synthetic_heldout2.json` `all/formation/overall/accuracy_when_confident` | 97.7 | ok |
-| REPORT §7.1 | full view when confident, % | 97.6 | `outputs/eval_synthetic_heldout2.json` `all/formation/full_view/accuracy_when_confident` | 97.6 | ok |
-| REPORT §7.1 | broadcast window when confident, % | 98 | `outputs/eval_synthetic_heldout2.json` `all/formation/broadcast/accuracy_when_confident` | 98.0 | ok |
-| REPORT §7.1 | strict accuracy, % | 77.4 | `outputs/eval_synthetic_heldout2.json` `all/formation/overall/accuracy_strict` | 77.4 | ok |
-| REPORT §7.1 | true changes | 38 | `outputs/eval_synthetic_heldout2.json` `all/changes/true_changes` | 38.0 | ok |
-| REPORT §7.1 | hits | 34 | `outputs/eval_synthetic_heldout2.json` `all/changes/hits` | 34.0 | ok |
-| REPORT §7.1 | misses | 4 | `outputs/eval_synthetic_heldout2.json` `all/changes/misses` | 4.0 | ok |
-| REPORT §7.1 | false positives | 34 | `outputs/eval_synthetic_heldout2.json` `all/changes/false_positives` | 34.0 | ok |
-| REPORT §7.1 | mean detection delay s | 42 | `outputs/eval_synthetic_heldout2.json` `all/changes/mean_detection_delay_s` | 42.0 | ok |
-| REPORT §7.1 | max detection delay s | 125 | `outputs/eval_synthetic_heldout2.json` `all/changes/max_detection_delay_s` | 125.0 | ok |
-| REPORT §7.1 | new formation right | 31 | `outputs/eval_synthetic_heldout2.json` `all/changes/hits_with_correct_new_formation` | 31.0 | ok |
-| REPORT §7.1 | timeline max KB | 14 | `outputs/eval_synthetic_heldout2.json` `timeline_bytes/max` | 14.0 | ok |
-| REPORT §7.1 | timeline mean KB | 6.3 | `outputs/eval_synthetic_heldout2.json` `timeline_bytes/mean` | 6.3 | ok |
-| README, REPORT §7.2 | eval F1 at 1 m raw | 0.918 | `outputs/eval_tracking_top_final.json` `results/4/detection/raw/f1` | 0.918 | ok |
-| REPORT §7.2 | eval precision | 0.872 | `outputs/eval_tracking_top_final.json` `results/4/detection/raw/precision` | 0.872 | ok |
-| REPORT §7.2 | eval recall | 0.97 | `outputs/eval_tracking_top_final.json` `results/4/detection/raw/recall` | 0.97 | ok |
-| REPORT §7.2 | eval F1 referees removed | 0.984 | `outputs/eval_tracking_top_final.json` `results/4/detection/referee_removed/f1` | 0.984 | ok |
-| REPORT §7.2 | eval team accuracy % | 98.4 | `outputs/eval_tracking_top_final.json` `results/4/teams/accuracy_settled` | 98.4 | ok |
-| REPORT §7.2 | eval IDF1 | 0.526 | `outputs/eval_tracking_top_final.json` `results/4/identity/idf1` | 0.526 | ok |
-| REPORT §7.2 | eval ID switches per player-min | 1.8 | `outputs/eval_tracking_top_final.json` `results/4/identity/id_switches_per_player_minute` | 1.8 | ok |
-| README, REPORT §7.2 | eval2 F1 at 1 m raw | 0.93 | `outputs/eval_second_set_tracking_top_final.json` `results/4/detection/raw/f1` | 0.93 | ok |
-| REPORT §7.2 | eval2 F1 referees removed | 0.99 | `outputs/eval_second_set_tracking_top_final.json` `results/4/detection/referee_removed/f1` | 0.99 | ok |
-| REPORT §7.2 | eval2 team accuracy % | 98.8 | `outputs/eval_second_set_tracking_top_final.json` `results/4/teams/accuracy_settled` | 98.8 | ok |
-| REPORT §7.2 | eval2 IDF1 | 0.457 | `outputs/eval_second_set_tracking_top_final.json` `results/4/identity/idf1` | 0.457 | ok |
-| REPORT §7.2 | eval2 ID switches per player-min | 1.41 | `outputs/eval_second_set_tracking_top_final.json` `results/4/identity/id_switches_per_player_minute` | 1.41 | ok |
-| REPORT §7.2 | eval White formation exact % | 100 | `outputs/eval_real_final.json` `top/eval/oracle/home/formation/exact_agreement` | 100.0 | ok |
-| REPORT §7.2 | eval Blue formation exact % | 90 | `outputs/eval_real_final.json` `top/eval/oracle/away/formation/exact_agreement` | 90.0 | ok |
-| REPORT §7.2 | eval2 White formation exact % | 93.5 | `outputs/eval_second_set_real_final.json` `top/eval2/oracle/home/formation/exact_agreement` | 93.5 | ok |
-| REPORT §7.2 | eval2 Blue formation exact % | 88.1 | `outputs/eval_second_set_real_final.json` `top/eval2/oracle/away/formation/exact_agreement` | 88.1 | ok |
-| REPORT §7.2 | calibration held-out mean error m (top) | 0.11 | `data/calibration/top.json` `errors/held_out_mean_m` | 0.11 | ok |
-| REPORT §7.2 | autodetect correct of 180 | 180 | `outputs/eval_autodetect.json` `outcomes/success` | 180.0 | ok |
-| README, REPORT §7.3, DEVPOST | Zenodo test F1 before | 0.567 | `outputs/eval_zenodo_before.json` `test/detection/1m/f1` | 0.567 | ok |
-| REPORT §7.3 | Zenodo test precision before | 0.396 | `outputs/eval_zenodo_before.json` `test/detection/1m/precision` | 0.396 | ok |
-| REPORT §7.3 | Zenodo test recall before | 0.999 | `outputs/eval_zenodo_before.json` `test/detection/1m/recall` | 0.999 | ok |
-| README, REPORT §7.3, DEVPOST | Zenodo test F1 after | 0.855 | `outputs/eval_zenodo_final.json` `test/detection/1m/f1` | 0.855 | ok |
-| REPORT §7.3 | Zenodo test precision after | 0.765 | `outputs/eval_zenodo_final.json` `test/detection/1m/precision` | 0.765 | ok |
-| REPORT §7.3 | Zenodo test recall after | 0.97 | `outputs/eval_zenodo_final.json` `test/detection/1m/recall` | 0.97 | ok |
-| REPORT §7.3 | detections per frame before | 63.1 | `outputs/eval_zenodo_before.json` `test/per_frame/detections` | 63.1 | ok |
-| REPORT §7.3 | detections per frame after | 31.7 | `outputs/eval_zenodo_final.json` `test/per_frame/detections` | 31.7 | ok |
-| REPORT §7.3 | annotated people per frame | 25 | `outputs/eval_zenodo_final.json` `test/per_frame/annotated_people` | 25.0 | ok |
-| REPORT §7.3 | team accuracy before % | 81 | `outputs/eval_zenodo_before.json` `test/teams/accuracy` | 81.0 | ok |
-| REPORT §7.3 | team accuracy after % | 98 | `outputs/eval_zenodo_final.json` `test/teams/accuracy` | 98.0 | ok |
-| REPORT §7.3 | strict coverage home after % | 96 | `outputs/eval_zenodo_final.json` `test/formation_coverage_strict/home/coverage` | 96.0 | ok |
-| REPORT §7.3 | strict coverage away after % | 76 | `outputs/eval_zenodo_final.json` `test/formation_coverage_strict/away/coverage` | 76.0 | ok |
-| REPORT §7.3 | strict coverage home before % | 0 | `outputs/eval_zenodo_before.json` `test/formation_coverage_strict/home/coverage` | 0.0 | ok |
-| REPORT §7.3 | strict coverage away before % | 10 | `outputs/eval_zenodo_before.json` `test/formation_coverage_strict/away/coverage` | 10.0 | ok |
-| REPORT §7.3 | worst corner error m, final run | 1.4 | `outputs/eval_zenodo_final.json` `autodetect_vs_annotations/max_corner_error_m` | 1.4 | ok |
-| REPORT §7.3 | worst corner error m, first run | 1.74 | `outputs/eval_zenodo_before.json` `autodetect_vs_annotations/max_corner_error_m` | 1.74 | ok |
-| README, REPORT §7.4 | 4K F1 raw | 0.928 | `outputs/teamtrack_720p_check/report.json` `rows/4k/detection/raw/f1` | 0.928 | ok |
-| REPORT §7.4 | 4K team accuracy % | 99 | `outputs/teamtrack_720p_check/report.json` `rows/4k/teams/accuracy_settled` | 99.0 | ok |
-| REPORT §7.4 | 4K IDF1 | 0.468 | `outputs/teamtrack_720p_check/report.json` `rows/4k/identity/idf1` | 0.468 | ok |
-| REPORT §7.4 | 4K White formation exact % | 91.7 | `outputs/teamtrack_720p_check/report.json` `rows/4k/formation/home/exact_agreement` | 91.7 | ok |
-| REPORT §7.4 | 4K Blue formation exact % | 86.2 | `outputs/teamtrack_720p_check/report.json` `rows/4k/formation/away/exact_agreement` | 86.2 | ok |
-| REPORT §7.4 | 4K s per video s | 1.42 | `outputs/teamtrack_720p_check/report.json` `rows/4k/seconds_per_video_second` | 1.42 | ok |
-| README, REPORT §7.4 | 720p F1 raw | 0.928 | `outputs/teamtrack_720p_check/report.json` `rows/720p/detection/raw/f1` | 0.928 | ok |
-| REPORT §7.4 | 720p team accuracy % | 98.5 | `outputs/teamtrack_720p_check/report.json` `rows/720p/teams/accuracy_settled` | 98.5 | ok |
-| REPORT §7.4 | 720p IDF1 | 0.416 | `outputs/teamtrack_720p_check/report.json` `rows/720p/identity/idf1` | 0.416 | ok |
-| REPORT §7.4 | 720p White formation exact % | 74.1 | `outputs/teamtrack_720p_check/report.json` `rows/720p/formation/home/exact_agreement` | 74.1 | ok |
-| REPORT §7.4 | 720p Blue formation exact % | 82.8 | `outputs/teamtrack_720p_check/report.json` `rows/720p/formation/away/exact_agreement` | 82.8 | ok |
-| REPORT §7.4 | 720p s per video s | 0.34 | `outputs/teamtrack_720p_check/report.json` `rows/720p/seconds_per_video_second` | 0.34 | ok |
-| REPORT §7.4 | 4K referees-removed F1 | 0.978 | `outputs/teamtrack_720p_check/report.json` `rows/4k/detection/referee_removed/f1` | 0.978 | ok |
-| REPORT §7.4 | 720p referees-removed F1 | 0.958 | `outputs/teamtrack_720p_check/report.json` `rows/720p/detection/referee_removed/f1` | 0.958 | ok |
-| REPORT §7.6 | TeamTrack sample total s | 20.6 | `outputs/sample_timing.json` `samples/0/total_s` | 20.6 | ok |
-| REPORT §7.6 | TeamTrack sample pitch check s | 1.3 | `outputs/sample_timing.json` `samples/0/pitch_check_s` | 1.3 | ok |
-| REPORT §7.6 | TeamTrack sample analysis s | 19.3 | `outputs/sample_timing.json` `samples/0/analysis_s` | 19.3 | ok |
-| REPORT §7.6 | Zenodo sample total s | 18.5 | `outputs/sample_timing.json` `samples/1/total_s` | 18.5 | ok |
-| REPORT §7.6 | Zenodo sample pitch check s | 1.1 | `outputs/sample_timing.json` `samples/1/pitch_check_s` | 1.1 | ok |
-| REPORT §7.6 | Zenodo sample analysis s | 17.3 | `outputs/sample_timing.json` `samples/1/analysis_s` | 17.3 | ok |
-| REPORT §7.6 | TeamTrack sample px per metre | 14 | `outputs/sample_timing.json` `samples/0/resolution/px_per_m` | 14.0 | ok |
-| REPORT §7.6 | Zenodo sample px per metre | 14.7 | `outputs/sample_timing.json` `samples/1/resolution/px_per_m` | 14.7 | ok |
+| README, REPORT §6.3, DEVPOST | one-shot real changes alerted | 34 | `outputs/eval_agent_final.json` `arms/oneshot/summary/alerted_hits` | 34.0 | ok |
+| README, REPORT §6.3, DEVPOST | one-shot false alerts | 34 | `outputs/eval_agent_final.json` `arms/oneshot/summary/false_alerts` | 34.0 | ok |
+| README, REPORT §6.3, DEVPOST | rules real changes alerted | 32 | `outputs/eval_agent_final.json` `arms/rules/summary/alerted_hits` | 32.0 | ok |
+| README, REPORT §6.3, DEVPOST | rules false alerts | 9 | `outputs/eval_agent_final.json` `arms/rules/summary/false_alerts` | 9.0 | ok |
+| README, REPORT §6.3, DEVPOST | agent real changes alerted | 32 | `outputs/eval_agent_final.json` `arms/llm/summary/alerted_hits` | 32.0 | ok |
+| README, REPORT §6.3, DEVPOST | agent false alerts | 9 | `outputs/eval_agent_final.json` `arms/llm/summary/false_alerts` | 9.0 | ok |
+| REPORT §6.3 | true changes | 38 | `outputs/eval_agent_final.json` `arms/rules/summary/true_changes` | 38.0 | ok |
+| REPORT §6.3 | candidates | 68 | `outputs/eval_agent_final.json` `arms/rules/summary/candidates` | 68.0 | ok |
+| REPORT §6.3 | rules mean alert delay s | 105 | `outputs/eval_agent_final.json` `arms/rules/summary/mean_alert_delay_s` | 105.0 | ok |
+| REPORT §6.3 | one-shot mean alert delay s | 42 | `outputs/eval_agent_final.json` `arms/oneshot/summary/mean_alert_delay_s` | 42.0 | ok |
+| REPORT §6.3 | rejected real changes (rules) | 2 | `outputs/eval_agent_final.json` `arms/rules/summary/rejected_hits` | 2.0 | ok |
+| REPORT §6.3, DEVPOST | LLM calls | 195 | `outputs/eval_agent_final.json` `llm/llm_calls` | 195.0 | ok |
+| REPORT §6.3 | LLM calls per candidate | 2.9 | `outputs/eval_agent_final.json` `llm/llm_calls_per_candidate` | 2.9 | ok |
+| REPORT §6.3, DEVPOST | Bedrock cost per match USD | 0.021 | `outputs/eval_agent_final.json` `llm/mean_cost_per_match` | 0.021 | ok |
+| REPORT §6.3 | Bedrock total USD | 0.21 | `outputs/eval_agent_final.json` `llm/cost_usd` | 0.21 | ok |
+| REPORT §6.3, DEVPOST | decisions equal to rules (of 68) | 68 | `outputs/eval_agent_final.json` `llm/agreement_with_rules` | 68.0 | ok |
+| REPORT §6.3 | guard blocks | 0 | `outputs/eval_agent_final.json` `llm/guard_blocks` | 0.0 | ok |
+| REPORT §8.1 | formation accuracy when confident, % | 97.7 | `outputs/eval_synthetic_heldout2.json` `all/formation/overall/accuracy_when_confident` | 97.7 | ok |
+| REPORT §8.1 | full view when confident, % | 97.6 | `outputs/eval_synthetic_heldout2.json` `all/formation/full_view/accuracy_when_confident` | 97.6 | ok |
+| REPORT §8.1 | broadcast window when confident, % | 98 | `outputs/eval_synthetic_heldout2.json` `all/formation/broadcast/accuracy_when_confident` | 98.0 | ok |
+| REPORT §8.1 | strict accuracy, % | 77.4 | `outputs/eval_synthetic_heldout2.json` `all/formation/overall/accuracy_strict` | 77.4 | ok |
+| REPORT §8.1 | true changes | 38 | `outputs/eval_synthetic_heldout2.json` `all/changes/true_changes` | 38.0 | ok |
+| REPORT §8.1 | hits | 34 | `outputs/eval_synthetic_heldout2.json` `all/changes/hits` | 34.0 | ok |
+| REPORT §8.1 | misses | 4 | `outputs/eval_synthetic_heldout2.json` `all/changes/misses` | 4.0 | ok |
+| REPORT §8.1 | false positives | 34 | `outputs/eval_synthetic_heldout2.json` `all/changes/false_positives` | 34.0 | ok |
+| REPORT §8.1 | mean detection delay s | 42 | `outputs/eval_synthetic_heldout2.json` `all/changes/mean_detection_delay_s` | 42.0 | ok |
+| REPORT §8.1 | max detection delay s | 125 | `outputs/eval_synthetic_heldout2.json` `all/changes/max_detection_delay_s` | 125.0 | ok |
+| REPORT §8.1 | new formation right | 31 | `outputs/eval_synthetic_heldout2.json` `all/changes/hits_with_correct_new_formation` | 31.0 | ok |
+| REPORT §8.1 | timeline max KB | 14 | `outputs/eval_synthetic_heldout2.json` `timeline_bytes/max` | 14.0 | ok |
+| REPORT §8.1 | timeline mean KB | 6.3 | `outputs/eval_synthetic_heldout2.json` `timeline_bytes/mean` | 6.3 | ok |
+| README, REPORT §8.2 | eval F1 at 1 m raw | 0.918 | `outputs/eval_tracking_top_final.json` `results/4/detection/raw/f1` | 0.918 | ok |
+| REPORT §8.2 | eval precision | 0.872 | `outputs/eval_tracking_top_final.json` `results/4/detection/raw/precision` | 0.872 | ok |
+| REPORT §8.2 | eval recall | 0.97 | `outputs/eval_tracking_top_final.json` `results/4/detection/raw/recall` | 0.97 | ok |
+| REPORT §8.2 | eval F1 referees removed | 0.984 | `outputs/eval_tracking_top_final.json` `results/4/detection/referee_removed/f1` | 0.984 | ok |
+| REPORT §8.2 | eval team accuracy % | 98.4 | `outputs/eval_tracking_top_final.json` `results/4/teams/accuracy_settled` | 98.4 | ok |
+| REPORT §8.2 | eval IDF1 | 0.526 | `outputs/eval_tracking_top_final.json` `results/4/identity/idf1` | 0.526 | ok |
+| REPORT §8.2 | eval ID switches per player-min | 1.8 | `outputs/eval_tracking_top_final.json` `results/4/identity/id_switches_per_player_minute` | 1.8 | ok |
+| README, REPORT §8.2 | eval2 F1 at 1 m raw | 0.93 | `outputs/eval_second_set_tracking_top_final.json` `results/4/detection/raw/f1` | 0.93 | ok |
+| REPORT §8.2 | eval2 F1 referees removed | 0.99 | `outputs/eval_second_set_tracking_top_final.json` `results/4/detection/referee_removed/f1` | 0.99 | ok |
+| REPORT §8.2 | eval2 team accuracy % | 98.8 | `outputs/eval_second_set_tracking_top_final.json` `results/4/teams/accuracy_settled` | 98.8 | ok |
+| REPORT §8.2 | eval2 IDF1 | 0.457 | `outputs/eval_second_set_tracking_top_final.json` `results/4/identity/idf1` | 0.457 | ok |
+| REPORT §8.2 | eval2 ID switches per player-min | 1.41 | `outputs/eval_second_set_tracking_top_final.json` `results/4/identity/id_switches_per_player_minute` | 1.41 | ok |
+| REPORT §8.2 | eval White formation exact % | 100 | `outputs/eval_real_final.json` `top/eval/oracle/home/formation/exact_agreement` | 100.0 | ok |
+| REPORT §8.2 | eval Blue formation exact % | 90 | `outputs/eval_real_final.json` `top/eval/oracle/away/formation/exact_agreement` | 90.0 | ok |
+| REPORT §8.2 | eval2 White formation exact % | 93.5 | `outputs/eval_second_set_real_final.json` `top/eval2/oracle/home/formation/exact_agreement` | 93.5 | ok |
+| REPORT §8.2 | eval2 Blue formation exact % | 88.1 | `outputs/eval_second_set_real_final.json` `top/eval2/oracle/away/formation/exact_agreement` | 88.1 | ok |
+| REPORT §8.2 | calibration held-out mean error m (top) | 0.11 | `data/calibration/top.json` `errors/held_out_mean_m` | 0.11 | ok |
+| REPORT §8.2 | autodetect correct of 180 | 180 | `outputs/eval_autodetect.json` `outcomes/success` | 180.0 | ok |
+| README, REPORT §8.3, DEVPOST | Zenodo test F1 before | 0.567 | `outputs/eval_zenodo_before.json` `test/detection/1m/f1` | 0.567 | ok |
+| REPORT §8.3 | Zenodo test precision before | 0.396 | `outputs/eval_zenodo_before.json` `test/detection/1m/precision` | 0.396 | ok |
+| REPORT §8.3 | Zenodo test recall before | 0.999 | `outputs/eval_zenodo_before.json` `test/detection/1m/recall` | 0.999 | ok |
+| README, REPORT §8.3, DEVPOST | Zenodo test F1 after | 0.855 | `outputs/eval_zenodo_final.json` `test/detection/1m/f1` | 0.855 | ok |
+| REPORT §8.3 | Zenodo test precision after | 0.765 | `outputs/eval_zenodo_final.json` `test/detection/1m/precision` | 0.765 | ok |
+| REPORT §8.3 | Zenodo test recall after | 0.97 | `outputs/eval_zenodo_final.json` `test/detection/1m/recall` | 0.97 | ok |
+| REPORT §8.3 | detections per frame before | 63.1 | `outputs/eval_zenodo_before.json` `test/per_frame/detections` | 63.1 | ok |
+| REPORT §8.3 | detections per frame after | 31.7 | `outputs/eval_zenodo_final.json` `test/per_frame/detections` | 31.7 | ok |
+| REPORT §8.3 | annotated people per frame | 25 | `outputs/eval_zenodo_final.json` `test/per_frame/annotated_people` | 25.0 | ok |
+| REPORT §8.3 | team accuracy before % | 81 | `outputs/eval_zenodo_before.json` `test/teams/accuracy` | 81.0 | ok |
+| REPORT §8.3 | team accuracy after % | 98 | `outputs/eval_zenodo_final.json` `test/teams/accuracy` | 98.0 | ok |
+| REPORT §8.3 | strict coverage home after % | 96 | `outputs/eval_zenodo_final.json` `test/formation_coverage_strict/home/coverage` | 96.0 | ok |
+| REPORT §8.3 | strict coverage away after % | 76 | `outputs/eval_zenodo_final.json` `test/formation_coverage_strict/away/coverage` | 76.0 | ok |
+| REPORT §8.3 | strict coverage home before % | 0 | `outputs/eval_zenodo_before.json` `test/formation_coverage_strict/home/coverage` | 0.0 | ok |
+| REPORT §8.3 | strict coverage away before % | 10 | `outputs/eval_zenodo_before.json` `test/formation_coverage_strict/away/coverage` | 10.0 | ok |
+| REPORT §8.3 | worst corner error m, final run | 1.4 | `outputs/eval_zenodo_final.json` `autodetect_vs_annotations/max_corner_error_m` | 1.4 | ok |
+| REPORT §8.3 | worst corner error m, first run | 1.74 | `outputs/eval_zenodo_before.json` `autodetect_vs_annotations/max_corner_error_m` | 1.74 | ok |
+| README, REPORT §8.4 | 4K F1 raw | 0.928 | `outputs/teamtrack_720p_check/report.json` `rows/4k/detection/raw/f1` | 0.928 | ok |
+| REPORT §8.4 | 4K team accuracy % | 99 | `outputs/teamtrack_720p_check/report.json` `rows/4k/teams/accuracy_settled` | 99.0 | ok |
+| REPORT §8.4 | 4K IDF1 | 0.468 | `outputs/teamtrack_720p_check/report.json` `rows/4k/identity/idf1` | 0.468 | ok |
+| REPORT §8.4 | 4K White formation exact % | 91.7 | `outputs/teamtrack_720p_check/report.json` `rows/4k/formation/home/exact_agreement` | 91.7 | ok |
+| REPORT §8.4 | 4K Blue formation exact % | 86.2 | `outputs/teamtrack_720p_check/report.json` `rows/4k/formation/away/exact_agreement` | 86.2 | ok |
+| REPORT §8.4 | 4K s per video s | 1.42 | `outputs/teamtrack_720p_check/report.json` `rows/4k/seconds_per_video_second` | 1.42 | ok |
+| README, REPORT §8.4 | 720p F1 raw | 0.928 | `outputs/teamtrack_720p_check/report.json` `rows/720p/detection/raw/f1` | 0.928 | ok |
+| REPORT §8.4 | 720p team accuracy % | 98.5 | `outputs/teamtrack_720p_check/report.json` `rows/720p/teams/accuracy_settled` | 98.5 | ok |
+| REPORT §8.4 | 720p IDF1 | 0.416 | `outputs/teamtrack_720p_check/report.json` `rows/720p/identity/idf1` | 0.416 | ok |
+| REPORT §8.4 | 720p White formation exact % | 74.1 | `outputs/teamtrack_720p_check/report.json` `rows/720p/formation/home/exact_agreement` | 74.1 | ok |
+| REPORT §8.4 | 720p Blue formation exact % | 82.8 | `outputs/teamtrack_720p_check/report.json` `rows/720p/formation/away/exact_agreement` | 82.8 | ok |
+| REPORT §8.4 | 720p s per video s | 0.34 | `outputs/teamtrack_720p_check/report.json` `rows/720p/seconds_per_video_second` | 0.34 | ok |
+| REPORT §8.4 | 4K referees-removed F1 | 0.978 | `outputs/teamtrack_720p_check/report.json` `rows/4k/detection/referee_removed/f1` | 0.978 | ok |
+| REPORT §8.4 | 720p referees-removed F1 | 0.958 | `outputs/teamtrack_720p_check/report.json` `rows/720p/detection/referee_removed/f1` | 0.958 | ok |
+| REPORT §8.6 | TeamTrack sample total s | 20.6 | `outputs/sample_timing.json` `samples/0/total_s` | 20.6 | ok |
+| REPORT §8.6 | TeamTrack sample pitch check s | 1.3 | `outputs/sample_timing.json` `samples/0/pitch_check_s` | 1.3 | ok |
+| REPORT §8.6 | TeamTrack sample analysis s | 19.3 | `outputs/sample_timing.json` `samples/0/analysis_s` | 19.3 | ok |
+| REPORT §8.6 | Zenodo sample total s | 18.5 | `outputs/sample_timing.json` `samples/1/total_s` | 18.5 | ok |
+| REPORT §8.6 | Zenodo sample pitch check s | 1.1 | `outputs/sample_timing.json` `samples/1/pitch_check_s` | 1.1 | ok |
+| REPORT §8.6 | Zenodo sample analysis s | 17.3 | `outputs/sample_timing.json` `samples/1/analysis_s` | 17.3 | ok |
+| REPORT §8.6 | TeamTrack sample px per metre | 14 | `outputs/sample_timing.json` `samples/0/resolution/px_per_m` | 14.0 | ok |
+| REPORT §8.6 | Zenodo sample px per metre | 14.7 | `outputs/sample_timing.json` `samples/1/resolution/px_per_m` | 14.7 | ok |
 | DEVPOST | Zenodo s per video s, loaded laptop | 13.13 | `outputs/eval_zenodo_before.json` `s_per_video_s` | 13.13 | ok |
 | DEVPOST | Zenodo s per video s, idle laptop | 4.39 | `outputs/eval_zenodo_a4_before.json` `s_per_video_s` | 4.39 | ok |
-| REPORT §4.5 | Zenodo base s per frame | 0.888 | `outputs/a4_geo_bench_c2f.json` `zenodo/base/s_per_frame` | 0.888 | ok |
-| REPORT §4.5 | Zenodo base ORB frames of 24 | 21 | `outputs/a4_geo_bench_c2f.json` `zenodo/base/orb_frames` | 21.0 | ok |
-| REPORT §4.5 | Zenodo c2f s per frame | 0.097 | `outputs/a4_geo_bench_c2f.json` `zenodo/c2f0.5/s_per_frame` | 0.097 | ok |
-| REPORT §4.5 | Zenodo c2f ORB frames | 0 | `outputs/a4_geo_bench_c2f.json` `zenodo/c2f0.5/orb_frames` | 0.0 | ok |
-| REPORT §4.5 | Zenodo base line error m | 0.075 | `outputs/a4_geo_bench_c2f.json` `zenodo/base/line_err_median_m` | 0.075 | ok |
-| REPORT §4.5 | Zenodo c2f line error m | 0.079 | `outputs/a4_geo_bench_c2f.json` `zenodo/c2f0.5/line_err_median_m` | 0.079 | ok |
-| REPORT §4.5 | TeamTrack dev base s per frame | 0.089 | `outputs/a4_geo_bench_c2f.json` `teamtrack_dev/base/s_per_frame` | 0.089 | ok |
-| REPORT §4.5 | TeamTrack dev c2f s per frame | 0.089 | `outputs/a4_geo_bench_c2f.json` `teamtrack_dev/c2f0.5/s_per_frame` | 0.089 | ok |
-| REPORT §4.5 | TeamTrack dev line error m | 0.087 | `outputs/a4_geo_bench_c2f.json` `teamtrack_dev/base/line_err_median_m` | 0.087 | ok |
-| REPORT §4.5 | plain downscale 0.125 s per frame | 0.035 | `outputs/a4_geo_bench.json` `zenodo/scale0.125/s_per_frame` | 0.035 | ok |
-| REPORT §4.5 | plain downscale 0.125 line error m | 0.121 | `outputs/a4_geo_bench.json` `zenodo/scale0.125/line_err_median_m` | 0.121 | ok |
-| REPORT §4.5 | Zenodo a4_before F1 | 0.8553 | `outputs/eval_zenodo_a4_before.json` `test/detection/1m/f1` | 0.8553 | ok |
-| REPORT §4.5 | Zenodo a4_before precision | 0.7648 | `outputs/eval_zenodo_a4_before.json` `test/detection/1m/precision` | 0.7648 | ok |
-| REPORT §4.5 | Zenodo a4_before team accuracy % | 98.25 | `outputs/eval_zenodo_a4_before.json` `test/teams/accuracy` | 98.25 | ok |
-| REPORT §4.5 | Zenodo a4_before geometry s | 109.9 | `outputs/eval_zenodo_a4_before.json` `timing_s/geometry` | 109.9 | ok |
-| REPORT §4.5 | Zenodo a4_before s per video s | 4.39 | `outputs/eval_zenodo_a4_before.json` `s_per_video_s` | 4.39 | ok |
-| REPORT §4.5 | Zenodo a4_after F1 | 0.8533 | `outputs/eval_zenodo_a4_after.json` `test/detection/1m/f1` | 0.8533 | ok |
-| REPORT §4.5 | Zenodo a4_after precision | 0.7616 | `outputs/eval_zenodo_a4_after.json` `test/detection/1m/precision` | 0.7616 | ok |
-| REPORT §4.5 | Zenodo a4_after team accuracy % | 98.1 | `outputs/eval_zenodo_a4_after.json` `test/teams/accuracy` | 98.1 | ok |
-| REPORT §4.5 | Zenodo a4_after geometry s | 18.2 | `outputs/eval_zenodo_a4_after.json` `timing_s/geometry` | 18.2 | ok |
-| REPORT §4.5 | Zenodo a4_after s per video s | 1.29 | `outputs/eval_zenodo_a4_after.json` `s_per_video_s` | 1.29 | ok |
-| REPORT §4.5 | TeamTrack eval a4_before F1 | 0.9185 | `outputs/eval_tracking_top_a4_before.json` `results/4/detection/raw/f1` | 0.9185 | ok |
-| REPORT §4.5 | TeamTrack eval a4_before s per video s | 1.269 | `outputs/eval_tracking_top_a4_before.json` `results/4/seconds_per_video_second` | 1.269 | ok |
-| REPORT §4.5 | TeamTrack eval a4_before White formation % | 100 | `outputs/eval_real_a4_before.json` `top/eval/oracle/home/formation/exact_agreement` | 100.0 | ok |
-| REPORT §4.5 | TeamTrack eval a4_before Blue formation % | 90 | `outputs/eval_real_a4_before.json` `top/eval/oracle/away/formation/exact_agreement` | 90.0 | ok |
-| REPORT §4.5 | TeamTrack eval a4_after F1 | 0.9185 | `outputs/eval_tracking_top_a4_after.json` `results/4/detection/raw/f1` | 0.9185 | ok |
-| REPORT §4.5 | TeamTrack eval a4_after s per video s | 1.227 | `outputs/eval_tracking_top_a4_after.json` `results/4/seconds_per_video_second` | 1.227 | ok |
-| REPORT §4.5 | TeamTrack eval a4_after White formation % | 100 | `outputs/eval_real_a4_after.json` `top/eval/oracle/home/formation/exact_agreement` | 100.0 | ok |
-| REPORT §4.5 | TeamTrack eval a4_after Blue formation % | 90 | `outputs/eval_real_a4_after.json` `top/eval/oracle/away/formation/exact_agreement` | 90.0 | ok |
+| REPORT §4.3 | Zenodo base s per frame | 0.888 | `outputs/a4_geo_bench_c2f.json` `zenodo/base/s_per_frame` | 0.888 | ok |
+| REPORT §4.3 | Zenodo base ORB frames of 24 | 21 | `outputs/a4_geo_bench_c2f.json` `zenodo/base/orb_frames` | 21.0 | ok |
+| REPORT §4.3 | Zenodo c2f s per frame | 0.097 | `outputs/a4_geo_bench_c2f.json` `zenodo/c2f0.5/s_per_frame` | 0.097 | ok |
+| REPORT §4.3 | Zenodo c2f ORB frames | 0 | `outputs/a4_geo_bench_c2f.json` `zenodo/c2f0.5/orb_frames` | 0.0 | ok |
+| REPORT §4.3 | Zenodo base line error m | 0.075 | `outputs/a4_geo_bench_c2f.json` `zenodo/base/line_err_median_m` | 0.075 | ok |
+| REPORT §4.3 | Zenodo c2f line error m | 0.079 | `outputs/a4_geo_bench_c2f.json` `zenodo/c2f0.5/line_err_median_m` | 0.079 | ok |
+| REPORT §4.3 | TeamTrack dev base s per frame | 0.089 | `outputs/a4_geo_bench_c2f.json` `teamtrack_dev/base/s_per_frame` | 0.089 | ok |
+| REPORT §4.3 | TeamTrack dev c2f s per frame | 0.089 | `outputs/a4_geo_bench_c2f.json` `teamtrack_dev/c2f0.5/s_per_frame` | 0.089 | ok |
+| REPORT §4.3 | TeamTrack dev line error m | 0.087 | `outputs/a4_geo_bench_c2f.json` `teamtrack_dev/base/line_err_median_m` | 0.087 | ok |
+| REPORT §9 | plain downscale 0.125 s per frame | 0.035 | `outputs/a4_geo_bench.json` `zenodo/scale0.125/s_per_frame` | 0.035 | ok |
+| REPORT §9 | plain downscale 0.125 line error m | 0.121 | `outputs/a4_geo_bench.json` `zenodo/scale0.125/line_err_median_m` | 0.121 | ok |
+| REPORT §4.3 | Zenodo a4_before F1 | 0.8553 | `outputs/eval_zenodo_a4_before.json` `test/detection/1m/f1` | 0.8553 | ok |
+| REPORT §4.3 | Zenodo a4_before precision | 0.7648 | `outputs/eval_zenodo_a4_before.json` `test/detection/1m/precision` | 0.7648 | ok |
+| REPORT §4.3 | Zenodo a4_before team accuracy % | 98.25 | `outputs/eval_zenodo_a4_before.json` `test/teams/accuracy` | 98.25 | ok |
+| REPORT §4.3 | Zenodo a4_before geometry s | 109.9 | `outputs/eval_zenodo_a4_before.json` `timing_s/geometry` | 109.9 | ok |
+| REPORT §4.3 | Zenodo a4_before s per video s | 4.39 | `outputs/eval_zenodo_a4_before.json` `s_per_video_s` | 4.39 | ok |
+| REPORT §4.3 | Zenodo a4_after F1 | 0.8533 | `outputs/eval_zenodo_a4_after.json` `test/detection/1m/f1` | 0.8533 | ok |
+| REPORT §4.3 | Zenodo a4_after precision | 0.7616 | `outputs/eval_zenodo_a4_after.json` `test/detection/1m/precision` | 0.7616 | ok |
+| REPORT §4.3 | Zenodo a4_after team accuracy % | 98.1 | `outputs/eval_zenodo_a4_after.json` `test/teams/accuracy` | 98.1 | ok |
+| REPORT §4.3 | Zenodo a4_after geometry s | 18.2 | `outputs/eval_zenodo_a4_after.json` `timing_s/geometry` | 18.2 | ok |
+| REPORT §4.3 | Zenodo a4_after s per video s | 1.29 | `outputs/eval_zenodo_a4_after.json` `s_per_video_s` | 1.29 | ok |
+| REPORT §4.3 | TeamTrack eval a4_before F1 | 0.9185 | `outputs/eval_tracking_top_a4_before.json` `results/4/detection/raw/f1` | 0.9185 | ok |
+| REPORT §4.3 | TeamTrack eval a4_before s per video s | 1.269 | `outputs/eval_tracking_top_a4_before.json` `results/4/seconds_per_video_second` | 1.269 | ok |
+| REPORT §4.3 | TeamTrack eval a4_before White formation % | 100 | `outputs/eval_real_a4_before.json` `top/eval/oracle/home/formation/exact_agreement` | 100.0 | ok |
+| REPORT §4.3 | TeamTrack eval a4_before Blue formation % | 90 | `outputs/eval_real_a4_before.json` `top/eval/oracle/away/formation/exact_agreement` | 90.0 | ok |
+| REPORT §4.3 | TeamTrack eval a4_after F1 | 0.9185 | `outputs/eval_tracking_top_a4_after.json` `results/4/detection/raw/f1` | 0.9185 | ok |
+| REPORT §4.3 | TeamTrack eval a4_after s per video s | 1.227 | `outputs/eval_tracking_top_a4_after.json` `results/4/seconds_per_video_second` | 1.227 | ok |
+| REPORT §4.3 | TeamTrack eval a4_after White formation % | 100 | `outputs/eval_real_a4_after.json` `top/eval/oracle/home/formation/exact_agreement` | 100.0 | ok |
+| REPORT §4.3 | TeamTrack eval a4_after Blue formation % | 90 | `outputs/eval_real_a4_after.json` `top/eval/oracle/away/formation/exact_agreement` | 90.0 | ok |
 | REPORT §4.2 | ablation without shadows: F1 | 0.709 | `outputs/eval_zenodo_fno_shadows.json` `test/detection/1m/f1` | 0.709 | ok |
 | REPORT §4.2 | ablation without shadows: strict coverage home % | 0 | `outputs/eval_zenodo_fno_shadows.json` `test/formation_coverage_strict/home/coverage` | 0.0 | ok |
 | REPORT §4.2 | ablation without shadows: strict coverage away % | 40 | `outputs/eval_zenodo_fno_shadows.json` `test/formation_coverage_strict/away/coverage` | 40.0 | ok |
@@ -312,78 +318,78 @@ Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md
 | REPORT §4.2 | first ablation without adaptive_gate: crop_exclude_lines recorded on | 1 | `outputs/eval_zenodo_no_adaptive_gate.json` `selfcal/switches/crop_exclude_lines` | 1.0 | ok |
 | REPORT §4.2 | final strict coverage home % | 96 | `outputs/eval_zenodo_final.json` `test/formation_coverage_strict/home/coverage` | 96.0 | ok |
 | REPORT §4.2 | final strict coverage away % | 76 | `outputs/eval_zenodo_final.json` `test/formation_coverage_strict/away/coverage` | 76.0 | ok |
-| REPORT §8 | 4-3-3 = 4-2-3-1 family: hits 34 -> 28 | 28 | `outputs/eval_synthetic_heldout2_cheq.json` `all/changes/hits` | 28.0 | ok |
-| REPORT §8 | 4-3-3 = 4-2-3-1 family: false positives 34 -> 16 | 16 | `outputs/eval_synthetic_heldout2_cheq.json` `all/changes/false_positives` | 16.0 | ok |
-| REPORT §7.5, README | 23 Oct upload (c2f absent): candidates | 8 | `outputs/upload_check/demo_final_full/upload_check.json` `summary/candidates` | 8.0 | ok |
-| REPORT §7.5 | 23 Oct upload (c2f absent): s per video s | 3.06 | `outputs/upload_check/demo_final_full/upload_check.json` `perception/s_per_video_s` | 3.06 | ok |
-| REPORT §7.5 | 23 Oct upload (c2f absent): geometry s | 559.6 | `outputs/upload_check/demo_final_full/upload_check.json` `perception/timing_s/geometry` | 559.6 | ok |
-| REPORT §7.5 | 23 Oct upload (c2f absent): wall s | 2738.6 | `outputs/upload_check/demo_final_full/upload_check.json` `wall_s` | 2738.6 | ok |
-| REPORT §7.5 | 23 Oct upload (c2f absent): OpenCV re-analysis s | 1388.7 | `outputs/upload_check/demo_final_full/upload_check.json` `summary/opencv_reanalysis_s` | 1388.7 | ok |
-| REPORT §7.5, README | 24 Oct upload (c2f ON): candidates | 8 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/candidates` | 8.0 | ok |
-| REPORT §7.5 | 24 Oct upload (c2f ON): s per video s | 2.75 | `outputs/upload_check/demo_c2f_full/upload_check.json` `perception/s_per_video_s` | 2.75 | ok |
-| REPORT §7.5 | 24 Oct upload (c2f ON): geometry s | 424.1 | `outputs/upload_check/demo_c2f_full/upload_check.json` `perception/timing_s/geometry` | 424.1 | ok |
-| REPORT §7.5 | 24 Oct upload (c2f ON): wall s | 2703.1 | `outputs/upload_check/demo_c2f_full/upload_check.json` `wall_s` | 2703.1 | ok |
-| REPORT §7.5 | 24 Oct upload (c2f ON): OpenCV re-analysis s | 1434.5 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/opencv_reanalysis_s` | 1434.5 | ok |
-| REPORT §7.5 | 24 Oct upload: confirmed decisions | 2 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/decisions/confirmed` | 2.0 | ok |
-| REPORT §7.5 | 24 Oct upload: rejected decisions | 1 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/decisions/rejected` | 1.0 | ok |
-| REPORT §7.5 | 24 Oct upload: uncertain decisions | 5 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/decisions/uncertain` | 5.0 | ok |
-| REPORT §7.5 | 23 Oct upload: uncertain decisions | 6 | `outputs/upload_check/demo_final_full/upload_check.json` `summary/decisions/uncertain` | 6.0 | ok |
-| REPORT §4.5 | eval2 c2f F1 raw | 0.93 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/detection/raw/f1` | 0.93 | ok |
-| REPORT §4.5 | eval2 c2f F1 referees removed | 0.99 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/detection/referee_removed/f1` | 0.99 | ok |
-| REPORT §4.5 | eval2 c2f team accuracy % | 98.8 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/teams/accuracy_settled` | 98.8 | ok |
-| REPORT §4.5 | eval2 c2f IDF1 | 0.457 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/identity/idf1` | 0.457 | ok |
-| REPORT §4.5 | eval2 c2f ID switches per player-min | 1.41 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/identity/id_switches_per_player_minute` | 1.41 | ok |
-| REPORT §4.5 | eval2 c2f White formation exact % | 93.6 | `outputs/eval_second_set_real_c2f.json` `top/eval2/oracle/home/formation/exact_agreement` | 93.6 | ok |
-| REPORT §4.5 | eval2 c2f Blue formation exact % | 88.1 | `outputs/eval_second_set_real_c2f.json` `top/eval2/oracle/away/formation/exact_agreement` | 88.1 | ok |
-| REPORT §4.5 | eval2 c2f White coverage % | 99.3 | `outputs/eval_second_set_real_c2f.json` `top/eval2/oracle/home/coverage/pipeline` | 99.3 | ok |
-| README, REPORT §7.6 | TeamTrack sample new size MB | 32.3 | `outputs/sample_clip_reencode.json` `rows/crf16/bytes` | 32.3 | ok |
-| REPORT §7.6 | TeamTrack sample old size MB | 218.4 | `outputs/sample_clip_reencode.json` `rows/old/bytes` | 218.4 | ok |
-| REPORT §7.6 | CRF 23 copy size MB (rejected) | 8.6 | `outputs/sample_clip_reencode.json` `rows/crf23/bytes` | 8.6 | ok |
-| REPORT §7.6 | CRF 12 copy size MB (rejected, too big) | 63.2 | `outputs/sample_clip_reencode.json` `rows/crf12/bytes` | 63.2 | ok |
-| REPORT §7.6 | new sample px per metre | 14 | `outputs/sample_clip_reencode.json` `rows/crf16/px_per_m` | 14.0 | ok |
-| REPORT §7.6 | new sample candidates | 0 | `outputs/sample_clip_reencode.json` `rows/crf16/candidates` | 0.0 | ok |
-| REPORT §7.6 | new sample median position difference to the old file m | 0.03 | `outputs/sample_clip_reencode.json` `rows/crf16/vs_reference/median_position_diff_m` | 0.03 | ok |
-| REPORT §7.6 | referee-labelled detections, old file | 180 | `outputs/sample_clip_reencode.json` `rows/old/label_counts/referee` | 180.0 | ok |
-| REPORT §7.6 | referee-labelled detections, new sample | 124 | `outputs/sample_clip_reencode.json` `rows/crf16/label_counts/referee` | 124.0 | ok |
-| REPORT §7.6 | referee-labelled detections, CRF 23 copy | 75 | `outputs/sample_clip_reencode.json` `rows/crf23/label_counts/referee` | 75.0 | ok |
-| REPORT §6, §7.6, DEPLOY | EC2 TeamTrack sample total s | 23.5 | `outputs/sample_timing_ec2.json` `samples/0/total_s` | 23.5 | ok |
-| REPORT §6 | EC2 TeamTrack sample pitch check s | 3.4 | `outputs/sample_timing_ec2.json` `samples/0/pitch_check_s` | 3.4 | ok |
-| REPORT §6 | EC2 TeamTrack sample analysis s | 20.2 | `outputs/sample_timing_ec2.json` `samples/0/analysis_s` | 20.2 | ok |
-| REPORT §6 | EC2 TeamTrack sample s per video s | 0.55 | `outputs/sample_timing_ec2.json` `samples/0/perception/s_per_video_s` | 0.55 | ok |
-| REPORT §6, §7.6, DEPLOY | EC2 Zenodo sample total s | 23 | `outputs/sample_timing_ec2.json` `samples/1/total_s` | 23.0 | ok |
-| REPORT §6 | EC2 Zenodo sample pitch check s | 2.9 | `outputs/sample_timing_ec2.json` `samples/1/pitch_check_s` | 2.9 | ok |
-| REPORT §6 | EC2 Zenodo sample analysis s | 20.1 | `outputs/sample_timing_ec2.json` `samples/1/analysis_s` | 20.1 | ok |
-| REPORT §6 | EC2 Zenodo sample s per video s | 0.56 | `outputs/sample_timing_ec2.json` `samples/1/perception/s_per_video_s` | 0.56 | ok |
-| REPORT §6, §10 | EC2 6-min upload server wall s | 1679.9 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/elapsed_s` | 1679.9 | ok |
-| REPORT §6 | EC2 6-min upload detection stage s | 403.2 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/stage_timings_s/detecting` | 403.2 | ok |
-| REPORT §6 | EC2 6-min upload agent stage s | 1272.2 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/stage_timings_s/agent` | 1272.2 | ok |
-| REPORT §4.5, §6 | EC2 6-min upload s per video s | 1.13 | `outputs/ec2_upload_6min_24oct.json` `perception/s_per_video_s` | 1.13 | ok |
-| REPORT §4.5 | EC2 6-min upload geometry s | 148.1 | `outputs/ec2_upload_6min_24oct.json` `perception/timing_s/geometry` | 148.1 | ok |
-| REPORT §6 | EC2 6-min upload OpenCV re-analysis s | 1064.9 | `outputs/ec2_upload_6min_24oct.json` `summary/opencv_reanalysis_s` | 1064.9 | ok |
-| REPORT §6 | EC2 6-min upload candidates | 8 | `outputs/ec2_upload_6min_24oct.json` `summary/candidates` | 8.0 | ok |
-| REPORT §6 | EC2 6-min upload confirmed | 2 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/confirmed` | 2.0 | ok |
-| REPORT §6 | EC2 6-min upload rejected | 3 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/rejected` | 3.0 | ok |
-| REPORT §6 | EC2 6-min upload uncertain | 3 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/uncertain` | 3.0 | ok |
-| REPORT §6 | EC2 6-min upload Bedrock calls | 49 | `outputs/ec2_upload_6min_24oct.json` `summary/bedrock/calls` | 49.0 | ok |
-| REPORT §6 | EC2 6-min upload Bedrock USD | 0.052 | `outputs/ec2_upload_6min_24oct.json` `summary/bedrock/cost_usd` | 0.052 | ok |
-| REPORT §6 | EC2 6-min upload posture calls | 2 | `outputs/ec2_upload_6min_24oct.json` `summary/posture/calls` | 2.0 | ok |
-| REPORT §6 | EC2 6-min upload posture USD | 0.0031 | `outputs/ec2_upload_6min_24oct.json` `summary/posture/cost_usd` | 0.0031 | ok |
+| REPORT §9 | 4-3-3 = 4-2-3-1 family: hits 34 -> 28 | 28 | `outputs/eval_synthetic_heldout2_cheq.json` `all/changes/hits` | 28.0 | ok |
+| REPORT §9 | 4-3-3 = 4-2-3-1 family: false positives 34 -> 16 | 16 | `outputs/eval_synthetic_heldout2_cheq.json` `all/changes/false_positives` | 16.0 | ok |
+| REPORT §8.5, README | 23 Oct upload (c2f absent): candidates | 8 | `outputs/upload_check/demo_final_full/upload_check.json` `summary/candidates` | 8.0 | ok |
+| REPORT §4.3 | 23 Oct upload (c2f absent): s per video s | 3.06 | `outputs/upload_check/demo_final_full/upload_check.json` `perception/s_per_video_s` | 3.06 | ok |
+| REPORT §4.3 | 23 Oct upload (c2f absent): geometry s | 559.6 | `outputs/upload_check/demo_final_full/upload_check.json` `perception/timing_s/geometry` | 559.6 | ok |
+| REPORT §4.3 | 23 Oct upload (c2f absent): wall s | 2738.6 | `outputs/upload_check/demo_final_full/upload_check.json` `wall_s` | 2738.6 | ok |
+| REPORT §8.5 | 23 Oct upload (c2f absent): OpenCV re-analysis s | 1388.7 | `outputs/upload_check/demo_final_full/upload_check.json` `summary/opencv_reanalysis_s` | 1388.7 | ok |
+| REPORT §8.5, README | 24 Oct upload (c2f ON): candidates | 8 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/candidates` | 8.0 | ok |
+| REPORT §4.3 | 24 Oct upload (c2f ON): s per video s | 2.75 | `outputs/upload_check/demo_c2f_full/upload_check.json` `perception/s_per_video_s` | 2.75 | ok |
+| REPORT §4.3 | 24 Oct upload (c2f ON): geometry s | 424.1 | `outputs/upload_check/demo_c2f_full/upload_check.json` `perception/timing_s/geometry` | 424.1 | ok |
+| REPORT §4.3 | 24 Oct upload (c2f ON): wall s | 2703.1 | `outputs/upload_check/demo_c2f_full/upload_check.json` `wall_s` | 2703.1 | ok |
+| REPORT §8.5 | 24 Oct upload (c2f ON): OpenCV re-analysis s | 1434.5 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/opencv_reanalysis_s` | 1434.5 | ok |
+| REPORT §8.5 | 24 Oct upload: confirmed decisions | 2 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/decisions/confirmed` | 2.0 | ok |
+| REPORT §8.5 | 24 Oct upload: rejected decisions | 1 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/decisions/rejected` | 1.0 | ok |
+| REPORT §8.5 | 24 Oct upload: uncertain decisions | 5 | `outputs/upload_check/demo_c2f_full/upload_check.json` `summary/decisions/uncertain` | 5.0 | ok |
+| REPORT §8.5 | 23 Oct upload: uncertain decisions | 6 | `outputs/upload_check/demo_final_full/upload_check.json` `summary/decisions/uncertain` | 6.0 | ok |
+| REPORT §4.3 | eval2 c2f F1 raw | 0.93 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/detection/raw/f1` | 0.93 | ok |
+| REPORT §4.3 | eval2 c2f F1 referees removed | 0.99 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/detection/referee_removed/f1` | 0.99 | ok |
+| REPORT §4.3 | eval2 c2f team accuracy % | 98.8 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/teams/accuracy_settled` | 98.8 | ok |
+| REPORT §4.3 | eval2 c2f IDF1 | 0.457 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/identity/idf1` | 0.457 | ok |
+| REPORT §4.3 | eval2 c2f ID switches per player-min | 1.41 | `outputs/eval_second_set_tracking_top_c2f.json` `results/4/identity/id_switches_per_player_minute` | 1.41 | ok |
+| REPORT §4.3 | eval2 c2f White formation exact % | 93.6 | `outputs/eval_second_set_real_c2f.json` `top/eval2/oracle/home/formation/exact_agreement` | 93.6 | ok |
+| REPORT §4.3 | eval2 c2f Blue formation exact % | 88.1 | `outputs/eval_second_set_real_c2f.json` `top/eval2/oracle/away/formation/exact_agreement` | 88.1 | ok |
+| REPORT §4.3 | eval2 c2f White coverage % | 99.3 | `outputs/eval_second_set_real_c2f.json` `top/eval2/oracle/home/coverage/pipeline` | 99.3 | ok |
+| README, REPORT §8.6 | TeamTrack sample new size MB | 32.3 | `outputs/sample_clip_reencode.json` `rows/crf16/bytes` | 32.3 | ok |
+| REPORT §8.6 | TeamTrack sample old size MB | 218.4 | `outputs/sample_clip_reencode.json` `rows/old/bytes` | 218.4 | ok |
+| REPORT §9 | CRF 23 copy size MB (rejected) | 8.6 | `outputs/sample_clip_reencode.json` `rows/crf23/bytes` | 8.6 | ok |
+| REPORT §9 | CRF 12 copy size MB (rejected, too big) | 63.2 | `outputs/sample_clip_reencode.json` `rows/crf12/bytes` | 63.2 | ok |
+| REPORT §8.6 | new sample px per metre | 14 | `outputs/sample_clip_reencode.json` `rows/crf16/px_per_m` | 14.0 | ok |
+| REPORT §8.6 | new sample candidates | 0 | `outputs/sample_clip_reencode.json` `rows/crf16/candidates` | 0.0 | ok |
+| REPORT §8.6 | new sample median position difference to the old file m | 0.03 | `outputs/sample_clip_reencode.json` `rows/crf16/vs_reference/median_position_diff_m` | 0.03 | ok |
+| REPORT §8.6 | referee-labelled detections, old file | 180 | `outputs/sample_clip_reencode.json` `rows/old/label_counts/referee` | 180.0 | ok |
+| REPORT §8.6 | referee-labelled detections, new sample | 124 | `outputs/sample_clip_reencode.json` `rows/crf16/label_counts/referee` | 124.0 | ok |
+| REPORT §9 | referee-labelled detections, CRF 23 copy | 75 | `outputs/sample_clip_reencode.json` `rows/crf23/label_counts/referee` | 75.0 | ok |
+| REPORT §7.2, §8.6, DEPLOY | EC2 TeamTrack sample total s | 23.5 | `outputs/sample_timing_ec2.json` `samples/0/total_s` | 23.5 | ok |
+| REPORT §7.2 | EC2 TeamTrack sample pitch check s | 3.4 | `outputs/sample_timing_ec2.json` `samples/0/pitch_check_s` | 3.4 | ok |
+| REPORT §7.2 | EC2 TeamTrack sample analysis s | 20.2 | `outputs/sample_timing_ec2.json` `samples/0/analysis_s` | 20.2 | ok |
+| REPORT §7.2 | EC2 TeamTrack sample s per video s | 0.55 | `outputs/sample_timing_ec2.json` `samples/0/perception/s_per_video_s` | 0.55 | ok |
+| REPORT §7.2, §8.6, DEPLOY | EC2 Zenodo sample total s | 23 | `outputs/sample_timing_ec2.json` `samples/1/total_s` | 23.0 | ok |
+| REPORT §7.2 | EC2 Zenodo sample pitch check s | 2.9 | `outputs/sample_timing_ec2.json` `samples/1/pitch_check_s` | 2.9 | ok |
+| REPORT §7.2 | EC2 Zenodo sample analysis s | 20.1 | `outputs/sample_timing_ec2.json` `samples/1/analysis_s` | 20.1 | ok |
+| REPORT §7.2 | EC2 Zenodo sample s per video s | 0.56 | `outputs/sample_timing_ec2.json` `samples/1/perception/s_per_video_s` | 0.56 | ok |
+| REPORT §7.2, §10 | EC2 6-min upload server wall s | 1679.9 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/elapsed_s` | 1679.9 | ok |
+| REPORT §7.2 | EC2 6-min upload detection stage s | 403.2 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/stage_timings_s/detecting` | 403.2 | ok |
+| REPORT §7.2 | EC2 6-min upload agent stage s | 1272.2 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/stage_timings_s/agent` | 1272.2 | ok |
+| REPORT §4.3, §7.2 | EC2 6-min upload s per video s | 1.13 | `outputs/ec2_upload_6min_24oct.json` `perception/s_per_video_s` | 1.13 | ok |
+| REPORT §4.3 | EC2 6-min upload geometry s | 148.1 | `outputs/ec2_upload_6min_24oct.json` `perception/timing_s/geometry` | 148.1 | ok |
+| REPORT §7.2 | EC2 6-min upload OpenCV re-analysis s | 1064.9 | `outputs/ec2_upload_6min_24oct.json` `summary/opencv_reanalysis_s` | 1064.9 | ok |
+| REPORT §7.2 | EC2 6-min upload candidates | 8 | `outputs/ec2_upload_6min_24oct.json` `summary/candidates` | 8.0 | ok |
+| REPORT §7.2 | EC2 6-min upload confirmed | 2 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/confirmed` | 2.0 | ok |
+| REPORT §7.2 | EC2 6-min upload rejected | 3 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/rejected` | 3.0 | ok |
+| REPORT §7.2 | EC2 6-min upload uncertain | 3 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/uncertain` | 3.0 | ok |
+| REPORT §7.2 | EC2 6-min upload Bedrock calls | 49 | `outputs/ec2_upload_6min_24oct.json` `summary/bedrock/calls` | 49.0 | ok |
+| REPORT §7.2 | EC2 6-min upload Bedrock USD | 0.052 | `outputs/ec2_upload_6min_24oct.json` `summary/bedrock/cost_usd` | 0.052 | ok |
+| REPORT §7.2 | EC2 6-min upload posture calls | 2 | `outputs/ec2_upload_6min_24oct.json` `summary/posture/calls` | 2.0 | ok |
+| REPORT §7.2 | EC2 6-min upload posture USD | 0.0031 | `outputs/ec2_upload_6min_24oct.json` `summary/posture/cost_usd` | 0.0031 | ok |
 
 
 ### 5.2 Read by hand from prose records (no JSON to compare)
 
 | claim | where used | source | ok |
 |---|---|---|---|
-| EC2: sample clip 12.7 s wall; 6-min 4K upload 1,888 s (detection 464 s, agent 1,412 s, OpenCV re-analysis 1,208 s); health 200 in 0.57 s; chat answer 5.4 s; 593.6 MB in 14 assets; 31.5 min | REPORT §6, §7.6, limitations | `RECORD.md` N6a items (3), (3b), (4), `deploy/DEPLOY_AWS.md` "Observed" | ok (read) |
-| $0.13 per hour, $3.10 per day running, $0.22 per day stopped; `m7i-flex.large` | REPORT §6 | `deploy/DEPLOY_AWS.md` "Costs" | ok (read; prices from the AWS price list on 22 Oct) |
-| Trace (a): 52 % coverage, 11.3 s check, 6 fps, 91 % of 11 readings; (b): 55 s revert, 17 % of 12; (c): 190 px/s, 30 % zoom, lines 33 % | REPORT §5B, DEVPOST | `docs/AGENT_TRACE_EXAMPLES.md` | ok (read) |
-| Calibration tiers: detections 21.8 → 12.8, White points 8.3 → 2.6, labelled share 0.86 → 0.77; 5.9 % duplicates at 9.3 px/m; the 69 % came from a generated 7.4 px/m clip | REPORT §8 | `RECORD.md` 23 Oct (two entries), `docs/FAILURE_LOG.md` 2026-10-23 | ok (read) |
-| Upload consistency: 73 % of 11 windows; 8 of 9 candidates matched; 6 uncertain; 1,200 s budget | REPORT §7.5 | `RECORD.md` 23 Oct generalisation entry, `FAILURE_LOG.md` 2026-10-23 | ok (read) |
-| Task A: false alerts 23 → 19, changes 67 → 66; return-leg: 67 → 67 and 23 → 48; line drop 1.70 per match | REPORT §8 | `CLAUDE.md` Key numbers, `AGENT_DESIGN.md` §8/§14, `FAILURE_LOG.md` 2026-10-17 | read in docs; raw experiment JSON **not re-checked** |
-| Drone classical detector F1 0.906; tiled YOLOX recall 0.06 / 0.54 at 18 s per frame; side F1 0.49 raw, 0.78 at 2 m, 3.4 s per frame | REPORT §7.2, §8 | `CLAUDE.md` Key numbers (from `outputs/compare_detectors_*.json`) | read in docs; **not re-checked against the JSON** |
-| ID switches "about 10 % higher" (1.61 → 1.80, 1.31 → 1.41); 0.99 → 1.17 s per video second | REPORT limitation 10 | `RECORD.md` 23 Oct; before-values from `CLAUDE.md` Key numbers | after-values checked in 5.1; **before-values not re-checked** |
+| EC2: sample clip 12.7 s wall; 6-min 4K upload 1,888 s (detection 464 s, agent 1,412 s, OpenCV re-analysis 1,208 s); health 200 in 0.57 s; chat answer 5.4 s; 593.6 MB in 14 assets; 31.5 min | REPORT §7.1, §7.2, §10 | `RECORD.md` N6a items (3), (3b), (4), `deploy/DEPLOY_AWS.md` "Observed" | ok (read) |
+| $0.13 per hour, $3.10 per day running, $0.22 per day stopped; `m7i-flex.large` | REPORT §7.1 | `deploy/DEPLOY_AWS.md` "Costs" | ok (read; prices from the AWS price list on 22 Oct) |
+| Trace (a): 52 % coverage, 11.3 s check, 6 fps, 91 % of 11 readings; (b): 55 s revert, 17 % of 12; (c): 190 px/s, 30 % zoom, lines 33 % | REPORT §6.2, Appendix A, DEVPOST | `docs/TECHNICAL_REPORT.md` Appendix A (moved from `docs/AGENT_TRACE_EXAMPLES.md`, now a pointer) | ok (read) |
+| Calibration tiers: detections 21.8 → 12.8, White points 8.3 → 2.6, labelled share 0.86 → 0.77; 5.9 % duplicates at 9.3 px/m; the 69 % came from a generated 7.4 px/m clip | REPORT §9 | `RECORD.md` 23 Oct (two entries), `docs/FAILURE_LOG.md` 2026-10-23 | ok (read) |
+| Upload consistency: 73 % of 11 windows; 8 of 9 candidates matched; 6 uncertain; 1,200 s budget | REPORT §8.5 | `RECORD.md` 23 Oct generalisation entry, `FAILURE_LOG.md` 2026-10-23 | ok (read) |
+| Task A: false alerts 23 → 19, changes 67 → 66; return-leg: 67 → 67 and 23 → 48; line drop 1.70 per match | REPORT §9 | `CLAUDE.md` Key numbers, `AGENT_DESIGN.md` §8/§14, `FAILURE_LOG.md` 2026-10-17 | read in docs; raw experiment JSON **not re-checked** |
+| Drone classical detector F1 0.906; tiled YOLOX recall 0.06 / 0.54 at 18 s per frame; side F1 0.49 raw, 0.78 at 2 m, 3.4 s per frame | REPORT §8.2, §9 | `CLAUDE.md` Key numbers (from `outputs/compare_detectors_*.json`) | read in docs; **not re-checked against the JSON** |
+| ID switches "about 10 % higher" (1.61 → 1.80, 1.31 → 1.41); 0.99 → 1.17 s per video second | REPORT §4.2 | `RECORD.md` 23 Oct; before-values from `CLAUDE.md` Key numbers | after-values checked in 5.1; **before-values not re-checked** |
 | 55 failure-log entries | DEVPOST | `grep -c "^### \[" docs/FAILURE_LOG.md` = 55 | ok (counted) |
-| Caps: 300 calls and $1.00 per day; $0.30 per analysis; agent 150 calls, 400 k tokens, $0.50 per match; chat 20 questions per visitor per day | REPORT §5, Responsible use | `config.yaml` (`api.bedrock_daily`, `api.jobs`, `agent.limits`, `api.chat`) | ok (read) |
+| Caps: 300 calls and $1.00 per day; $0.30 per analysis; agent 150 calls, 400 k tokens, $0.50 per match; chat 20 questions per visitor per day | REPORT §5, §7.1, §11 | `config.yaml` (`api.bedrock_daily`, `api.jobs`, `agent.limits`, `api.chat`) | ok (read) |
 | Verify thresholds: lines fitted ≥ 90 %, shift ≤ 25 px/s, zoom ≤ 3 %, persistence 60 % | REPORT §5 | `outputs/eval_agent_final.json` `verify` block | ok (read) |
 | Zenodo sample 1080p: 900 frames, 1920×1080, 20.6 MB | docs | `scripts/make_sample_clip.py` run on 24 Oct (`RECORD.md`) | ok |
 
@@ -391,9 +397,9 @@ Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md
 
 | requirement | where | status |
 |---|---|---|
-| Report sections: problem, users (grassroots coaches), architecture, OpenCV 5 implementation, AWS deployment, evaluation, limitations, responsible use | `docs/TECHNICAL_REPORT.md` §1, §2, §3, §4, §6, §7, "Honest limitations", "Responsible use" | **met** |
-| Responsible use covers: no faces or identities, youth footage policy, licensed data with credit, what goes to Bedrock (numbers and short text, never pixels), cost caps and budgets, the coach approves every alert, "uncertain" instead of guessing | "Responsible use" (six bullets) | **met** |
-| "Agentic Vision Award evidence" section: workflow diagram, trace examples where an OpenCV result changes a later call or decision, evaluation of task success, failure handling, observability, human control | `TECHNICAL_REPORT.md` "Agentic Vision Award evidence" A–D; diagram `docs/agent_workflow.png`; traces `docs/AGENT_TRACE_EXAMPLES.md` | **met**; linked from the top of the README |
+| Report sections: problem, users (grassroots coaches), architecture, OpenCV 5 implementation, AWS deployment, evaluation, limitations, responsible use | `docs/TECHNICAL_REPORT.md` §1, §2, §3, §4, §7, §8, §10, §11 (also as `docs/Gaffer_Technical_Report.pdf`) | **met** |
+| Responsible use covers: no faces or identities, youth footage policy, licensed data with credit, what goes to Bedrock (numbers and short text, never pixels), cost caps and budgets, the coach approves every alert, "uncertain" instead of guessing | §11 "Responsible use" (six bullets) | **met** |
+| "Agentic Vision Award evidence" section: workflow diagram, trace examples where an OpenCV result changes a later call or decision, evaluation of task success, failure handling, observability, human control | `TECHNICAL_REPORT.md` §6.1–6.4; diagram `docs/agent_workflow.png` (Figure 4); traces in Appendix A | **met**; linked from the top of the README |
 | Demo script opens with the team (name, FAST-NUCES, Pakistan) | `docs/DEMO_SCRIPT.md` §1 | **met** (name to confirm, section 0 item 2) |
 | Demo shows the architecture diagram and the main results on screen | `DEMO_SCRIPT.md` §10 and shot 10 | **met** |
 | Devpost text says plainly that AI coding assistants (Claude Code, Codex) helped write the code and that the author designed, directed, tested and reviewed it | `docs/DEVPOST.md` "How we built it" | **met** |
@@ -404,8 +410,7 @@ Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md
 
 | placeholder | meaning | where |
 |---|---|---|
-| `TBD-REPO` | link of the public repository once the author makes it public | `docs/DEVPOST.md:3`, `docs/DEVPOST.md:82` |
-| `TBD-VIDEO` | link of the demo video once it is recorded and uploaded | `README.md:9`, `docs/DEVPOST.md:3`, `docs/DEVPOST.md:81`, `docs/DEMO_SCRIPT.md:102` |
+| `TBD-VIDEO` | link of the demo video once it is recorded and uploaded | `README.md:9`, `docs/DEVPOST.md:3`, `docs/DEVPOST.md:85`, `docs/DEMO_SCRIPT.md:102` |
 
 ## 8. Things I was unsure about
 
@@ -421,5 +426,6 @@ Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md
 - **EC2 timings** were measured on 24 Oct after the redeploy (sections 4 and 5.1: `outputs/sample_timing_ec2.json`, `outputs/ec2_upload_6min_24oct.json`). The 22 Oct comparison values (12.7 s sample, 1,892.9 s upload) are read from the CloudWatch `analysis_done` lines and `RECORD.md`, not from a JSON file. The 6-minute test ran with Bedrock on (Nova arm), so its decisions (2 confirmed, 3 rejected, 3 uncertain) differ from the rules-arm laptop run (2 / 1 / 5) only in what the agent's re-analysis could read inside the frozen budget; not investigated further.
 - **Logo:** option 3 ("Tactics board, checked") is applied: header (landing and `/app`), footer, favicon (SVG + 16/32 PNG), 180 px apple-touch icon, README top, screenshots 01–08 retaken. The other two options exist only in `docs/logo_options.png`. The social preview image (`web/public/og-image.png`, 1200 x 630, `web/scripts/render-og.mjs`) and its Open Graph / Twitter tags with the absolute URL were added on 24 Oct after the deploy; they are not on the server until the next redeploy. The landing page's product screenshot `web/public/product/app-desk.jpg` (17 Oct) still shows the old logo in its header; it was not retaken. The "favicon in a tab" screenshots (`web/screenshots/logo/favicon-tab-*.png`) are a composite: headless Chromium has no tab strip, so they show the page's real title next to the real favicon file at 16 / 32 / 64 px.
 - The LinkedIn link is unverified (HTTP 999 to scripts).
+- **Audit labels without a quote in the report:** three `eval2` coarse-to-fine claims in `scripts/audit_numbers.py` (referee-removed F1 0.99, 1.41 ID switches per player-minute, White coverage 99.3 %) are labelled "REPORT §4.3" but were not quoted in the report before or after the restructure (section 4.3 quotes F1, team accuracy and IDF1). The values check out against their JSON; only the label is loose.
 - **TeamTrack sample re-encode:** the 218.4 MB file was replaced by a 32.3 MB H.264 CRF 16 copy only after the analysis matched (same pitch, formations, 0 candidates; median position difference 0.03 m). Referee-labelled detections are 124 against 180, a difference that does not change any formation (`outputs/sample_clip_reencode.json`). The old file is kept locally as `data/sample_clips/teamtrack_top_sample_1080p.old-218MB.mp4` (gitignored); delete it when you like. The S3 object is not replaced yet (command in `deploy/DEPLOY_AWS.md`).
 - **Sample timings** (20.6 s and 18.5 s) are from the idle overnight run with the old TeamTrack file; a morning re-timing ran on a busy laptop (70.3 s and 64.1 s, the unchanged Zenodo sample included) and is kept in `outputs/sample_timing_busy_24oct_morning.json` but not quoted.

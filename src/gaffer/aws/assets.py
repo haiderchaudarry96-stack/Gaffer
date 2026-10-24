@@ -2,9 +2,9 @@
 
 The container runs `python -m gaffer.aws.assets` at start (deploy/start.sh). Every object under
 `s3://<bucket>/<prefix>/` is copied to the same path under the repo root, but only into the
-allowed folders below (replay clips, sample clip, model weights), and only when the local file is
-missing or has a different size. Credentials come from the default chain (on EC2: the instance
-role); nothing is ever written to disk except the files themselves.
+allowed folders below (replay clips, their 1080p playback proxies, sample clip, model weights),
+and only when the local file is missing or has a different size. Credentials come from the
+default chain (on EC2: the instance role); nothing is ever written to disk except the files.
 
     GAFFER_ASSETS_BUCKET=gaffer-demo-<account> python -m gaffer.aws.assets
 
@@ -23,7 +23,8 @@ from typing import Any
 
 from gaffer.config import load_config, repo_path
 
-ALLOWED_DIRS = ("data/teamtrack/soccer_top/videos/", "data/sample_clips/", "models/")
+ALLOWED_DIRS = ("data/teamtrack/soccer_top/videos/", "data/teamtrack/soccer_top/playback_1080p/",
+                "data/sample_clips/", "models/")
 ALLOWED_SUFFIXES = (".mp4", ".onnx")
 
 

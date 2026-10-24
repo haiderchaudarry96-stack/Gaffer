@@ -34,6 +34,8 @@ def test_local_target_only_allows_the_asset_folders() -> None:
     assert local_target("assets/data/teamtrack/soccer_top/videos/D_1.mp4", p) == \
         "data/teamtrack/soccer_top/videos/D_1.mp4"
     assert local_target("assets/models/x.onnx", p) == "models/x.onnx"
+    proxy = "data/teamtrack/soccer_top/playback_1080p/D_1.mp4"
+    assert local_target(f"assets/{proxy}", p) == proxy
     assert local_target("assets/data/sample_clips/s.mp4", p) == "data/sample_clips/s.mp4"
     for bad in ("assets/config.yaml", "assets/models/../config.onnx", "assets/src/x.mp4",
                 "assets/data/teamtrack/soccer_side/videos/F.mp4", "src/gaffer.tar.gz",

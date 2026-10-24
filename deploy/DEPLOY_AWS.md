@@ -258,6 +258,24 @@ the "Redeploy after a `git pull`" steps above. `deploy.sh` recreates the contain
 script downloads the new file into `/opt/gaffer/assets/sample_clips`. Check
 `curl https://gaffer-tactics.duckdns.org/api/samples` lists both ids.
 
+## Replay playback proxies (24 Oct): files that must reach S3
+
+The Live analysis replay used to stream the 4K originals (~28 MB per 30 s clip) into the browser.
+The `<video>` element now gets 1080p H.264 copies (`api.teamtrack_replay.playback`, on by default;
+made by `py scripts\make_playback_proxies.py`, which also checks frame count, fps, duration and
+first/last timestamps against each original). Everything that analyses frames keeps the
+originals. Without the proxies on disk the server serves the originals, so the order of upload and
+redeploy does not matter. `/api/health` -> `replay_playback` says which one is served.
+
+```powershell
+aws s3 cp data\teamtrack\soccer_top\playback_1080p s3://gaffer-demo-221039325928/assets/data/teamtrack/soccer_top/playback_1080p/ --recursive --exclude "*" --include "D_20220220_1_*.mp4" --exclude "*.part.mp4" --region ap-southeast-2
+aws s3 ls s3://gaffer-demo-221039325928/assets/data/teamtrack/soccer_top/playback_1080p/ --region ap-southeast-2 --human-readable --summarize
+```
+
+Then redeploy (the steps above). `gaffer.aws.assets` downloads the folder into
+`/opt/gaffer/assets/teamtrack/soccer_top/playback_1080p` (EBS, survives redeploys). Check
+`curl https://gaffer-tactics.duckdns.org/api/health` shows `"replay_playback": "1080p proxies"`.
+
 ## Stop to save money, start again
 
 ```powershell

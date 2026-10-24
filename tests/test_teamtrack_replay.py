@@ -92,3 +92,40 @@ def test_manifest_rejects_missing_files_and_paths_outside_video_root(tmp_path) -
         raise AssertionError("outside path was accepted")
     except ReplaySourceError as exc:
         assert "outside" in str(exc)
+
+
+def _app(cfg: dict, tmp_path: Path):
+    return create_app(
+        cfg, storage=LocalStorage(tmp_path / "api"), usage=Usage(cfg, str(tmp_path / "usage.json")),
+        alerts_path=tmp_path / "alerts.jsonl", event_store=EventStore(tmp_path / "events.sqlite3"),
+        start_worker=False, llm_factory=None, chat_trace=tmp_path / "chat_trace.jsonl")
+
+
+def test_video_element_gets_the_playback_proxy_and_analysis_keeps_the_original(tmp_path) -> None:
+    cfg, _, video_dir = replay_source(tmp_path)
+    proxy_dir = tmp_path / "playback"
+    proxy_dir.mkdir()
+    cfg["api"]["teamtrack_replay"]["playback"] = {"enabled": True, "root": str(proxy_dir)}
+    for name in [p.name for p in video_dir.iterdir()][:11]:
+        (proxy_dir / name).write_bytes(b"PROXY")
+    replay = TeamTrackReplay(cfg["api"]["teamtrack_replay"])
+    clips = replay.clips()
+    # analysis code reads `path`: always the 4K original
+    assert all(c.path.parent == video_dir.resolve() for c in clips)
+    assert replay.playback_status(clips) == \
+        "1080p proxies for 11 of 12 clips, original 4K for the rest"
+    with TestClient(_app(cfg, tmp_path)) as client:
+        body = client.get("/api/replay/teamtrack").json()
+        assert body["playback"].startswith("1080p proxies for 11")
+        first = client.get(body["clips"][0]["url"])
+        assert first.content == b"PROXY"
+        assert first.headers["cache-control"] == "public, max-age=86400"
+        # a missing proxy falls back to the original instead of failing
+        assert client.get(body["clips"][-1]["url"]).content == b"0123456789abcdef"
+        assert client.get("/api/health").json()["replay_playback"].startswith("1080p proxies")
+
+    cfg["api"]["teamtrack_replay"]["playback"]["enabled"] = False
+    with TestClient(_app(cfg, tmp_path)) as client:
+        body = client.get("/api/replay/teamtrack").json()
+        assert body["playback"] == "original 4K"
+        assert client.get(body["clips"][0]["url"]).content == b"0123456789abcdef"

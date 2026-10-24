@@ -7,16 +7,20 @@
 Built for the **OpenCV AI Competition 2026, powered by AWS**. OpenCV 5.0.0 (`opencv-contrib-python==5.0.0.93`) does the vision work, an Amazon Bedrock agent (Nova 2 Lite) decides what to look at next, and the coach approves every alert.
 
 **Live app: https://gaffer-tactics.duckdns.org/** (fallback, plain http: http://13.210.196.109/). If neither opens, see the demo video (link: TBD-VIDEO).
-Judges: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [Agentic Vision Award evidence](docs/TECHNICAL_REPORT.md#agentic-vision-award-evidence) · [`docs/DEVPOST.md`](docs/DEVPOST.md) · [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)
+**[Technical report (PDF)](docs/Gaffer_Technical_Report.pdf)** · Judges: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) (Markdown source) · [Agentic Vision Award evidence](docs/TECHNICAL_REPORT.md#6-agentic-vision-award-evidence) · [`docs/DEVPOST.md`](docs/DEVPOST.md) · [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)
 
 ## What Gaffer does in 30 seconds
 
 1. **Watches** a match video (top-down drone or a high fixed camera, whole pitch visible) with OpenCV 5: finds the players, tracks them, tells the teams apart by shirt colour, and maps every position onto a 2D pitch.
-2. **Reads each team's formation** every few seconds and flags the moment a team **switches shape** (for example White 4-4-2 → 3-4-3 at 16:30).
+2. **Reads each team's formation** over a 30 s window, updated every 5 s, and flags the moment a team **switches shape** (for example White 4-4-2 → 3-4-3 at 16:30).
 3. **Checks its own eyes.** Every flagged change is a *candidate*. The agent sends OpenCV back to look again (is the camera still, is the pitch fitted, does the new shape hold when the window is re-read at a higher rate?). If the second look does not support it, the candidate is rejected or marked uncertain, with the reason.
 4. **Asks the coach.** A confirmed change becomes an alert with a picture of the evidence. The coach approves or rejects it. Nothing is sent without that.
 
 ## Try it
+
+Who uses Gaffer and for what (a judge or visitor can do everything a coach does, including uploading their own drone video):
+
+![Gaffer use cases](docs/use_cases_light.png)
 
 | What | How |
 |---|---|
@@ -34,7 +38,7 @@ Judges: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [Agentic Visio
 
 ![Gaffer architecture](docs/architecture_light.png)
 
-Dark versions for slides and video: [`docs/architecture.png`](docs/architecture.png), [`docs/agent_workflow.png`](docs/agent_workflow.png). Editable SVG sources and the generator: [`docs/diagrams/`](docs/diagrams/) (`node web/scripts/render-diagrams.mjs`). Agent flow in detail:
+Dark versions for slides and video: [`docs/architecture.png`](docs/architecture.png), [`docs/agent_workflow.png`](docs/agent_workflow.png), [`docs/use_cases.png`](docs/use_cases.png). Editable SVG sources and the generator: [`docs/diagrams/`](docs/diagrams/) (`node web/scripts/render-diagrams.mjs`). Agent flow in detail:
 
 ![Gaffer agent workflow](docs/agent_workflow_light.png)
 
@@ -78,7 +82,7 @@ Every number below comes from a file under `outputs/` named in [`docs/TECHNICAL_
 - **Does the agent help?** On 10 held-out synthetic matches (seeds 110–119, 38 real shape changes), alerting on every candidate gives 34 / 38 real changes and **34 false alerts**; the verified agent gives 32 / 38 and **9 false alerts** (`outputs/eval_agent_final.json`). The rules make the decisions; the LLM orchestrates and explains (identical decisions, 68 / 68).
 - **Real footage:** one real TeamTrack match (drone, first half). Detection F1 at 1 m is 0.918 and 0.930 on the two evaluation windows, team accuracy about 98–99 % (`outputs/eval_tracking_top_final.json`, `outputs/eval_second_set_tracking_top_final.json`). The one confirmed real alert is White 4-4-2 → 3-4-3 at 16:30, in a window chosen with the ground-truth positions: a demonstration, not a sample.
 - **An unseen ground:** on a drone clip from another pitch (Zenodo), per-video self-calibration lifts detection F1 at 1 m from 0.567 to 0.855 (`outputs/eval_zenodo_before.json`, `outputs/eval_zenodo_final.json`). One 30 s clip of one other ground.
-- Limits are listed plainly in [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md#honest-limitations) and [`docs/FAILURE_LOG.md`](docs/FAILURE_LOG.md).
+- Limits are listed plainly in [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md#10-limitations) and [`docs/FAILURE_LOG.md`](docs/FAILURE_LOG.md).
 
 ## Screenshots
 
@@ -151,7 +155,7 @@ The footage and model weights are **not in the repo** (gitignored, large, licens
 
 ## Docs map
 
-[`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [`docs/AGENT_DESIGN.md`](docs/AGENT_DESIGN.md) · [`docs/AGENT_TRACE_EXAMPLES.md`](docs/AGENT_TRACE_EXAMPLES.md) · [`docs/FAILURE_LOG.md`](docs/FAILURE_LOG.md) · [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md) · [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) · [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) · [`docs/API.md`](docs/API.md) · [`docs/PLAN.md`](docs/PLAN.md) · [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md) · [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md). Build notes (not needed to judge): [`RECORD.md`](RECORD.md).
+[`docs/Gaffer_Technical_Report.pdf`](docs/Gaffer_Technical_Report.pdf) · [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [`docs/AGENT_DESIGN.md`](docs/AGENT_DESIGN.md) · [`docs/AGENT_TRACE_EXAMPLES.md`](docs/AGENT_TRACE_EXAMPLES.md) · [`docs/FAILURE_LOG.md`](docs/FAILURE_LOG.md) · [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md) · [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) · [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) · [`docs/API.md`](docs/API.md) · [`docs/PLAN.md`](docs/PLAN.md) · [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md) · [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md). Build notes (not needed to judge): [`RECORD.md`](RECORD.md).
 
 ## Licence
 

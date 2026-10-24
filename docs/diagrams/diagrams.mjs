@@ -1,4 +1,4 @@
-// Gaffer diagrams: the editable source of docs/architecture*.png and docs/agent_workflow*.png.
+// Gaffer diagrams: the editable source of docs/architecture*.png, docs/agent_workflow*.png and docs/use_cases*.png.
 //
 // Each function returns one self-contained SVG string (1920 x 1080, real <text>, grouped shapes with
 // ids, literal colours, no CSS classes, no markers, no raster) so the files import cleanly into Figma.
@@ -178,7 +178,7 @@ export function architecture(t) {
   })
   out.push(per + '</g>')
 
-  out.push(station('tactics', 998, 328, 176, 220, 'pitch', 'Tactics', ['formation per', '30 s window', 'shape changes']))
+  out.push(station('tactics', 998, 328, 176, 220, 'pitch', 'Tactics', ['formation over', '30 s window,', 'every 5 s;', 'shape changes']))
   out.push(station('agent', 1230, 328, 224, 220, 'route', 'Agent', ['rules decide', 'Nova orchestrates', 'OpenCV re-checks'], { stroke: t.ink }))
 
   out.push(`<g id="api-strip">${rect(662, 566, 792, 40, { r: 10, fill: t.surface2, stroke: null })}` +
@@ -353,7 +353,98 @@ export function workflow(t) {
     out.join('\n'))
 }
 
+// ---------------------------------------------------------------------------------------------------
+// UML-style use case diagram: stick-figure actors on the left, use cases as ovals inside the system
+// boundary, supporting systems on the right. Lines from the left and the right end on opposite sides
+// of one column of ovals, and each actor only links to its own block of ovals, so no lines cross.
+export function useCases(t) {
+  const { text, rect, header, wrap } = kit(t)
+  const out = []
+  out.push(header('Use cases', 'Who uses Gaffer and for what. The two systems on the right do the work behind the use cases.', 'gaffer-tactics.duckdns.org'))
+
+  // System boundary
+  const bx = 540, by = 138, bw = 840, bh = 912
+  out.push(`<g id="system-boundary">${rect(bx, by, bw, bh, { r: 24, fill: t.cloud, stroke: t.ink, sw: 2.5 })}` +
+    text(bx + 30, by + 46, 'Gaffer', { size: 30, weight: 700, font: 'display', maxw: 200 }) +
+    text(bx + bw - 30, by + 44, 'web app', { size: 18, font: 'mono', fill: t.muted, anchor: 'end' }) + '</g>')
+
+  // Use cases (one column)
+  const cases = [
+    ['Upload own drone video', null],
+    ['Confirm the pitch corners', null],
+    ['Try a sample clip', null],
+    ['Watch the recorded match', '(Live analysis)'],
+    ['Review an alert', 'with its evidence'],
+    ['Approve or reject an alert', null],
+    ['Ask the analyst', '(chat)'],
+    ['Read the report', null],
+  ]
+  const cx = 960, rx = 290, ry = 43, y0 = 252, dy = 102
+  const cy = (k) => y0 + k * dy
+  cases.forEach(([a, b], k) => {
+    const y = cy(k)
+    let s = `<g id="uc-${k + 1}"><ellipse cx="${cx}" cy="${y}" rx="${rx}" ry="${ry}" fill="${t.surface}" stroke="${t.line}" stroke-width="2"/>`
+    if (b) {
+      s += text(cx, y - 4, a, { size: 26, weight: 600, anchor: 'middle', maxw: 2 * rx - 60 }) +
+        text(cx, y + 26, b, { size: 21, fill: t.muted, anchor: 'middle', maxw: 2 * rx - 60 })
+    } else {
+      s += text(cx, y + 9, a, { size: 26, weight: 600, anchor: 'middle', maxw: 2 * rx - 60 })
+    }
+    out.push(s + '</g>')
+  })
+
+  // Stick-figure actor; (x, y) = hip point
+  const actor = (id, x, y, l1, l2) => {
+    const st = `stroke="${t.text}" stroke-width="4" stroke-linecap="round" fill="none"`
+    return `<g id="${id}"><circle cx="${x}" cy="${y - 96}" r="22" ${st}/>` +
+      `<line x1="${x}" y1="${y - 74}" x2="${x}" y2="${y}" ${st}/>` +
+      `<line x1="${x - 40}" y1="${y - 50}" x2="${x + 40}" y2="${y - 50}" ${st}/>` +
+      `<line x1="${x}" y1="${y}" x2="${x - 30}" y2="${y + 48}" ${st}/><line x1="${x}" y1="${y}" x2="${x + 30}" y2="${y + 48}" ${st}/>` +
+      text(x, y + 90, l1, { size: 26, weight: 700, font: 'display', anchor: 'middle', maxw: 300 }) +
+      (l2 ? text(x, y + 118, l2, { size: 20, fill: t.muted, anchor: 'middle', maxw: 360 }) : '') + '</g>'
+  }
+  // Everyone can do everything: the coach is linked to all eight use cases, and the judge / visitor
+  // inherits all of them through a UML generalisation (hollow triangle at the general actor, Coach).
+  const ax = 250
+  const coachY = 500, visY = 890
+  out.push(actor('actor-coach', ax, coachY, 'Coach', 'grassroots or university'))
+  out.push(actor('actor-visitor', ax, visY, 'Judge / visitor', 'can do everything a coach does'))
+
+  // Associations (plain lines, UML style)
+  const assoc = (x1, y1, x2, y2, color = t.text) =>
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2.4"/>`
+  const L = []
+  cases.forEach((_, k) => L.push(assoc(ax + 48, coachY - 50, cx - rx, cy(k))))
+  out.push(`<g id="associations">${L.join('')}</g>`)
+
+  // Generalisation: Judge / visitor -> Coach
+  const gTop = coachY + 136, gBottom = visY - 128
+  out.push(`<g id="generalisation"><line x1="${ax}" y1="${gTop + 20}" x2="${ax}" y2="${gBottom}" stroke="${t.text}" stroke-width="2.4"/>` +
+    `<polygon points="${ax},${gTop} ${ax - 13},${gTop + 22} ${ax + 13},${gTop + 22}" fill="${t.bg}" stroke="${t.text}" stroke-width="2.4"/></g>`)
+
+  // Supporting systems (outside the boundary)
+  const sx = 1500, sw = 364
+  const sys = (id, y, h, l1, l2, l3) =>
+    `<g id="${id}">${rect(sx, y, sw, h, { r: 16, fill: t.surface2, stroke: t.line, sw: 2 })}` +
+    text(sx + sw / 2, y + 40, '«system»', { size: 19, font: 'mono', fill: t.muted, anchor: 'middle' }) +
+    text(sx + sw / 2, y + 80, l1, { size: 26, weight: 700, font: 'display', anchor: 'middle', maxw: sw - 30 }) +
+    text(sx + sw / 2, y + 112, l2, { size: 21, fill: t.muted, anchor: 'middle', maxw: sw - 30 }) +
+    (l3 ? text(sx + sw / 2, y + 140, l3, { size: 21, fill: t.muted, anchor: 'middle', maxw: sw - 30 }) : '') + '</g>'
+  const oy = 280, oh = 170, ny = 700, nh = 170
+  out.push(sys('system-opencv', oy, oh, 'OpenCV 5 pipeline', 'on Amazon EC2', 'perception + evidence'))
+  out.push(sys('system-bedrock', ny, nh, 'Amazon Bedrock', 'Nova 2 Lite', 'agent, chat, report'))
+  const S = []
+  ;[0, 1, 2, 4].forEach((k, i) => S.push(assoc(cx + rx, cy(k), sx, oy + 40 + i * 32, t.arrow)))
+  ;[4, 6, 7].forEach((k, i) => S.push(assoc(cx + rx, cy(k), sx, ny + 50 + i * 40, t.arrow)))
+  out.push(`<g id="system-links">${S.join('')}</g>`)
+
+  return wrap('Gaffer use cases',
+    'UML-style use case diagram. Inside the Gaffer boundary: upload own drone video, confirm the pitch corners, try a sample clip, watch the recorded match (Live analysis), review an alert with its evidence, approve or reject an alert, ask the analyst (chat), read the report. Actors: Coach, linked to all eight use cases, and Judge / visitor, who can do everything a coach does (UML generalisation), including uploading their own video and confirming its pitch corners. Supporting systems outside the boundary: the OpenCV 5 pipeline on Amazon EC2 and Amazon Bedrock (Nova 2 Lite).',
+    out.join('\n'))
+}
+
 export const DIAGRAMS = [
   { name: 'architecture', build: architecture, png: 'architecture' },
   { name: 'agent_workflow', build: workflow, png: 'agent_workflow' },
+  { name: 'use_cases', build: useCases, png: 'use_cases' },
 ]

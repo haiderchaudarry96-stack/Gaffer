@@ -1,7 +1,7 @@
 /* global document */
-// Renders the two product diagrams (dark + light) from docs/diagrams/diagrams.mjs:
-//   docs/diagrams/{architecture,agent_workflow}[_light].svg   (editable, Figma-importable)
-//   docs/{architecture,agent_workflow}[_light].png            (3840 x 2160, Playwright at 2x)
+// Renders the three product diagrams (dark + light) from docs/diagrams/diagrams.mjs:
+//   docs/diagrams/{architecture,agent_workflow,use_cases}[_light].svg   (editable, Figma-importable)
+//   docs/{architecture,agent_workflow,use_cases}[_light].png            (3840 x 2160, Playwright at 2x)
 // Fonts come from the installed @fontsource packages (the site's fonts). Text that overflows its box is reported.
 //   node web/scripts/render-diagrams.mjs        (CHROMIUM_PATH overrides the default Windows Edge install)
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'

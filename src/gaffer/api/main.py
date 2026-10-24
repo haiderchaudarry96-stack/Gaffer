@@ -262,6 +262,7 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
             "start_s": teamtrack_replay.start_s,
             "end_s": teamtrack_replay.end_s,
             "label": "Recorded TeamTrack footage · live-style simulation",
+            "playback": teamtrack_replay.playback_status(clips),
             "clips": [clip.public(base_url) for clip in clips],
         }
 
@@ -275,7 +276,9 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         if clip is None:
             raise HTTPException(
                 404, "That TeamTrack replay segment is not in the allowed clip set.")
-        return clip_response(clip.path, request.headers.get("range"))
+        # browser playback only: the 1080p proxy when configured and present (frames and
+        # timestamps equal the original); analysis code never goes through this route
+        return clip_response(clip.playback_file, request.headers.get("range"), cache_s=86400)
 
     @app.get("/api/events")
     def list_events(match_id: str, analysis_id: str | None = None,
@@ -380,6 +383,12 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         except ReplaySourceError as exc:
             return f"unavailable: {exc}"
 
+    def replay_playback() -> str:
+        try:
+            return teamtrack_replay.playback_status(teamtrack_replay.clips())
+        except ReplaySourceError:
+            return "unavailable"
+
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         return {"status": "ok", "opencv_version": cv2.__version__,
@@ -392,6 +401,7 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
                         "credentials": credential_source()},
                 "storage": api["storage"].get("backend", "local"),
                 "replay_clips": replay_clips(),
+                "replay_playback": replay_playback(),
                 "sample_clip": _sample_path() is not None,
                 "sample_clips": list(_sample_entries()),
                 "demo_available": demo.available(),

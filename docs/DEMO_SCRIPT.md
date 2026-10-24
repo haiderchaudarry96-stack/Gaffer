@@ -60,7 +60,7 @@ Each section has: the time window, what is on screen, and what to say. Say it in
 
 ### 9. The refused pan (4:10–4:25)
 
-**On screen:** `docs/AGENT_TRACE_EXAMPLES.md` case (c) (or the trace of the simulated pan): "camera moves 190 px/s, zoom changes 30 %, lines fit 33 %: refuse".
+**On screen:** technical report, Appendix A.4 (trace (c)) (or the trace of the simulated pan): "camera moves 190 px/s, zoom changes 30 %, lines fit 33 %: refuse".
 
 **Say:** "Gaffer is also built to refuse. When I turned real drone frames into a panning, zooming crop, OpenCV measured the camera motion, and the agent refused to alert. Broadcast footage and panning cameras are not supported, by design."
 
@@ -84,8 +84,8 @@ Each section has: the time window, what is on screen, and what to say. Say it in
 | 6 | Evidence image, Approve | alert card at 18:05 | 0:30 |
 | 7 | Chat answer and refusal | chat drawer | 0:20 |
 | 8 | Zenodo sample: card with credit, pitch step, result | `/app` → Upload | 0:30 |
-| 9 | Refused pan trace | `docs/AGENT_TRACE_EXAMPLES.md` (c) | 0:15 |
-| 10 | Architecture diagram; results table; closing card | `docs/architecture.png` (dark); `docs/TECHNICAL_REPORT.md` §5C | 0:20 |
+| 9 | Refused pan trace | `docs/TECHNICAL_REPORT.md` Appendix A.4 (trace (c)) | 0:15 |
+| 10 | Architecture diagram; results table; closing card | `docs/architecture.png` (dark); `docs/TECHNICAL_REPORT.md` §6.3 (Table 4) | 0:20 |
 
 Rehearse once with a stopwatch. The replay starts at 15:00, so 16:30 is 90 s of video time away and 18:05 is 185 s away; at 4× that is about 23 s and 46 s. Cut between shots rather than waiting.
 

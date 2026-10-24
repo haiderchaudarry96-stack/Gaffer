@@ -11,6 +11,8 @@ export interface VideoSource {
   play?: () => void
   pause?: () => void
   setRate?: (rate: number) => void
+  /** every element the source plays through (a playlist may swap `el` between them) */
+  elements?: HTMLVideoElement[]
 }
 
 /**
@@ -23,16 +25,20 @@ export function useTransport(clock: PlaybackClock, video: VideoSource | null) {
   useEffect(() => {
     const unsub = clock.subscribe(() => force((n) => n + 1))
     if (!video) return unsub
-    const el = video.el
+    const els = video.elements ?? [video.el]
     const on = () => force((n) => n + 1)
-    el.addEventListener('play', on)
-    el.addEventListener('pause', on)
-    el.addEventListener('ratechange', on)
+    for (const el of els) {
+      el.addEventListener('play', on)
+      el.addEventListener('pause', on)
+      el.addEventListener('ratechange', on)
+    }
     return () => {
       unsub()
-      el.removeEventListener('play', on)
-      el.removeEventListener('pause', on)
-      el.removeEventListener('ratechange', on)
+      for (const el of els) {
+        el.removeEventListener('play', on)
+        el.removeEventListener('pause', on)
+        el.removeEventListener('ratechange', on)
+      }
     }
   }, [clock, video])
 
