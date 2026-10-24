@@ -1,9 +1,11 @@
 # Gaffer on AWS (N6a deployment, 22 Oct 2026)
 
-Public app: **http://13.210.196.109/** (desk: `/app`, health: `/api/health`). HTTP only, no domain.
+Public app: **https://gaffer-tactics.duckdns.org/** (desk: `/app`, health: `/api/health`); the old
+link **http://13.210.196.109/** keeps working over plain http (see "HTTPS" below).
 
-One EC2 instance in **ap-southeast-2 (Sydney)** runs one Docker container: the FastAPI API, the
-single analysis worker (OpenCV 5) and the built frontend. Bedrock (Nova 2 Lite via the global
+One EC2 instance in **ap-southeast-2 (Sydney)** runs two Docker containers: **Caddy** (TLS, ports 80
+and 443) in front of **gaffer**: the FastAPI API, the single analysis worker (OpenCV 5) and the
+built frontend. Bedrock (Nova 2 Lite via the global
 inference profile) is called from the container with the **instance role**; no access key exists
 on the instance or in the image. S3 holds the large files and the source tarball; CloudWatch holds
 the logs and two metrics.
@@ -11,8 +13,10 @@ the logs and two metrics.
 ```
 laptop ── git archive ──► S3 gaffer-demo-<acct>/src/        (source, per commit)
        ── aws s3 cp   ──► S3 gaffer-demo-<acct>/assets/     (replay clips, sample clip, model)
-EC2 m7i-flex.large ── deploy.sh: docker build ─► container "gaffer" (port 80 -> 8000)
-   ├─ start: assets from S3 -> /opt/gaffer/assets (EBS), demo seed -> event DB (once)
+EC2 m7i-flex.large ── deploy.sh: docker build ─► docker network "gaffer-net"
+   ├─ container "caddy"  (:80, :443; Let's Encrypt; certificates in /opt/gaffer/caddy on EBS)
+   │        └─ reverse proxy ─► container "gaffer" (:8000 on gaffer-net, no host port)
+   ├─ gaffer start: assets from S3 -> /opt/gaffer/assets (EBS), demo seed -> event DB (once)
    ├─ /opt/gaffer/outputs (EBS): events.sqlite3, uploads, alerts.jsonl, llm_calls.jsonl, traces
    ├─ Bedrock Converse via instance role (daily caps in config.yaml api.bedrock_daily)
    └─ CloudWatch /gaffer/app: container stdout (awslogs) + JSONL files (CloudWatch agent)
@@ -25,7 +29,8 @@ EC2 m7i-flex.large ── deploy.sh: docker build ─► container "gaffer" (por
 | EC2 instance | `i-0ed7553a2ab9a1d16` (`Name=gaffer`) | **m7i-flex.large** (2 vCPU Intel, 8 GiB), AL2023 x86_64 `ami-0ddbd63d0e3325a92`, subnet `subnet-090b2cd96603f2658` (2a), IMDSv2 required, hop limit 2, no key pair |
 | Root volume | `vol-0bb27f75edf65854d` | 30 GB gp3, encrypted, deleted with the instance |
 | Elastic IP | `13.210.196.109` (`eipalloc-047975f2cae632e36`) | attached to the instance |
-| Security group | `sg-04e763c223e8e3339` (`gaffer-web`) | inbound TCP 80 from anywhere only; no SSH (Session Manager instead) |
+| Security group | `sg-04e763c223e8e3339` (`gaffer-web`) | inbound TCP 80 and TCP 443 from anywhere (443 added 24 Oct, rule `sgr-044a73b130aed520c`; UDP 443 / HTTP/3 stays closed); no SSH (Session Manager instead) |
+| DNS name | `gaffer-tactics.duckdns.org` | DuckDNS (free) A record -> the Elastic IP `13.210.196.109`; the certificate is issued for this name only |
 | S3 bucket | `gaffer-demo-221039325928` | private (all 4 public-access blocks), SSE-S3, `assets/` 14 files 593.6 MB + `src/` tarballs |
 | Log group | `/gaffer/app` | 14-day retention; streams `app`, `llm_calls`, `analysis_trace`, `agent_trace`, `alerts`, `chat_trace`, `posture_trace` |
 | Metric filters | `analyses-completed`, `bedrock-calls` | metrics `Gaffer/AnalysesCompleted` (pattern `"analysis_done"`), `Gaffer/BedrockCalls` (one per `llm_calls.jsonl` record) |
@@ -77,6 +82,62 @@ Data transfer out: one full replay of the 12 clips downloads ~324 MB per viewer;
 | Instance reboot | container back by itself (`unless-stopped`) 5 s after boot; the approved alert, its 8 events, the demo seed (1 event, not duplicated) and the daily usage counter all kept; assets not downloaded again |
 | CloudWatch | all 7 streams arriving (agent_trace only when that file exists); `AnalysesCompleted` = 2, `BedrockCalls` = 51 for 22 Oct, equal to the server's own counter |
 
+## HTTPS (24 Oct): Caddy in front of the app
+
+**What runs.** `deploy/ec2/deploy.sh` starts two containers on the docker network `gaffer-net`:
+
+| Container | Image | Ports | State on the EBS volume |
+|---|---|---|---|
+| `caddy` | `public.ecr.aws/docker/library/caddy:2` (Apache 2.0) | host **80** and **443** | `/opt/gaffer/caddy/data` (certificates, ACME account), `/opt/gaffer/caddy/config`, `/opt/gaffer/caddy/Caddyfile` (copied from `deploy/ec2/Caddyfile` at every deploy) |
+| `gaffer` | built from `deploy/Dockerfile` | none published (8000 on `gaffer-net` only) | `/opt/gaffer/outputs`, `/opt/gaffer/assets` (as before) |
+
+Both use `--restart unless-stopped`; the certificate survives redeploys and reboots because it is
+on the volume (Let's Encrypt limits duplicate certificates: do not delete `/opt/gaffer/caddy/data`
+without a reason).
+
+**Behaviour** (`deploy/ec2/Caddyfile`, validated with Caddy v2.11.7 and tested locally with the real
+Gaffer image behind it):
+
+- `https://gaffer-tactics.duckdns.org/`: Let's Encrypt certificate, obtained automatically at the
+  first start (HTTP-01 on port 80, TLS-ALPN-01 on 443) and renewed by Caddy itself.
+- `http://gaffer-tactics.duckdns.org/...`: `308` redirect to the same path on https (Caddy does this
+  for any name it manages).
+- `http://<any other host>`: the bare IP `http://13.210.196.109/` and `127.0.0.1` (the health check
+  in `deploy.sh`) are served over plain http, not redirected. There is no HSTS header, so a browser
+  that has seen the https site does not refuse plain http (this also keeps the roll-back possible).
+- Uploads: no request-body limit in the proxy (the app enforces `api.uploads.max_bytes`, 500 MB; a
+  520 MB request passed through the test proxy), `read_body` timeout 30 min, response-header timeout
+  15 min, idle 10 min.
+- Client address: Caddy overwrites `X-Forwarded-For` / `-Proto` with what it saw (a spoofed header
+  from a visitor is replaced). The app trusts them **only** when started with
+  `GAFFER_TRUST_PROXY=1` (`deploy/start.sh`: `--proxy-headers --forwarded-allow-ips=*`, safe because
+  the app publishes no host port and Caddy is the only peer on `gaffer-net`). That gives the chat
+  allowance a real client address when the visitor cookie is missing and makes the cookie `Secure`
+  on https. With `plain` the old `--no-proxy-headers` applies.
+- Logs: `docker logs caddy` and the CloudWatch stream `/gaffer/app` -> `caddy`.
+
+**Roll back to plain http** (no Caddy, `gaffer` publishes port 80 again, as on 22 Oct). On the
+instance, as root (the browser shell or `deploy\aws\ssm_run.py`), with the same source tarball:
+
+```sh
+SHA=<sha>; B=gaffer-demo-221039325928
+aws s3 cp --region ap-southeast-2 s3://$B/src/gaffer-$SHA.tar.gz /tmp/src.tar.gz
+rm -rf /tmp/gb && mkdir /tmp/gb && tar -xzf /tmp/src.tar.gz -C /tmp/gb deploy/ec2
+sh /tmp/gb/deploy/ec2/deploy.sh $B src/gaffer-$SHA.tar.gz plain     # ~1 min with the Docker cache
+```
+
+The image is reused from the cache; the Caddy certificate stays on the volume for the next try. The
+443 rule can stay in the security group (nothing listens there in `plain` mode). To go back to
+HTTPS run the same lines without `plain`.
+
+**If the certificate is not issued** (`deploy.sh` exits 2 with "HTTPS NOT READY"; plain http still
+works): check that `nslookup gaffer-tactics.duckdns.org` returns `13.210.196.109`, that the security
+group has TCP 80 and 443 open, and `docker logs caddy` (Let's Encrypt errors are explicit). The
+DuckDNS record is not managed by Caddy: if the Elastic IP ever changes, update it on duckdns.org.
+
+**Cost:** Caddy, Let's Encrypt and DuckDNS are free; the container adds about 40 MB of RAM. The
+443 rule is free.
+
 ## Redeploy after a `git pull`
 
 The repo is private, so the instance never talks to GitHub: the laptop uploads a tarball of one
@@ -100,8 +161,9 @@ rm -rf /tmp/gb && mkdir /tmp/gb && tar -xzf /tmp/src.tar.gz -C /tmp/gb deploy/ec
 sh /tmp/gb/deploy/ec2/deploy.sh $B src/gaffer-$SHA.tar.gz
 ```
 
-`deploy.sh` unpacks the source, builds the image natively, replaces the container and waits for
-`/api/health` (prints `up: … answered N s after start`, or the last 40 log lines and exit 1). The
+`deploy.sh` unpacks the source, builds the image natively, replaces both containers (`gaffer`, `caddy`) and waits for
+`/api/health` through Caddy (prints `up: … answered N s after start`, or the last 40 log lines and exit 1), then for
+the HTTPS answer (`https: … answered N s after start`; exit 2 if the certificate is not ready after 3 min). The
 event DB, uploads and logs under `/opt/gaffer/outputs` are untouched; assets already on disk are
 not downloaded again. Expect ~1 min with the Docker cache, a few minutes without.
 
@@ -111,7 +173,7 @@ New instance from scratch: launch as in the table above, then run
 ## Second sample clip (24 Oct): files that must reach S3
 
 The upload page offers two samples (`api.sample_clip` = TeamTrack, `api.more_sample_clips` = Zenodo).
-The TeamTrack sample is in the bucket, but as the old 218 MB file: **replace it with the 32 MB re-encode** (same key, so the container's size check fetches the new file at the next start; commands below). The Zenodo one is new (1920x1080, 20.6 MB, made by
+Both files were uploaded on 24 Oct (the TeamTrack sample replaced the old 218 MB object with the 32 MB re-encode under the same key, so the container's size check fetches the new file at the next start). The Zenodo one is new (1920x1080, 20.6 MB, made by
 `py scripts\make_sample_clip.py --source zenodo`). The container fetches every object under
 `assets/` into the same path under `/app` at start, so the key must be the repo-relative path:
 
@@ -125,7 +187,7 @@ aws s3 ls s3://gaffer-demo-221039325928/assets/data/sample_clips/ --region ap-so
 Then redeploy the code (the new `/api/samples` endpoints and the low-resolution note are code):
 the "Redeploy after a `git pull`" steps above. `deploy.sh` recreates the container and the start
 script downloads the new file into `/opt/gaffer/assets/sample_clips`. Check
-`curl http://13.210.196.109/api/samples` lists both ids.
+`curl https://gaffer-tactics.duckdns.org/api/samples` lists both ids.
 
 ## Stop to save money, start again
 

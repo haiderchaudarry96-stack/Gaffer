@@ -1,0 +1,42 @@
+# Caddy in front of Gaffer on the EC2 instance (deploy/DEPLOY_AWS.md, "HTTPS").
+# Caddy 2 (Apache 2.0), image public.ecr.aws/docker/library/caddy:2, listens on 80 and 443 and
+# reverse-proxies to the "gaffer" container on the docker network "gaffer-net" (port 8000; the app
+# publishes no host port). Certificates (Let's Encrypt, automatic) are kept in /data, which deploy.sh
+# mounts from /opt/gaffer/caddy/data on the EBS volume, so a redeploy never asks for a new one.
+#
+#   https://gaffer-tactics.duckdns.org   Let's Encrypt certificate, HTTP/1.1 + HTTP/2
+#   http://gaffer-tactics.duckdns.org    308 redirect to https (Caddy does this by itself for a name it manages)
+#   http://<anything else> (the bare IP, 127.0.0.1 for the health check)   plain http, no redirect:
+#                                        the old link http://13.210.196.109/ keeps working
+#
+# No HSTS header on purpose: a browser that has seen HSTS refuses plain http for the name, and
+# "roll back to plain http" (DEPLOY_AWS.md) must stay possible.
+{
+	# certificate renewals and the ACME challenge need nothing else; no e-mail is set
+	servers {
+		timeouts {
+			read_header 1m
+			read_body 30m # a 500 MB upload (api.uploads.max_bytes) on a slow uplink
+			idle 10m
+		}
+	}
+}
+
+(gaffer) {
+	# No request_body limit here: the app enforces api.uploads.max_bytes (500 MB) and answers
+	# with a coach-readable message; a lower limit in the proxy would only produce a bare 413.
+	reverse_proxy gaffer:8000 {
+		transport http {
+			dial_timeout 10s
+			response_header_timeout 15m # the upload request returns after the file is stored and probed
+		}
+	}
+}
+
+gaffer-tactics.duckdns.org {
+	import gaffer
+}
+
+http:// {
+	import gaffer
+}
