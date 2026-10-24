@@ -1,6 +1,6 @@
 # Devpost submission text (draft)
 
-Copy each section into the matching Devpost field. Plain English, no hype. Numbers are from the files named in [`TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md) and cross-checked in [`FINAL_AUDIT.md`](FINAL_AUDIT.md). Placeholders: `TBD-URL` (final public link), `TBD-VIDEO` (demo video link), `TBD-REPO` (public repository link).
+Copy each section into the matching Devpost field. Plain English, no hype. Numbers are from the files named in [`TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md) and cross-checked in [`FINAL_AUDIT.md`](FINAL_AUDIT.md). Placeholders: `TBD-VIDEO` (demo video link), `TBD-REPO` (public repository link).
 
 ## Project name
 
@@ -77,7 +77,7 @@ OpenCV 5.0.0 (`cv2.dnn`, `kmeans`, `findHomography`, `findTransformECC`, `phaseC
 
 ## Try it out
 
-- Live app: http://13.210.196.109/ (final link: TBD-URL). If your browser switches to https, type `http://` yourself; if it still does not open, see the demo video.
+- Live app: https://gaffer-tactics.duckdns.org/ (fallback, plain http: http://13.210.196.109/). If neither opens, see the demo video.
 - Demo video: TBD-VIDEO
 - Code: TBD-REPO (the repository is private until the author makes it public; see `FINAL_AUDIT.md`)
 - Start with: open the app → *Live analysis*; or *Upload your own video* → try the two sample clips. Each sample has a plain Download link if you would rather test with the file.

@@ -223,6 +223,30 @@ claim("REPORT §7.6", "referee-labelled detections, new sample", SC, "rows/crf16
 claim("REPORT §7.6", "referee-labelled detections, CRF 23 copy", SC, "rows/crf23/label_counts/referee", 75, 1, 0)
 
 
+# --- 24 Oct: measured on EC2 after the HTTPS redeploy (public URL, normal upload path)
+ET, EU = "outputs/sample_timing_ec2.json", "outputs/ec2_upload_6min_24oct.json"
+for i, name in ((0, "TeamTrack"), (1, "Zenodo")):
+    tot, pc, an, sv = ((23.5, 3.4, 20.2, 0.55), (23.0, 2.9, 20.1, 0.56))[i]
+    claim("REPORT §6, §7.6, DEPLOY", f"EC2 {name} sample total s", ET, f"samples/{i}/total_s", tot, 1, 1)
+    claim("REPORT §6", f"EC2 {name} sample pitch check s", ET, f"samples/{i}/pitch_check_s", pc, 1, 1)
+    claim("REPORT §6", f"EC2 {name} sample analysis s", ET, f"samples/{i}/analysis_s", an, 1, 1)
+    claim("REPORT §6", f"EC2 {name} sample s per video s", ET, f"samples/{i}/perception/s_per_video_s", sv, 1, 2)
+claim("REPORT §6, §10", "EC2 6-min upload server wall s", EU, "progress_detail/elapsed_s", 1679.9, 1, 1)
+claim("REPORT §6", "EC2 6-min upload detection stage s", EU, "progress_detail/stage_timings_s/detecting", 403.2, 1, 1)
+claim("REPORT §6", "EC2 6-min upload agent stage s", EU, "progress_detail/stage_timings_s/agent", 1272.2, 1, 1)
+claim("REPORT §4.5, §6", "EC2 6-min upload s per video s", EU, "perception/s_per_video_s", 1.13, 1, 2)
+claim("REPORT §4.5", "EC2 6-min upload geometry s", EU, "perception/timing_s/geometry", 148.1, 1, 1)
+claim("REPORT §6", "EC2 6-min upload OpenCV re-analysis s", EU, "summary/opencv_reanalysis_s", 1064.9, 1, 1)
+claim("REPORT §6", "EC2 6-min upload candidates", EU, "summary/candidates", 8, 1, 0)
+claim("REPORT §6", "EC2 6-min upload confirmed", EU, "summary/decisions/confirmed", 2, 1, 0)
+claim("REPORT §6", "EC2 6-min upload rejected", EU, "summary/decisions/rejected", 3, 1, 0)
+claim("REPORT §6", "EC2 6-min upload uncertain", EU, "summary/decisions/uncertain", 3, 1, 0)
+claim("REPORT §6", "EC2 6-min upload Bedrock calls", EU, "summary/bedrock/calls", 49, 1, 0)
+claim("REPORT §6", "EC2 6-min upload Bedrock USD", EU, "summary/bedrock/cost_usd", 0.052, 1, 3)
+claim("REPORT §6", "EC2 6-min upload posture calls", EU, "summary/posture/calls", 2, 1, 0)
+claim("REPORT §6", "EC2 6-min upload posture USD", EU, "summary/posture/cost_usd", 0.0031, 1, 4)
+
+
 def main() -> int:
     rows, bad = [], 0
     cache: dict[str, Any] = {}

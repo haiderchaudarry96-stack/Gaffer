@@ -2,7 +2,7 @@
 
 Written for: the author, to record in his own voice. Target length **4:45** (hard limit 5:00 for Devpost). About 650 spoken words at an easy 140 words a minute. No music, no copyrighted material, no faces: the footage is TeamTrack (MIT, top-down drone, players are dots), the second clip is Zenodo (CC BY 4.0, top-down).
 
-**Before you record:** run the app locally with Bedrock off (`py scripts\serve_no_bedrock.py --port 8000 --out outputs\api_no_bedrock`) or use the live site. The replay and the 16:30 alert are the same either way. Use the live site (http://13.210.196.109/, final link TBD-URL) if you want the chat answer to come from Bedrock.
+**Before you record:** run the app locally with Bedrock off (`py scripts\serve_no_bedrock.py --port 8000 --out outputs\api_no_bedrock`) or use the live site. The replay and the 16:30 alert are the same either way. Use the live site (https://gaffer-tactics.duckdns.org/, fallback http://13.210.196.109/) if you want the chat answer to come from Bedrock.
 
 Name and school are taken from the README footer ("Haider Sultan, FAST-NUCES, Pakistan"). Change them in section 1 if that is not how you want to say them.
 

@@ -138,6 +138,18 @@ DuckDNS record is not managed by Caddy: if the Elastic IP ever changes, update i
 **Cost:** Caddy, Let's Encrypt and DuckDNS are free; the container adds about 40 MB of RAM. The
 443 rule is free.
 
+## Observed on the live server after the HTTPS redeploy (24 Oct)
+
+| Check | Result |
+|---|---|
+| `deploy.sh` (revision `13c69e4`) | source unpacked 1 s, image build 15 s (cache), app up 25 s, **https answering 30 s** after the start (certificate from Let's Encrypt, issuer YE1, valid 24 Oct 2026 to 22 Jan 2027) |
+| `https://gaffer-tactics.duckdns.org/`, `/app`, `/api/health` | 200; health `status ok`, OpenCV `5.0.0`, fingerprint `ca4ff9bbf7b01c6c`, `credentials: iam-role`, both samples listed (32,340,674 and 20,614,189 bytes), 12 replay clips; browser check at 1440 and 390 px: no console errors |
+| `http://gaffer-tactics.duckdns.org/app` | 308 to `https://gaffer-tactics.duckdns.org/app` |
+| `http://13.210.196.109/` and its `/api/health` | 200 over plain http (unchanged link) |
+| Sample clips (public HTTPS, normal path) | TeamTrack 23.5 s, Zenodo 23.0 s end to end (`outputs/sample_timing_ec2.json`); 2 Bedrock calls, $0.0017 |
+| 6-min 4K upload (file from 22 Oct already on the server, posted from the instance to the public URL; Nova arm) | done, 1,679.9 s server wall (detection stage 403.2 s, agent 1,272.2 s), 8 candidates: 2 confirmed, 3 rejected, 3 uncertain; 49 Bedrock calls, $0.052 (`outputs/ec2_upload_6min_24oct.json`) |
+| CloudWatch `/gaffer/app` | new `caddy` stream; `app`, `llm_calls`, `analysis_trace` written; metrics `BedrockCalls` 51, `AnalysesCompleted` 3 = the server's own counter |
+
 ## Redeploy after a `git pull`
 
 The repo is private, so the instance never talks to GitHub: the laptop uploads a tarball of one

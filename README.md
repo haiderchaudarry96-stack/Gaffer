@@ -6,7 +6,7 @@
 
 Built for the **OpenCV AI Competition 2026, powered by AWS**. OpenCV 5.0.0 (`opencv-contrib-python==5.0.0.93`) does the vision work, an Amazon Bedrock agent (Nova 2 Lite) decides what to look at next, and the coach approves every alert.
 
-**Live app: http://13.210.196.109/** (final public link: TBD-URL). If your browser switches to https, type `http://` yourself; if it still does not open, see the demo video (link: TBD-VIDEO).
+**Live app: https://gaffer-tactics.duckdns.org/** (fallback, plain http: http://13.210.196.109/). If neither opens, see the demo video (link: TBD-VIDEO).
 Judges: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [Agentic Vision Award evidence](docs/TECHNICAL_REPORT.md#agentic-vision-award-evidence) · [`docs/DEVPOST.md`](docs/DEVPOST.md) · [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)
 
 ## What Gaffer does in 30 seconds

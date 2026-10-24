@@ -6,8 +6,8 @@ Written by the overnight documentation session; updated the same morning (logo a
 
 1. **The repository is private.** Devpost judges must be able to see the code: **make the repository public, or give the judges access, before submitting.** Nothing in this session changed that. README, DEVPOST and the report link to files by relative path, which only works once the repo is readable (`TBD-REPO`).
 2. **Author name and school.** The README footer says "Haider Sultan · FAST-NUCES, Pakistan"; `docs/DEMO_SCRIPT.md` section 1 uses it, and `git config user.name` agrees. The account e-mail on this machine carries a different name, so please confirm the spelling you want said in the video.
-3. **Placeholders** (section 7): the final public link (`TBD-URL`), the demo video link (`TBD-VIDEO`), the repository link (`TBD-REPO`) and the EC2 timings of the new build (`TBD-EC2`).
-4. **Nothing was deployed.** EC2 still runs the 22 Oct revision. To get the Zenodo sample, the 32 MB TeamTrack sample, the low-resolution note, the sample download links, the new logo and the A4 speed-up onto the server: commit, `git archive` and upload the tarball, upload the two sample clips (`aws s3 cp`, commands in `deploy/DEPLOY_AWS.md` "Second sample clip"), redeploy. Until then the live site shows the old logo and only the 218 MB TeamTrack sample.
+3. **Placeholders** (section 7): only the demo video link (`TBD-VIDEO`) and the repository link (`TBD-REPO`) are left. `TBD-URL` and `TBD-EC2` were filled on 24 Oct after the deploy.
+4. **Deployed on 24 Oct (afternoon)** at revision `13c69e4`: https://gaffer-tactics.duckdns.org/ (Let's Encrypt, Caddy; the plain-http IP link still works), both samples in S3, the new logo, the 32 MB TeamTrack sample, the A4 speed-up. Not yet on the server: the social preview image and its `<meta>` tags (`og-image.png`, `web/index.html`; they need one more commit and redeploy). The two alerts from the 6-minute test upload (`alr_up_de899ff9f46a_evt_001` / `_002`) are pending in the live alert store.
 5. **Budget.** `gaffer-budget` was still $10/month at the last record (22 Oct); the server alone crosses it in about 3 days. Raising it to $40 is a console action (`deploy/DEPLOY_AWS.md`).
 6. The AWS **account id** (221039325928) appears in docs through the bucket name. It is an identifier, not a credential, but it will be public with the repo.
 
@@ -132,7 +132,9 @@ Checked with `curl -L` on 24 Oct:
 | https://github.com/opencv/opencv_zoo (and the YOLOX model folder) | 200 |
 | https://www.kaggle.com/datasets/atomscott/teamtrack | 200 (the page loads; downloading needs a Kaggle login) |
 | https://opencv26.devpost.com | 200 |
-| http://13.210.196.109/api/health | 200 (live server up on 24 Oct) |
+| https://gaffer-tactics.duckdns.org/, `/app`, `/api/health` | 200, certificate verified (Let's Encrypt, valid to 22 Jan 2027), checked 24 Oct after the deploy |
+| http://gaffer-tactics.duckdns.org/app | 308 to https |
+| http://13.210.196.109/ and `/api/health` | 200 over plain http (fallback link) |
 | https://www.linkedin.com/in/haider-sultan-32209640a | **999 (LinkedIn blocks scripts): unverified** |
 | demo video, final public URL, repository | **placeholders, not yet existing** |
 
@@ -149,16 +151,16 @@ Run on 24 Oct (re-run in the morning after the logo, `scripts/` and doc changes;
 | `cd web; $env:VITE_API_URL="/"; npm run build` | built |
 | rules fingerprint (`gaffer.api.jobs.rules_fingerprint`) | `ca4ff9bbf7b01c6c`, unchanged |
 | `git diff --check` | only LF/CRLF notes, no whitespace errors |
-| `scripts/audit_numbers.py` | 182 claims, 0 not ok (5.1) |
+| `scripts/audit_numbers.py` | 204 claims, 0 not ok (5.1) |
 
 New tests this session: `tests/test_resolution.py` (4), `test_two_samples_list_download_and_pick_by_id`, a resolution assertion in the upload end-to-end test, `test_drift_coarse_to_fine_…`, and 1 web test (sample list and result `resolution`).
 
 
 ## 5. Every number in README / TECHNICAL_REPORT / DEVPOST against its source
 
-### 5.1 Read from the JSON source by `scripts/audit_numbers.py` (182 claims, 0 not ok)
+### 5.1 Read from the JSON source by `scripts/audit_numbers.py` (204 claims, 0 not ok)
 
-Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md`). 24 Oct morning: 150 → 182 claims (new: the demo-window upload re-check, TeamTrack eval2 with `coarse_to_fine`, the sample re-encode).
+Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md`). 24 Oct: 150 → 182 claims in the morning (demo-window upload re-check, `eval2` with `coarse_to_fine`, sample re-encode), → 204 after the deploy (EC2 sample timings and the EC2 6-minute upload).
 
 | used in | claim | stated | source | source says | check |
 |---|---|---|---|---|---|
@@ -344,6 +346,28 @@ Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md
 | REPORT §7.6 | referee-labelled detections, old file | 180 | `outputs/sample_clip_reencode.json` `rows/old/label_counts/referee` | 180.0 | ok |
 | REPORT §7.6 | referee-labelled detections, new sample | 124 | `outputs/sample_clip_reencode.json` `rows/crf16/label_counts/referee` | 124.0 | ok |
 | REPORT §7.6 | referee-labelled detections, CRF 23 copy | 75 | `outputs/sample_clip_reencode.json` `rows/crf23/label_counts/referee` | 75.0 | ok |
+| REPORT §6, §7.6, DEPLOY | EC2 TeamTrack sample total s | 23.5 | `outputs/sample_timing_ec2.json` `samples/0/total_s` | 23.5 | ok |
+| REPORT §6 | EC2 TeamTrack sample pitch check s | 3.4 | `outputs/sample_timing_ec2.json` `samples/0/pitch_check_s` | 3.4 | ok |
+| REPORT §6 | EC2 TeamTrack sample analysis s | 20.2 | `outputs/sample_timing_ec2.json` `samples/0/analysis_s` | 20.2 | ok |
+| REPORT §6 | EC2 TeamTrack sample s per video s | 0.55 | `outputs/sample_timing_ec2.json` `samples/0/perception/s_per_video_s` | 0.55 | ok |
+| REPORT §6, §7.6, DEPLOY | EC2 Zenodo sample total s | 23 | `outputs/sample_timing_ec2.json` `samples/1/total_s` | 23.0 | ok |
+| REPORT §6 | EC2 Zenodo sample pitch check s | 2.9 | `outputs/sample_timing_ec2.json` `samples/1/pitch_check_s` | 2.9 | ok |
+| REPORT §6 | EC2 Zenodo sample analysis s | 20.1 | `outputs/sample_timing_ec2.json` `samples/1/analysis_s` | 20.1 | ok |
+| REPORT §6 | EC2 Zenodo sample s per video s | 0.56 | `outputs/sample_timing_ec2.json` `samples/1/perception/s_per_video_s` | 0.56 | ok |
+| REPORT §6, §10 | EC2 6-min upload server wall s | 1679.9 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/elapsed_s` | 1679.9 | ok |
+| REPORT §6 | EC2 6-min upload detection stage s | 403.2 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/stage_timings_s/detecting` | 403.2 | ok |
+| REPORT §6 | EC2 6-min upload agent stage s | 1272.2 | `outputs/ec2_upload_6min_24oct.json` `progress_detail/stage_timings_s/agent` | 1272.2 | ok |
+| REPORT §4.5, §6 | EC2 6-min upload s per video s | 1.13 | `outputs/ec2_upload_6min_24oct.json` `perception/s_per_video_s` | 1.13 | ok |
+| REPORT §4.5 | EC2 6-min upload geometry s | 148.1 | `outputs/ec2_upload_6min_24oct.json` `perception/timing_s/geometry` | 148.1 | ok |
+| REPORT §6 | EC2 6-min upload OpenCV re-analysis s | 1064.9 | `outputs/ec2_upload_6min_24oct.json` `summary/opencv_reanalysis_s` | 1064.9 | ok |
+| REPORT §6 | EC2 6-min upload candidates | 8 | `outputs/ec2_upload_6min_24oct.json` `summary/candidates` | 8.0 | ok |
+| REPORT §6 | EC2 6-min upload confirmed | 2 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/confirmed` | 2.0 | ok |
+| REPORT §6 | EC2 6-min upload rejected | 3 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/rejected` | 3.0 | ok |
+| REPORT §6 | EC2 6-min upload uncertain | 3 | `outputs/ec2_upload_6min_24oct.json` `summary/decisions/uncertain` | 3.0 | ok |
+| REPORT §6 | EC2 6-min upload Bedrock calls | 49 | `outputs/ec2_upload_6min_24oct.json` `summary/bedrock/calls` | 49.0 | ok |
+| REPORT §6 | EC2 6-min upload Bedrock USD | 0.052 | `outputs/ec2_upload_6min_24oct.json` `summary/bedrock/cost_usd` | 0.052 | ok |
+| REPORT §6 | EC2 6-min upload posture calls | 2 | `outputs/ec2_upload_6min_24oct.json` `summary/posture/calls` | 2.0 | ok |
+| REPORT §6 | EC2 6-min upload posture USD | 0.0031 | `outputs/ec2_upload_6min_24oct.json` `summary/posture/cost_usd` | 0.0031 | ok |
 
 
 ### 5.2 Read by hand from prose records (no JSON to compare)
@@ -380,24 +404,22 @@ Re-run with `py scriptsudit_numbers.py` (writes `outputs/final_audit_numbers.md
 
 | placeholder | meaning | where |
 |---|---|---|
-| `TBD-EC2` | a timing or behaviour that has to be measured on EC2 after the redeploy | `docs/TECHNICAL_REPORT.md:5`, `docs/TECHNICAL_REPORT.md:91`, `docs/TECHNICAL_REPORT.md:158`, `docs/TECHNICAL_REPORT.md:227`, `docs/TECHNICAL_REPORT.md:253` |
 | `TBD-REPO` | link of the public repository once the author makes it public | `docs/DEVPOST.md:3`, `docs/DEVPOST.md:82` |
-| `TBD-URL` | final public link of the app (until then http://13.210.196.109/ is used) | `README.md:9`, `docs/TECHNICAL_REPORT.md:149`, `docs/DEVPOST.md:3`, `docs/DEVPOST.md:80`, `docs/DEMO_SCRIPT.md:5` |
 | `TBD-VIDEO` | link of the demo video once it is recorded and uploaded | `README.md:9`, `docs/DEVPOST.md:3`, `docs/DEVPOST.md:81`, `docs/DEMO_SCRIPT.md:102` |
 
 ## 8. Things I was unsure about
 
 - **Author name** (section 0).
 - **The "421 s" geometry claim in the task description.** It comes from `outputs/eval_zenodo_final.json`, which was measured while the laptop was busy. The same baseline on an idle laptop takes 110 s of geometry (134 s wall); the report says so. The 3.4× speed-up is idle laptop to idle laptop.
-- **A4 (`drift.coarse_to_fine`) re-checked on 24 Oct (morning)** on what the overnight run had not covered: the demo window as one 4K upload (same 8 candidates, White 16:30 and Blue both still confirmed, 73 % of 11 and 75 % of 12 windows; 3.06 → 2.75 s per video second, one candidate moved from uncertain to rejected, cause not investigated) and TeamTrack `eval2` (F1, teams, IDF1 identical; White formation 93.5 → 93.6 %; pipeline candidates 6 → 4, both oracle changes still matched). Decision: stays ON. Neither upload was a controlled benchmark. Still not deployed: EC2 effect `TBD-EC2`.
+- **A4 (`drift.coarse_to_fine`) re-checked on 24 Oct (morning)** on what the overnight run had not covered: the demo window as one 4K upload (same 8 candidates, White 16:30 and Blue both still confirmed, 73 % of 11 and 75 % of 12 windows; 3.06 → 2.75 s per video second, one candidate moved from uncertain to rejected, cause not investigated) and TeamTrack `eval2` (F1, teams, IDF1 identical; White formation 93.5 → 93.6 %; pipeline candidates 6 → 4, both oracle changes still matched). Decision: stays ON. Neither upload was a controlled benchmark. Deployed the same afternoon: on EC2 the 6-minute upload's detection stage took 403.2 s (1.13 s per video second, geometry 148.1 s); not an A/B of the switch alone, since the 22 Oct build also lacked the self-calibration.
 - **Ablation numbers.** The task asked for a note that the ablation was taken with `crop_exclude_lines` on. That is true for the first set (`eval_zenodo_no_*.json`), but a second set under the final config exists (`eval_zenodo_fno_*.json`); the report quotes both and says which is which.
 - **Zenodo corner error** differs between runs of the same code (worst corner 1.74, 1.4 and 1.22 m in three runs); the report quotes the first two.
 - **Screenshot 07** shows the chat on a server with Bedrock off (an "unavailable" message), because no real Bedrock call was allowed. The live site answers from stored results.
 - **Zenodo sample team names**: the app labels the two teams "White" and "Blue" (the TeamTrack defaults) even on the Zenodo clip, whose kits are red-and-white and white.
 - **`web/scripts/upload-ux.mjs`** (committed earlier) still mocks the legacy `GET /api/sample`, which the server keeps for compatibility; the page now reads `/api/samples`. Its file-upload checks are unaffected; its sample path is not exercised.
 - **Low-resolution threshold** 12.0 px/m: midway between 9.3 (720p copy) and about 14.7 (1080p); the two 1080p samples measure 14.0 and 14.7. A 1080p video in which the pitch does not fill the frame width would be flagged: intended, but "1080p" alone does not guarantee no note.
-- **EC2 timings** of anything after 22 Oct are not measured (`TBD-EC2`).
-- **Logo:** option 3 ("Tactics board, checked") is applied: header (landing and `/app`), footer, favicon (SVG + 16/32 PNG), 180 px apple-touch icon, README top, screenshots 01–08 retaken. The other two options exist only in `docs/logo_options.png`. There was no social/preview image before and none was added (a share image needs an absolute URL, so it waits for the final public link, `TBD-URL`). The "favicon in a tab" screenshots (`web/screenshots/logo/favicon-tab-*.png`) are a composite: headless Chromium has no tab strip, so they show the page's real title next to the real favicon file at 16 / 32 / 64 px.
+- **EC2 timings** were measured on 24 Oct after the redeploy (sections 4 and 5.1: `outputs/sample_timing_ec2.json`, `outputs/ec2_upload_6min_24oct.json`). The 22 Oct comparison values (12.7 s sample, 1,892.9 s upload) are read from the CloudWatch `analysis_done` lines and `RECORD.md`, not from a JSON file. The 6-minute test ran with Bedrock on (Nova arm), so its decisions (2 confirmed, 3 rejected, 3 uncertain) differ from the rules-arm laptop run (2 / 1 / 5) only in what the agent's re-analysis could read inside the frozen budget; not investigated further.
+- **Logo:** option 3 ("Tactics board, checked") is applied: header (landing and `/app`), footer, favicon (SVG + 16/32 PNG), 180 px apple-touch icon, README top, screenshots 01–08 retaken. The other two options exist only in `docs/logo_options.png`. The social preview image (`web/public/og-image.png`, 1200 x 630, `web/scripts/render-og.mjs`) and its Open Graph / Twitter tags with the absolute URL were added on 24 Oct after the deploy; they are not on the server until the next redeploy. The landing page's product screenshot `web/public/product/app-desk.jpg` (17 Oct) still shows the old logo in its header; it was not retaken. The "favicon in a tab" screenshots (`web/screenshots/logo/favicon-tab-*.png`) are a composite: headless Chromium has no tab strip, so they show the page's real title next to the real favicon file at 16 / 32 / 64 px.
 - The LinkedIn link is unverified (HTTP 999 to scripts).
 - **TeamTrack sample re-encode:** the 218.4 MB file was replaced by a 32.3 MB H.264 CRF 16 copy only after the analysis matched (same pitch, formations, 0 candidates; median position difference 0.03 m). Referee-labelled detections are 124 against 180, a difference that does not change any formation (`outputs/sample_clip_reencode.json`). The old file is kept locally as `data/sample_clips/teamtrack_top_sample_1080p.old-218MB.mp4` (gitignored); delete it when you like. The S3 object is not replaced yet (command in `deploy/DEPLOY_AWS.md`).
 - **Sample timings** (20.6 s and 18.5 s) are from the idle overnight run with the old TeamTrack file; a morning re-timing ran on a busy laptop (70.3 s and 64.1 s, the unchanged Zenodo sample included) and is kept in `outputs/sample_timing_busy_24oct_morning.json` but not quoted.
