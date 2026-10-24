@@ -32,9 +32,13 @@ Judges: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [Agentic Visio
 
 ## Architecture
 
-![Gaffer architecture](docs/architecture.png)
+![Gaffer architecture](docs/architecture_light.png)
 
-Source: [`docs/architecture.mmd`](docs/architecture.mmd). Agent flow in detail: [`docs/agent_workflow.png`](docs/agent_workflow.png) and [`docs/AGENT_DESIGN.md`](docs/AGENT_DESIGN.md).
+Dark versions for slides and video: [`docs/architecture.png`](docs/architecture.png), [`docs/agent_workflow.png`](docs/agent_workflow.png). Editable SVG sources and the generator: [`docs/diagrams/`](docs/diagrams/) (`node web/scripts/render-diagrams.mjs`). Agent flow in detail:
+
+![Gaffer agent workflow](docs/agent_workflow_light.png)
+
+Design notes: [`docs/AGENT_DESIGN.md`](docs/AGENT_DESIGN.md).
 
 The one rule that shapes the code: **query, never stuff.** The model never receives pixels or thousands of coordinates. It calls tools that return small JSON, and every claim in an alert cites a tool result by reference.
 

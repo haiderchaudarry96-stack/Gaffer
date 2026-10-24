@@ -158,7 +158,7 @@ tests/                    # pytest (LLM always mocked)
 data/                     # teamtrack/ (videos gitignored), synthetic/, labels/, data/README.md with licences
 outputs/                  # generated artefacts, llm_calls.jsonl, agent_trace.jsonl, alerts.jsonl
 deploy/                   # Dockerfile (one process, builds web/), start.sh, ec2/ (bootstrap, deploy, CloudWatch agent), aws/ (IAM policies, SSM helper), DEPLOY_AWS.md
-docs/                     # PLAN, DATA_CONTRACT, DATA_SOURCES, FAILURE_LOG, TECHNICAL_REPORT, architecture.png, demo_script
+docs/                     # PLAN, DATA_CONTRACT, DATA_SOURCES, FAILURE_LOG, TECHNICAL_REPORT, architecture[_light].png, agent_workflow[_light].png, diagrams/ (SVG sources + generator), demo_script
 config.yaml               # every threshold, window size, template, model id, region
 requirements.lock         # exact pinned versions
 ```
@@ -385,6 +385,8 @@ These go into the technical report, README and video. Re-measure at the end of e
 ---
 
 ## Current status
+
+**Diagram session (24 Oct, late; nothing deployed, no Bedrock/AWS call):** `docs/architecture.png` and `docs/agent_workflow.png` redesigned as hand-made SVG in the site's brand tokens (dark for Devpost/video, `_light` for README/report/AGENT_DESIGN), 3840 x 2160 (Playwright at 2x). Sources: `docs/diagrams/diagrams.mjs` (one layout, two themes), generated `docs/diagrams/*.svg` (real text, grouped, no raster, Figma-importable), `node web/scripts/render-diagrams.mjs` (also reports any text that overflows its box). Old Mermaid sources: `docs/diagrams/legacy/`. Architecture shows Caddy HTTPS, EC2, the Gaffer container, Bedrock, S3, CloudWatch, EBS (24 h raw-video retention), IAM role and the `/api/runtime` card; the workflow's lime loop is trace (a) (52 % -> 6 fps -> 91 % of 11). Icons are own line drawings, not the official AWS icon set.
 
 **AWS-truth session (24 Oct evening; RECORD.md 24 Oct "Truth about AWS", nothing deployed, no AWS change, no Bedrock call):** landing copy now says what is deployed (Tech cards, "Is it live?", cost, privacy FAQ, Limits chip "Long clips take a while (a 6 min clip took 28 min on the demo server)"); new `GET /api/runtime` (+ `runtime` in `/api/health`; `api/runtime.py`: EC2 type / zone / region via IMDSv2 only, Bedrock model + the app's own counters incl. `last_call_utc`, OpenCV, fingerprint, uptime; off AWS "not running on AWS" in ms) and the "Live on AWS" card (`web/src/components/landing/LiveOnAws.tsx`, 60 s refresh); upload safety in `api/retention.py` + `api.uploads` (free-disk gate 5 GB + 2x request -> 507 "The demo server is full right now, please try a sample clip.", raw upload and its re-analysis cache deleted 24 h after the analysis finished, results kept; the UI never needs the raw file after the analysis; live `queue_position` + "waiting: N ahead"); the test alerts `alr_up_de899ff9f46a_evt_001/_002` are NOT visible to new visitors (checked read-only on the live site; history is append-only, options in `deploy/DEPLOY_AWS.md`); `app-desk.jpg` retaken. **Next:** user commits, then redeploy and check `/api/runtime` on EC2 (steps at the end of the RECORD entry). Fingerprint `ca4ff9bbf7b01c6c` unchanged.
 

@@ -404,34 +404,9 @@ Phase 3 has a CLI for the coach (`py -m gaffer.agent.alerts --approve|--reject <
 
 ## 10. Workflow diagram
 
-Rendered to `docs/agent_workflow.png` in build step 7 (17 Oct) with mermaid-cli 11.17.0 (MIT) through npx, using the local Chrome (no browser download): extract this block to `agent_workflow.mmd`, then `npx -y @mermaid-js/mermaid-cli@11.17.0 -i agent_workflow.mmd -o docs/agent_workflow.png -b white -s 2 -p puppeteer.json` with `{"executablePath": "<path to chrome.exe>"}` in `puppeteer.json`. Updated in step 7 to the as-built flow: `record_decision` before `render_evidence`, the footage branch without a second look (16 Oct), and the checked explanation step (§2, §5).
+Redesigned on 24 Oct as a hand-made SVG (brand tokens, numbered flow, the real 16:30 trace as the highlighted loop), dark [`agent_workflow.png`](agent_workflow.png) and light [`agent_workflow_light.png`](agent_workflow_light.png); the editable SVGs and the generator are in [`diagrams/`](diagrams/) (`node web/scripts/render-diagrams.mjs`). The earlier Mermaid flowchart (step 7, as-built flow with `record_decision` before `render_evidence`, the footage branch without a second look and the checked explanation step) is kept in [`diagrams/legacy/agent_workflow.mmd`](diagrams/legacy/agent_workflow.mmd).
 
-```mermaid
-flowchart TD
-  V["Match video<br/>TeamTrack drone / side"] --> P["Perception · OpenCV 5<br/>detect · track · team colours · homography"]
-  P --> MS[("match_state.json")]
-  MS --> T["Tactics engine<br/>formations · hysteresis"]
-  T --> C["Candidate shape changes<br/>status: candidate"]
-  C --> L{{"Agent per candidate<br/>Nova 2 Lite on Bedrock<br/>+ guard + rules (code)"}}
-  L -- "data tools" --> D["timeline / metrics / compare_windows"]
-  D --> L
-  L -- "check_frame_quality" --> Q["OpenCV: line error, camera motion,<br/>zoom, cuts, player coverage"]
-  Q -- "camera moved / cut" --> U1["Uncertain: geometry invalid<br/>no alert"]
-  Q -- "clip ends inside the 60 s look-ahead" --> U3["Uncertain: not enough footage<br/>no alert"]
-  Q -- "ok, second look needed" --> R["reanalyse_window<br/>OpenCV re-run at 4-6 fps<br/>+ tactics on the window"]
-  R -- "over budget" --> R
-  R --> K{"Rules: coverage · persistence · revert"}
-  K -- "reverted / not held" --> RJ["Rejected + reason"]
-  K -- "inconclusive" --> U2["Uncertain + reason<br/>no alert"]
-  K -- "held" --> E["record_decision: confirmed<br/>render_evidence: OpenCV frame<br/>+ before/after shapes"]
-  E --> A["propose_alert<br/>status: pending"]
-  A --> CO{"Coach"}
-  CO -- "Approve" --> AP[("alerts.jsonl: approved")]
-  CO -- "Reject" --> AR[("alerts.jsonl: rejected")]
-  RJ & U1 & U2 & U3 & E -.-> X["Explanation: Nova words the code reason<br/>checked: cause, numbers, no contradiction<br/>else code template"]
-  X -. "text of the alert" .-> A
-  L -. "every step" .-> TR[("agent_trace.jsonl")]
-```
+![Agent workflow](agent_workflow_light.png)
 
 ---
 

@@ -66,7 +66,7 @@ Each section has: the time window, what is on screen, and what to say. Say it in
 
 ### 10. Architecture, results, limits, AWS, close (4:25–4:45)
 
-**On screen:** `docs/architecture.png`, then the results table from the technical report: one-shot 34 false alerts vs agent 9 (32 of 38 real changes kept).
+**On screen:** `docs/architecture.png` (dark version, 16:9, readable at 1080p), then the results table from the technical report: one-shot 34 false alerts vs agent 9 (32 of 38 real changes kept).
 
 **Say:** "On ten held-out synthetic matches, alerting on every candidate gives thirty-four false alerts; the verified agent gives nine, and keeps thirty-two of thirty-eight real changes. Honestly: the rules make the decisions, the language model orchestrates and explains. And the real evidence is one match and one other ground. It all runs on EC2 with Bedrock, S3 and CloudWatch, using an IAM role. Gaffer: a tactical analyst that checks its own eyes before it speaks. Thank you."
 
@@ -85,7 +85,7 @@ Each section has: the time window, what is on screen, and what to say. Say it in
 | 7 | Chat answer and refusal | chat drawer | 0:20 |
 | 8 | Zenodo sample: card with credit, pitch step, result | `/app` → Upload | 0:30 |
 | 9 | Refused pan trace | `docs/AGENT_TRACE_EXAMPLES.md` (c) | 0:15 |
-| 10 | Architecture diagram; results table; closing card | `docs/architecture.png`; `docs/TECHNICAL_REPORT.md` §5C | 0:20 |
+| 10 | Architecture diagram; results table; closing card | `docs/architecture.png` (dark); `docs/TECHNICAL_REPORT.md` §5C | 0:20 |
 
 Rehearse once with a stopwatch. The replay starts at 15:00, so 16:30 is 90 s of video time away and 18:05 is 185 s away; at 4× that is about 23 s and 46 s. Cut between shots rather than waiting.
 

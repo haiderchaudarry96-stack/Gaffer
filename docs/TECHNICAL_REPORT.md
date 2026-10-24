@@ -18,9 +18,9 @@ Gaffer's answer is a tactical analyst that watches the match video, reads each t
 
 ## 3. Architecture
 
-![Gaffer architecture](architecture.png)
+![Gaffer architecture](architecture_light.png)
 
-Source: [`architecture.mmd`](architecture.mmd). Three design rules hold the system together:
+Source: [`diagrams/diagrams.mjs`](diagrams/diagrams.mjs) (editable SVGs in [`diagrams/`](diagrams/); dark version [`architecture.png`](architecture.png)). Three design rules hold the system together:
 
 1. **A frozen data contract.** `match_state.json` (per-frame positions, teams, quality) and `tactical_timeline.json` are versioned (v1.0, [`DATA_CONTRACT.md`](DATA_CONTRACT.md)). The synthetic generator and the real-video pipeline emit the identical schema, so the tactics engine and the agent were built and measured on synthetic matches with exact ground truth before any real video was processed.
 2. **The agentic vision loop.** The tactics engine only produces *candidates*. The agent decides what happens to each: check the camera, look again at a higher rate, then confirm, reject or mark uncertain. An OpenCV result must change what the agent does next, and the trace shows it.
@@ -92,7 +92,7 @@ For a confirmed change, OpenCV draws the frame with every player and the team's 
 
 ## 5. The self-verifying agent
 
-**Rules decide, the LLM orchestrates and explains.** For each candidate, the agent (Amazon Nova 2 Lite on Bedrock) runs this loop (diagram: [`agent_workflow.png`](agent_workflow.png), design: [`AGENT_DESIGN.md`](AGENT_DESIGN.md)):
+**Rules decide, the LLM orchestrates and explains.** For each candidate, the agent (Amazon Nova 2 Lite on Bedrock) runs this loop (diagram: [`agent_workflow_light.png`](agent_workflow_light.png), design: [`AGENT_DESIGN.md`](AGENT_DESIGN.md)):
 
 1. Read the candidate card (team, time, from → to, first-pass numbers).
 2. `check_frame_quality` (OpenCV): are the pitch lines fitted in at least 90 % of sampled frames, is the camera still (shift ≤ 25 px/s, zoom change ≤ 3 %), any cut? A moving camera ends the candidate: **uncertain, no alert**.
@@ -110,9 +110,9 @@ Four things the award asks for, each with its source.
 
 ### A. The workflow diagram
 
-![Agent workflow](agent_workflow.png)
+![Agent workflow](agent_workflow_light.png)
 
-Source: [`AGENT_DESIGN.md`](AGENT_DESIGN.md) §10 (Mermaid), rendered to [`agent_workflow.png`](agent_workflow.png).
+Source: [`diagrams/diagrams.mjs`](diagrams/diagrams.mjs) (editable SVG [`diagrams/agent_workflow_light.svg`](diagrams/agent_workflow_light.svg); dark version [`agent_workflow.png`](agent_workflow.png)). The highlighted loop is trace (a) below, with its numbers. Design: [`AGENT_DESIGN.md`](AGENT_DESIGN.md) §10.
 
 ### B. Traces where an OpenCV 5 result changes a later tool call or decision
 

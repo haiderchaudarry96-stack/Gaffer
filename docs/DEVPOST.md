@@ -75,6 +75,10 @@ The harder idea was trust. A formation read from video is noisy: a free kick cro
 
 OpenCV 5.0.0 (`cv2.dnn`, `kmeans`, `findHomography`, `findTransformECC`, `phaseCorrelate`, `ximgproc.thinning`, ORB, `estimateAffinePartial2D`) · Python 3.12 · FastAPI · React, Vite, Tailwind CSS · Amazon Bedrock (Nova 2 Lite) · Amazon EC2 · Amazon S3 · Amazon CloudWatch · AWS IAM · AWS Systems Manager · Docker · supervision (ByteTrack) · NumPy, SciPy, scikit-learn · TeamTrack and Zenodo datasets.
 
+## Gallery images (16:9, dark)
+
+`docs/architecture.png` and `docs/agent_workflow.png` (3840 x 2160, readable at 1080p). Light versions for documents: `*_light.png`.
+
 ## Try it out
 
 - Live app: https://gaffer-tactics.duckdns.org/ (fallback, plain http: http://13.210.196.109/). If neither opens, see the demo video.
