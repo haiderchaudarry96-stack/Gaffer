@@ -66,7 +66,7 @@ for the demo recording" is not possible on this plan; m7i-flex.large is the larg
 The Free plan never charges the card, but the **account closes when the credits reach $0**, so
 watch the credit balance (Billing → Credits), not only the budget.
 
-Data transfer out: one full replay of the 12 clips downloads ~324 MB per viewer; AWS gives
+Data transfer out: one full replay of the 12 clips downloads ~149 MB per viewer (1080p playback proxies since 24 Oct; was ~324 MB); AWS gives
 100 GB/month of data transfer out free.
 
 ## Observed on the live server (22 Oct)
@@ -275,6 +275,12 @@ aws s3 ls s3://gaffer-demo-221039325928/assets/data/teamtrack/soccer_top/playbac
 Then redeploy (the steps above). `gaffer.aws.assets` downloads the folder into
 `/opt/gaffer/assets/teamtrack/soccer_top/playback_1080p` (EBS, survives redeploys). Check
 `curl https://gaffer-tactics.duckdns.org/api/health` shows `"replay_playback": "1080p proxies"`.
+
+Done 24 Oct (revision `3711d30`, build 11 s, up 20 s after start; 12 objects, 141.9 MiB). Live,
+public HTTPS, Chrome "Fast 4G", 1440x900, 75 s from 15:00 (`web/scripts/measure-replay-playback.mjs`):
+before (4K) 53 waiting events, 1 stalled, 27.1 s waiting, 10.5 s frozen at the 15:30 clip change,
+playhead reached only 15:32; after (3 runs) 3 / 6 / 3 waiting events, 0 stalled, 0.1-2.8 s waiting
+(one 1.9 s mid-clip pause in run 1), clip changes 67-100 ms, playhead 16:11-16:14.
 
 ## Stop to save money, start again
 
