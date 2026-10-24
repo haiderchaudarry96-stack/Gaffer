@@ -151,7 +151,7 @@ The footage and model weights are **not in the repo** (gitignored, large, licens
 
 ## Docs map
 
-[`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [`docs/AGENT_DESIGN.md`](docs/AGENT_DESIGN.md) · [`docs/AGENT_TRACE_EXAMPLES.md`](docs/AGENT_TRACE_EXAMPLES.md) · [`docs/FAILURE_LOG.md`](docs/FAILURE_LOG.md) · [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md) · [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) · [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) · [`docs/API.md`](docs/API.md) · [`docs/PLAN.md`](docs/PLAN.md) · [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md) · [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md). Build notes (not needed to judge): [`docs/dev/`](docs/dev/) and [`RECORD.md`](RECORD.md).
+[`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [`docs/AGENT_DESIGN.md`](docs/AGENT_DESIGN.md) · [`docs/AGENT_TRACE_EXAMPLES.md`](docs/AGENT_TRACE_EXAMPLES.md) · [`docs/FAILURE_LOG.md`](docs/FAILURE_LOG.md) · [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md) · [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) · [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) · [`docs/API.md`](docs/API.md) · [`docs/PLAN.md`](docs/PLAN.md) · [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md) · [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md). Build notes (not needed to judge): [`RECORD.md`](RECORD.md).
 
 ## Licence
 

@@ -37,3 +37,12 @@ data/sample_clips/
 
 # Zenodo record 14867795 (CC BY 4.0): preview clip + annotations, re-downloadable (data/README.md)
 data/zenodo/
+
+# AI-assistant working files (kept locally, not published)
+CLAUDE.md
+.claude/
+.cursor/
+.codex/
+AGENTS.md
+GEMINI.md
+docs/dev/
