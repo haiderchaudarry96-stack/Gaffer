@@ -10,15 +10,17 @@ One process serves the API, runs the analysis worker (one analysis at a time) an
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
 import cv2
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -37,6 +39,8 @@ from gaffer.api.event_store import (
 )
 from gaffer.api.jobs import JobManager, new_id, rules_fingerprint
 from gaffer.api.results import Demo, analysis_result, evidence_file, evidence_url
+from gaffer.api.retention import SERVER_FULL, Retention, disk_gate, free_bytes
+from gaffer.api.runtime import Runtime
 from gaffer.api.storage import Storage, StorageError, make_storage, read_json, write_json
 from gaffer.api.teamtrack_replay import ReplaySourceError, TeamTrackReplay, clip_response
 from gaffer.api.uploads import (
@@ -140,9 +144,12 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
                llm_factory: Any = DEFAULT, usage: Usage | None = None,
                alerts_path: str | Path | None = None, runner: Any = None,
                event_store: EventStore | None = None,
-               start_worker: bool = True, chat_trace: str | Path | None = None) -> FastAPI:
+               start_worker: bool = True, chat_trace: str | Path | None = None,
+               disk_free: Callable[[], int] | None = None,
+               imds: Callable[[], dict[str, str | None] | None] | None = None) -> FastAPI:
     """The app. Tests inject `llm_factory` (a fake LLM; None = no Bedrock), `storage`,
-    `usage`, `alerts_path`, and `start_worker=False` to run analyses by hand."""
+    `usage`, `alerts_path`, `disk_free` (free bytes), `imds` (the EC2 metadata answer) and
+    `start_worker=False` to run analyses (and the retention sweep) by hand."""
     cfg = cfg or load_config()
     api = cfg["api"]
     storage = storage or make_storage(cfg)
@@ -156,6 +163,15 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     jobs = JobManager(cfg, storage, llm_factory=factory, usage=usage, alerts_path=alerts_path,
                       event_store=event_store, runner=runner, start_worker=start_worker)
     demo = Demo(cfg)
+    storage_root = getattr(storage, "root", None) or repo_path(
+        api["storage"].get("root", "outputs/api"))
+    free_now = disk_free or (lambda: free_bytes(storage_root))
+    retention = Retention(cfg, storage, jobs)
+    if start_worker:
+        retention.start()  # once now, then every api.uploads.sweep_interval_s
+    runtime = Runtime(cfg, usage, bedrock_configured=factory is not None,
+                      opencv_version=cv2.__version__, fingerprint=rules_fingerprint(cfg),
+                      storage_backend=api["storage"].get("backend", "local"), imds=imds)
     chat = ChatService(cfg, usage, factory,
                        repo_path(chat_trace or Path(api["storage"].get("root", "outputs/api"))
                                  / "chat_trace.jsonl"))
@@ -196,6 +212,7 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
     app.state.jobs, app.state.storage, app.state.usage = jobs, storage, usage
     app.state.demo, app.state.chat, app.state.cfg = demo, chat, cfg
     app.state.event_store = event_store
+    app.state.retention, app.state.runtime = retention, runtime
     app.state.teamtrack_replay = teamtrack_replay
     app.state.demo_decisions = demo_decisions
 
@@ -380,9 +397,19 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
                 "demo_available": demo.available(),
                 "analyses": {"running": jobs.current, "queued": jobs.queued_count()},
                 "usage_today": usage.snapshot(),
+                "runtime": runtime.snapshot(),
                 "limits": {"max_upload_mb": round(api["uploads"]["max_bytes"] / 1e6),
                            "max_duration_s": api["uploads"]["max_duration_s"],
+                           "retention_hours": api["uploads"]["retention_hours"],
                            "views": ["top-down"]}}
+
+    @app.get("/api/runtime")
+    def get_runtime(response: Response) -> dict[str, Any]:
+        """What this server is running on right now (EC2 instance type, zone, region from the
+        metadata service; Bedrock model and the app's own call counters; OpenCV, rules, uptime).
+        Never an instance id, account id, address or credential. Off AWS: "not running on AWS"."""
+        response.headers["Cache-Control"] = "no-store"
+        return runtime.snapshot()
 
     # ------------------------------------------------------------------ demo
     @app.get("/api/demo")
@@ -422,6 +449,12 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         if n and n.isdigit() and int(n) > int(u["max_bytes"]) + 1_000_000:
             raise HTTPException(413, f"The video is larger than {u['max_bytes'] / 1e6:.0f} MB, "
                                      "the upload limit. Trim it to the part you want analysed.")
+        # before the body is read (Starlette spools it to disk): is there room for it?
+        full = disk_gate(free_now(), floor_gb=float(u["min_free_disk_gb"]),
+                         incoming_bytes=int(n) if n and n.isdigit() else 0)
+        if full:
+            log.warning("upload refused: disk nearly full (%.1f GB free)", free_now() / 1e9)
+            raise HTTPException(507, full)
         if jobs.queued_count() >= int(api["jobs"]["max_queued"]):
             raise HTTPException(503, "Gaffer is busy with other analyses. Please try again in a "
                                      "few minutes.")
@@ -458,6 +491,11 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
             _remove(job_dir)
             code = exc.status_code if isinstance(exc, UploadRefused) else 422
             raise HTTPException(code, str(exc)) from exc
+        except OSError as exc:  # the disk filled while the file was being saved
+            _remove(job_dir)
+            if exc.errno == errno.ENOSPC:
+                raise HTTPException(507, SERVER_FULL) from exc
+            raise
         write_json(storage, f"{aid}/upload.json",
                    {"video": info.as_dict(), "upload_file": dest.name,
                     "known_source": None if ks is None else ks.__dict__})
@@ -566,6 +604,11 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
             sid = next(iter(first))
         entry, p = _sample_or_404(sid)
         name = entry.get("file_name", "gaffer_sample_clip.mp4")
+        full = disk_gate(free_now(), floor_gb=float(api["uploads"]["min_free_disk_gb_sample"]),
+                         incoming_bytes=p.stat().st_size, copies=1)
+        if full:
+            log.warning("sample refused: disk nearly full (%.1f GB free)", free_now() / 1e9)
+            raise HTTPException(507, full)
         if jobs.queued_count() >= int(api["jobs"]["max_queued"]):
             raise HTTPException(503, "Gaffer is busy with other analyses. Please try again in a "
                                      "few minutes.")

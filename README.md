@@ -63,7 +63,9 @@ The one rule that shapes the code: **query, never stuff.** The model never recei
 | **IAM** | Instance role `gaffer-ec2-role`, no access keys on the instance or in the image |
 | **Systems Manager** | Session Manager and Run Command for deploys (no SSH port open) |
 
-Details, costs and the delete-everything list: [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md).
+Details, costs and the delete-everything list: [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md). The landing page's **Live on AWS** card reads the running server (`GET /api/runtime`: EC2 instance type, zone and region from the instance metadata, the Bedrock model and the app's own call counters; never an instance id, address or key).
+
+**Uploads and privacy.** An uploaded video is analysed on the EC2 server and its **raw file is deleted 24 hours after the analysis finishes** (`api.uploads.retention_hours`); the results stay (tracked positions, events, evidence frames, report, approve / reject decisions). One analysis runs at a time and the rest wait (`queued`, with their place in line); an upload is refused with "The demo server is full right now, please try a sample clip" when free disk space is below 5 GB. Gaffer works with positions, not identities: no face recognition, no names.
 
 ## Results at a glance
 

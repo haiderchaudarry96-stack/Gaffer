@@ -514,6 +514,12 @@ export default function UploadPanel({
   )
 }
 
+/** One analysis runs at a time; the others wait their turn. */
+function waitingText(ahead: number | null): string {
+  if (ahead == null || ahead <= 0) return 'waiting for the analyser…'
+  return `waiting: ${ahead} ${ahead === 1 ? 'analysis' : 'analyses'} ahead of yours`
+}
+
 function Progress({ step }: { step: Extract<Step, { kind: 'progress' }> }) {
   const st = step.status
   // queued: the upload is done and the analyser has not picked it up yet
@@ -533,7 +539,7 @@ function Progress({ step }: { step: Extract<Step, { kind: 'progress' }> }) {
               </span>
               {STAGE_LABELS[s]}
               {active && s === 'uploading' && <span className="ml-auto font-mono text-sm">{Math.round(step.upload * 100)} %</span>}
-              {active && st?.status === 'queued' && <span className="ml-auto text-sm font-normal text-muted">waiting for the analyser…</span>}
+              {active && st?.status === 'queued' && <span className="ml-auto text-sm font-normal text-muted">{waitingText(st.queue_ahead)}</span>}
             </li>
           )
         })}

@@ -670,7 +670,14 @@ api:
     max_aspect: 2.5               # wider frames are panoramas / side cameras: refused
     min_width_px: 640
     chunk_bytes: 1048576
-    teamtrack:                    # known clips keep the saved 31-point calibration
+    min_free_disk_gb: 5.0         # below this (plus 2x the upload: Starlette spools the body to
+                                  # disk once, we save it once more) an upload is refused: "server full"
+    min_free_disk_gb_sample: 0.5  # a sample clip is ~30 MB, so it needs far less room
+    retention_hours: 24           # the raw uploaded video is deleted this long after its analysis
+                                  # finished (results, events, evidence and the first frame stay);
+                                  # a pitch step left open that long is closed and its video deleted
+    sweep_interval_s: 900         # how often the clean-up looks (and once at start)
+    teamtrack:                  # known clips keep the saved 31-point calibration
       top_pattern: '^D_\d{8}_\d+_(\d+)_(\d+)\.mp4$'   # drone; groups = match start / end s
       side_pattern: '^F_\d{8}_\d+_\d+_\d+\.mp4$'      # fixed side camera: refused (top-down only)
       top_size: [3840, 2160]
@@ -697,6 +704,14 @@ api:
                                   # 12.0 = midway between the 720p copy of the demo (9.3 px/m) and
                                   # a 1080p frame (~14.7 px/m, half of 4K's 29.4): 720p is flagged,
                                   # a full-pitch 1080p clip is not (DATA_NOTES s13).
+  runtime:                        # GET /api/runtime (the landing page's "Live on AWS" card)
+    imds_timeout_s: 0.4           # per EC2 metadata request; the whole probe stays under imds_total_s
+    imds_total_s: 0.9             # off AWS the answer "not running on AWS" comes within this
+    imds_cache_s: 3600            # a positive answer (instance type, zone) is kept this long
+    imds_miss_cache_s: 30         # a negative one only this long (metadata may not be ready at boot)
+    model_labels:                 # display names; unknown ids are shown as they are
+      "global.amazon.nova-2-lite-v1:0": "Nova 2 Lite"
+      "apac.amazon.nova-micro-v1:0": "Nova Micro"
   jobs:
     view: top                     # uploads are analysed as a top-down view (only one supported)
     arm: auto                     # auto: Nova arm when Bedrock is configured, else rules; llm; rules

@@ -150,6 +150,63 @@ DuckDNS record is not managed by Caddy: if the Elastic IP ever changes, update i
 | 6-min 4K upload (file from 22 Oct already on the server, posted from the instance to the public URL; Nova arm) | done, 1,679.9 s server wall (detection stage 403.2 s, agent 1,272.2 s), 8 candidates: 2 confirmed, 3 rejected, 3 uncertain; 49 Bedrock calls, $0.052 (`outputs/ec2_upload_6min_24oct.json`) |
 | CloudWatch `/gaffer/app` | new `caddy` stream; `app`, `llm_calls`, `analysis_trace` written; metrics `BedrockCalls` 51, `AnalysesCompleted` 3 = the server's own counter |
 
+## Upload storage safety and the "Live on AWS" card (code of 24 Oct; not deployed until the next redeploy)
+
+Uploads live on the instance's 30 GB EBS volume (`/opt/gaffer/outputs/api/<analysis id>/`, mounted
+at `/app/outputs/api` in the container). A 6-minute 4K upload is ~130 MB. Three rules in the app
+(`src/gaffer/api/retention.py`, limits in `config.yaml` `api.uploads`, documented in `docs/API.md`):
+
+| Rule | Setting | What happens |
+|---|---|---|
+| **Free-disk gate** | `min_free_disk_gb: 5.0` (+ 2 x the request size: the body is spooled once and saved once); samples `min_free_disk_gb_sample: 0.5` | below it the upload is refused with `507` "The demo server is full right now, please try a sample clip." (a disk that fills mid-copy gives the same answer). Logged as `upload refused: disk nearly full` |
+| **Retention** | `retention_hours: 24`, checked at start and every `sweep_interval_s: 900` | the **raw uploaded video** (`upload.mp4` / `.mov`) and the agent's re-analysis cache of that upload (`outputs/agent_cache/video/up_<id>_*`) are deleted 24 h after the analysis finished (`done` or `failed`). **Kept:** `match_state.json`, timeline, report, explanations, evidence JPEGs, the first frame, `status.json` (which gets `video_deleted_utc`), the event DB and `alerts.jsonl`. A pitch step left open for 24 h is closed (`failed`, "Upload it again") and its video deleted. Log line: `retention_sweep videos=N freed_mb=…` |
+| **One analysis at a time** | `jobs.max_queued: 3` | single worker; the rest have status `queued` and a live `queue_position` (analyses ahead of them; the web app shows "waiting: 1 analysis ahead of yours"); a 4th waiting upload gets `503` "busy" |
+
+**Does the UI need the raw video from the server after the analysis?** No. No endpoint serves it
+(the only video routes are the replay clips and the samples). The desk plays an uploaded video
+from the visitor's own browser (a local object URL), and the result, evidence images, first frame
+and chat context all come from the kept result files. The test `test_results_are_still_served_after_the_raw_video_is_deleted` checks that the result, frame and events are identical before and after a sweep.
+
+**After the redeploy**, the first sweep deletes the raw videos of the three analyses already on the
+server (older than 24 h): `docker logs gaffer | grep retention_sweep`, then
+`du -sh /opt/gaffer/outputs/api/*` and `df -h /opt/gaffer`.
+
+**Check the live card** (no AWS call, no credit): `curl https://gaffer-tactics.duckdns.org/api/runtime`
+returns `aws.running_on_aws: true`, `instance_type: m7i-flex.large`, `availability_zone: ap-southeast-2a`.
+It needs IMDSv2 from inside the container: the instance has hop limit 2, so it works; if it says
+"not running on AWS" on EC2, check `aws ec2 describe-instances ... MetadataOptions` (HttpTokens
+required, HttpPutResponseHopLimit 2, HttpEndpoint enabled). The card never shows the instance id,
+account id, addresses or credentials: only the three metadata paths `instance-type`,
+`placement/availability-zone`, `placement/region` are ever requested.
+
+### Are the test uploads visible to a new visitor? (checked 24 Oct, read-only requests)
+
+**No.** On the live site a fresh visitor sees: `GET /api/demo/alerts` returns only
+`alr_teamtrack_top_w900_1260_evt_003` (the shipped demo alert; it is read from `samples/`, never
+from `alerts.jsonl`); `GET /api/events?match_id=teamtrack_top_w900_1260` (the only match id the web
+app queries) returns the one seeded event; there is no endpoint that lists alerts (`/api/alerts`
+is `404`) or analyses, and `/api/events` without a match id is `422`. The pending alerts
+`alr_up_de899ff9f46a_evt_001` / `_002` belong to analysis `de899ff9f46a` and appear only inside
+that analysis's own result (`/api/analyses/de899ff9f46a/result`) and event list
+(`match_id=up_de899ff9f46a`): you have to know the 12-hex id. Anyone who does can read it (200 on
+`/api/analyses/de899ff9f46a`) and approve or reject its alerts, like any shared link.
+
+So nothing has to be cleared for visitors. If you still want them gone, note the history is
+append-only **by design** (SQLite triggers refuse `DELETE` on `coach_decisions` and the
+recommendation tables; `alerts.jsonl` is never rewritten), so do not edit those files. The safe
+options, in order of preference:
+
+1. **Leave them**; the retention sweep removes the raw videos after the redeploy and the small
+   result files stay as an audit trail.
+2. **Close the two alerts** the normal way (appends a history record, nothing is deleted):
+   `curl -X POST -H "Content-Type: application/json" -d '{"note":"test upload"}' https://gaffer-tactics.duckdns.org/api/alerts/alr_up_de899ff9f46a_evt_001/reject` and the same for `_evt_002`.
+3. **Free the disk space** of the three old analyses (only their folders, nothing else), on the
+   instance after looking at what is there: `ls /opt/gaffer/outputs/api` then
+   `rm -r /opt/gaffer/outputs/api/<analysis id>` for each test id. This leaves their alert and event
+   rows pointing at results that no longer open; take a backup first
+   (`du -sh /opt/gaffer/outputs/api` first; then `cp -a /opt/gaffer/outputs/api /root/api-backup-$(date +%F)`
+   if there is room).
+
 ## Redeploy after a `git pull`
 
 The repo is private, so the instance never talks to GitHub: the laptop uploads a tarball of one

@@ -6,6 +6,7 @@ import Results from './Results'
 import Tech from './Tech'
 import Limits from './Limits'
 import Faq from './Faq'
+import LiveOnAws from './LiveOnAws'
 import Footer from '../layout/Footer'
 import Reveal from '../ui/Reveal'
 import Disclosure from '../ui/Disclosure'
@@ -33,6 +34,7 @@ export default function LandingBody() {
               Open the brief for evaluation figures, their limits, OpenCV&apos;s role, and what Amazon Bedrock does.
             </p>
           </Reveal>
+          <LiveOnAws />
           <Disclosure
             className="mt-8 border-y border-line py-4"
             title="Open judge and technical details"

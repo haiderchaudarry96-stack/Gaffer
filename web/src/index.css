@@ -171,6 +171,25 @@ h3 {
   }
 }
 
+/* "Live on AWS" dot: a soft ring that fades out every 2.4 s (still with reduced motion). */
+.live-dot {
+  animation: live-dot 2.4s ease-out infinite;
+}
+@keyframes live-dot {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 9px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
 /* Mascot eye blink: a quick close every ~6 s (no animation with reduced motion). */
 .mascot-eyes {
   transform-box: fill-box;

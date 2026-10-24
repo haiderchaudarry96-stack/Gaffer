@@ -1,8 +1,9 @@
 """Daily usage caps for the public API (`api.bedrock_daily`, `api.chat`).
 
-Per UTC day: Bedrock calls and cost for everything the API sends to Bedrock (chat and
-analyses), and questions per visitor. Persisted to a small JSON file so a restart does not reset
-the caps; only today's counters are kept. Visitors are stored as a salted hash, never the raw IP.
+Per UTC day: Bedrock calls, cost and the time of the last call for everything the API sends to
+Bedrock (chat and analyses), and questions per visitor. Persisted to a small JSON file so a
+restart does not reset the caps; only today's counters are kept. Visitors are stored as a salted
+hash, never the raw IP.
 """
 
 from __future__ import annotations
@@ -21,23 +22,30 @@ def utc_day() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
+def utc_now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class Usage:
     """Thread-safe daily counters. `clock()` returns the UTC day string (tests pass a fake)."""
 
     def __init__(self, cfg: dict[str, Any], path: str | None = None,
-                 clock: Callable[[], str] = utc_day) -> None:
+                 clock: Callable[[], str] = utc_day,
+                 now: Callable[[], str] = utc_now) -> None:
         d = cfg["api"]["bedrock_daily"]
         self.max_calls = int(d["max_calls"])
         self.max_cost = float(d["max_cost_usd"])
         self.max_questions = int(cfg["api"]["chat"]["max_questions_per_visitor_per_day"])
         self.path = repo_path(path or d["usage_file"])
         self.clock = clock
+        self.now = now
         self._lock = threading.Lock()
         self._data = self._load()
 
     def _blank(self) -> dict[str, Any]:
         return {"day": self.clock(), "calls": 0, "cost_usd": 0.0, "tokens_in": 0,
-                "tokens_out": 0, "visitors": {}}
+                "tokens_out": 0, "visitors": {},
+                "last_call_utc": None}
 
     def _load(self) -> dict[str, Any]:
         try:
@@ -78,6 +86,8 @@ class Usage:
             d["cost_usd"] = round(d["cost_usd"] + float(cost_usd), 6)
             d["tokens_in"] += int(tokens_in)
             d["tokens_out"] += int(tokens_out)
+            if int(calls) > 0:
+                d["last_call_utc"] = self.now()  # when, never what: no prompt or text is kept
             self._save()
 
     # ---------------------------------------------------------------- visitors
@@ -108,4 +118,5 @@ class Usage:
             d = self._today()
             return {"day": d["day"], "bedrock_calls": d["calls"],
                     "bedrock_calls_cap": self.max_calls, "cost_usd": round(d["cost_usd"], 4),
-                    "cost_usd_cap": self.max_cost, "visitors": len(d["visitors"])}
+                    "cost_usd_cap": self.max_cost, "visitors": len(d["visitors"]),
+                    "last_call_utc": d.get("last_call_utc")}

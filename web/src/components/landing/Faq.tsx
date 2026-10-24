@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react'
 import Section from './Section'
 import Disclosure from '../ui/Disclosure'
+import { LIVE_URL } from '../../lib/links'
 
-const FAQ = [
+const FAQ: { q: string; a: ReactNode }[] = [
   {
     q: 'What footage works?',
     a: 'One fixed, wide camera that sees the whole pitch. It is tested on TeamTrack drone footage (one match, filmed from above). A fixed side camera works experimentally and is never alerted. Gaffer samples 2–4 frames per second.',
@@ -16,11 +18,11 @@ const FAQ = [
   },
   {
     q: 'What does a match cost?',
-    a: 'The language model cost $0.021 per synthetic match (195 calls for ten matches, $0.21). Processing time varies with resolution, hardware and server load; the app reports an estimate from measured frame-processing time after analysis starts. Cloud hosting costs are not measured yet.',
+    a: 'The language model cost $0.021 per synthetic match (195 calls for ten matches, $0.21) and $0.052 for a real 6-minute upload on the demo server (49 calls). The server itself costs about $3.10 a day while it runs, whatever the load. Processing time varies with resolution and server load: a 6-minute 4K clip took 28 minutes, a 30-second sample about 23 seconds. The app reports an estimate from measured frame-processing time after analysis starts.',
   },
   {
     q: 'What about player privacy?',
-    a: 'Gaffer works with positions on a pitch, not identities: no face recognition, no names. In this demo, a video you load stays in your browser. Footage is used only where its licence allows; the demo data is TeamTrack (MIT licence).',
+    a: 'Gaffer works with positions on a pitch, not identities: no face recognition, no names. A video you upload is sent to the demo server on AWS (Sydney) and analysed there. The raw video is deleted 24 hours after its analysis finishes. The results stay on the server: tracked positions, detected events, evidence frames, the report and your approve or reject decisions on uploads. Chat questions are logged as typed, under a random visitor ID, not a name or address. Upload only footage you have the right to share. Footage is used only where its licence allows; the demo data is TeamTrack (MIT licence).',
   },
   {
     q: 'What happens when it is wrong?',
@@ -28,7 +30,11 @@ const FAQ = [
   },
   {
     q: 'Is it live?',
-    a: 'Not yet. This site replays stored outputs from one real match. The backend that runs OpenCV and the agent on AWS is being deployed.',
+    a: (
+      <>
+        Yes. <a href={LIVE_URL} className="font-medium text-accent-ink underline underline-offset-4">{LIVE_URL}</a> runs on AWS: the API, OpenCV and the agent on an EC2 instance behind Caddy (HTTPS), Amazon Bedrock for the agent, S3 for the clips and the model, CloudWatch for the logs. You can replay the recorded match (real TeamTrack drone footage with its stored analysis), analyse one of the two 30-second sample clips, or upload your own top-down clip (up to 6 minutes and 500 MB, one analysis at a time).
+      </>
+    ),
   },
   {
     q: 'What data was it tested on?',

@@ -270,17 +270,30 @@ class JobManager:
                 self._queue.put(aid)
             self._statuses[aid] = st
 
+    def ahead_of(self, aid: str) -> int:
+        """Analyses that run before `aid`: the one running now plus those queued earlier."""
+        with self._queue.mutex:
+            order = list(self._queue.queue)
+        running = 1 if self.current and self.current != aid else 0
+        return running + (order.index(aid) if aid in order else 0)
+
+    def _live(self, st: dict[str, Any]) -> dict[str, Any]:
+        """A queued analysis reports how many are ahead of it NOW, not when it was queued."""
+        if st.get("status") == "queued":
+            st["queue_position"] = self.ahead_of(st["id"])
+        return st
+
     def get(self, aid: str) -> dict[str, Any] | None:
         with self._lock:
             if aid in self._statuses:
-                return dict(self._statuses[aid])
+                return self._live(dict(self._statuses[aid]))
         key = f"{aid}/status.json"
         try:
             if self.storage.exists(key):
                 st = read_json(self.storage, key)
                 with self._lock:
                     self._statuses[aid] = st
-                return dict(st)
+                return self._live(dict(st))
         except Exception:  # invalid id / unreadable: unknown analysis
             return None
         return None

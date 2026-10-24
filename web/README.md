@@ -132,8 +132,9 @@ recommendation, separately from the formation alert decision. No Bedrock call is
 8. **Landing copy.** One idea, one statement or number and one short line per section; every caveat
    moved into a "Read the small print" accordion per section (none removed). Sections: hero, product
    shot, how it works, a sticky "verified, not guessed" story of the real evt_003 trace, before/after
-   slider (the two evidence panels), results, where OpenCV 5 / AWS are used (EC2, S3, CloudWatch
-   marked "being deployed"), limits, FAQ. The brief's "layer toggles" section is not built.
+   slider (the two evidence panels), results, where OpenCV 5 / AWS are used (EC2, S3, CloudWatch,
+   Bedrock, all in use since the 22 Oct deploy), a live "Live on AWS" card in the judges section
+   (`GET /api/runtime`, refreshed every minute, "unavailable" per field it cannot read), limits, FAQ. The brief's "layer toggles" section is not built.
 9. **Hero second button says "How it checks"** (brief: "How it works").
 10. **Timeline labels** are drawn only where they fit completely (measured), never truncated; below
     640 px the bars carry no text and a full-width list of every change is the control.

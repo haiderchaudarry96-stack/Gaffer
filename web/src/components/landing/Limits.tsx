@@ -7,7 +7,7 @@ const LIMITS = [
   'No ball, so no possession',
   'Misses some real changes',
   'Tested on one real match',
-  'Not live yet',
+  'Long clips take a while (a 6 min clip took 28 min on the demo server)',
 ]
 
 export default function Limits() {
@@ -30,7 +30,7 @@ export default function Limits() {
           'Panning and zooming cameras are refused by the camera check. The fixed side-camera view is experimental and never alerted.',
           'The drone pipeline does not detect the ball, so shapes come from player positions only and set pieces are not recognised as such.',
           'All real footage is one match: accuracy numbers come from synthetic matches; real clips give traces and decision tables. Alert suggestions are checked against the formation change and replaced by a code template when wrong; they are never part of the decision.',
-          'This site replays stored outputs; the backend (EC2, S3, CloudWatch) is being deployed, so chat and report generation are off here.',
+          'The recorded match shows outputs stored from an earlier analysis. Your own upload and the two sample clips are analysed on the AWS server, one analysis at a time (the others wait their turn). A 6 min 4K upload took 28 min (OpenCV detection 403 s, the agent’s second looks the rest); a 30 s sample takes about 23 s. Chat and the agent’s Bedrock calls stop for the day at 300 calls or $1.00 across all visitors; the rules still run.',
         ]}
       />
     </Section>

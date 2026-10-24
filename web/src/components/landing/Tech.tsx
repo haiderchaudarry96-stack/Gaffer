@@ -12,10 +12,10 @@ const OPENCV = [
 ]
 
 const AWS = [
-  { name: 'Amazon Bedrock · Nova 2 Lite', what: 'Runs the checks and words each explanation.', status: 'in use' },
-  { name: 'Amazon EC2', what: 'Will run the API and the OpenCV tools.', status: 'being deployed' },
-  { name: 'Amazon S3', what: 'Will store clips, outputs and evidence images.', status: 'being deployed' },
-  { name: 'Amazon CloudWatch', what: 'Will collect logs and metrics.', status: 'being deployed' },
+  { name: 'Amazon Bedrock · Nova 2 Lite', what: 'Runs the checks and words each explanation. Called with the instance’s IAM role, no keys.', status: 'in use' },
+  { name: 'Amazon EC2', what: 'Runs the API, OpenCV and the agent behind Caddy HTTPS, in Sydney.', status: 'in use' },
+  { name: 'Amazon S3', what: 'Holds the replay clips, the two sample clips and the detector model.', status: 'in use' },
+  { name: 'Amazon CloudWatch', what: 'Receives the server logs and two usage metrics.', status: 'in use' },
 ]
 
 export default function Tech() {
@@ -41,9 +41,7 @@ export default function Tech() {
           <li key={c.name}>
             <Reveal delay={i * 0.06} className="h-full">
               <div className="flex h-full flex-col rounded-(--radius-card) border border-line bg-surface p-6">
-                <span
-                  className={`self-start rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase ${c.status === 'in use' ? 'border-accent-ink/40 text-accent-ink' : 'border-warn/40 text-warn'}`}
-                >
+                <span className="self-start rounded-full border border-accent-ink/40 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-accent-ink uppercase">
                   {c.status}
                 </span>
                 <p className="mt-4 font-semibold text-text">{c.name}</p>
@@ -59,7 +57,9 @@ export default function Tech() {
           'Homography: one per view, fitted to 31 pitch landmarks on the drone view; 0.11 m mean / 0.38 m max held-out landmark error. Side view: two sectioned homographies, 0.53 m mean.',
           'Drift: median line error 0.198 m uncorrected, 0.089 m anchored once per clip, 0.040 m anchored every frame (142 ms per frame).',
           'Camera check: ORB features and cv2.estimateAffinePartial2D on frame pairs 0.5 s apart, plus HSV-histogram cut detection; limits 25 px/s shift and 3 % zoom. A simulated pan measured 190 px/s and 30 % zoom and was refused.',
-          'Bedrock: Nova 2 Lite through the global cross-region profile from Sydney (ap-southeast-2); $0.021 per synthetic match. EC2, S3 and CloudWatch are not live yet.',
+          'Bedrock: Nova 2 Lite through the global cross-region profile from Sydney (ap-southeast-2); $0.021 per synthetic match, $0.052 for a real 6-minute upload on the server (49 calls). Daily cap for all visitors: 300 calls and $1.00.',
+          'AWS (ap-southeast-2, Sydney): one EC2 m7i-flex.large instance runs two containers, Caddy (HTTPS, Let’s Encrypt) in front of the Gaffer app. The app reaches Bedrock and S3 through the instance’s IAM role; no access key exists on the instance or in the image. S3 holds the replay clips, sample clips, detector model and the source of each deploy. CloudWatch keeps the logs for 14 days and counts analyses and Bedrock calls.',
+          'The server costs about $3.10 a day while it runs (EC2, disk and IP), whatever the load.',
         ]}
       />
     </Section>

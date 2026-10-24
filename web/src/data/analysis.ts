@@ -67,6 +67,8 @@ export interface AnalysisStatus {
   /** remaining estimated budget for agent checks, separate from the server ETA */
   agent_eta_s: number | null
   error: string | null
+  /** queued only: analyses that run before this one (the one running now plus those queued earlier) */
+  queue_ahead: number | null
   pitch: PitchInfo | null
   /** the uploaded video as the server read it */
   video: { width: number; height: number; duration_s: number } | null
@@ -144,6 +146,7 @@ export function validateStatus(raw: unknown): AnalysisStatus {
     eta_s: (s.eta_s as number | null) ?? null,
     agent_eta_s: (s.agent_eta_s as number | null) ?? null,
     error: typeof s.error === 'string' ? s.error : null,
+    queue_ahead: s.status === 'queued' && typeof s.queue_position === 'number' ? s.queue_position : null,
     pitch: validatePitch(s.pitch),
     video,
   }

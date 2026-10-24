@@ -31,7 +31,8 @@ Docker: `deploy/README.md`.
 
 | Method and path | Request | Response |
 |---|---|---|
-| `GET /api/health` | — | `{status, opencv_version, rules_fingerprint, bedrock, model_id, region, demo_available, analyses: {running, queued}, usage_today, limits}` |
+| `GET /api/health` | — | `{status, opencv_version, rules_fingerprint, bedrock, model_id, region, demo_available, analyses: {running, queued}, usage_today (incl. last_call_utc), runtime, limits (incl. retention_hours)}` |
+| `GET /api/runtime` | — | what this server runs on right now, for the landing page's "Live on AWS" card; see "Live runtime" below. `Cache-Control: no-store` |
 | `GET /api/demo` | — | the demo match (`samples/w900_1260`) as an **AnalysisResult** + `report_markdown`, `explanations`, `team_model`, `run_rows`, `files` |
 | `GET /api/demo/files/{name}` | — | the exact sample file the frontend reads today (whitelist: `api.demo.files`) |
 | `GET /api/demo/alerts` | — | the demo alerts as **this visitor** sees them (as shipped, plus their own approve / reject) |
@@ -245,6 +246,48 @@ response states.
 | TeamTrack side-camera clip (`F_…`) | `422` "top-down (drone) views only" |
 | `known_source=true` but not a TeamTrack drone clip | `422` |
 | more than `jobs.max_queued` (3) analyses waiting | `503` "busy, try again in a few minutes" |
+| free disk below `min_free_disk_gb` (5 GB) + 2 x the request size (samples: `min_free_disk_gb_sample`, 0.5 GB); also when the disk fills while the file is saved | `507` "The demo server is full right now, please try a sample clip." |
+
+**Retention and the queue.** One analysis runs at a time (a single worker); the others have status
+`queued` and `queue_position` = the number of analyses ahead of them (the running one plus those
+queued earlier), recomputed on every read, so it falls as the queue moves. The **raw uploaded
+video** is deleted `api.uploads.retention_hours` (24) after its analysis finished (`done` or
+`failed`; also the agent's re-analysis cache of that upload), by a sweep at start and every
+`sweep_interval_s` (900). Everything else stays: `match_state.json`, timeline, report,
+explanations, evidence images, the first frame, the event DB, `alerts.jsonl`; `status.json` gets
+`video_deleted_utc`. A pitch step (`uploaded`, `needs_confirmation`, `needs_corners`) left open for
+that long becomes `failed` ("Upload it again"). Nothing reads the raw file after the analysis: no
+endpoint serves it and the desk plays an upload from the visitor's own browser.
+
+## Live runtime (`GET /api/runtime`, also under `runtime` in `/api/health`)
+
+Real values only; a field the server cannot read is `null` (the page prints "unavailable").
+
+```jsonc
+{
+  "checked_utc": "2026-10-24T12:03:00Z",
+  "aws": {                       // from EC2 instance metadata, IMDSv2 (token PUT, then GET)
+    "running_on_aws": true,      // false off EC2: the other fields are null, message "not running on AWS"
+    "platform": "Amazon EC2", "instance_type": "m7i-flex.large",
+    "availability_zone": "ap-southeast-2a", "region": "ap-southeast-2", "message": null
+  },
+  "bedrock": {                   // config + the app's own daily counters (api/usage.py); no prompts or text
+    "configured": true, "model_id": "global.amazon.nova-2-lite-v1:0", "model_label": "Nova 2 Lite",
+    "region": "ap-southeast-2", "calls_today": 12, "calls_cap_today": 300,
+    "last_call_utc": "2026-10-24T12:00:00Z"        // null before the first call of the UTC day
+  },
+  "app": {"opencv_version": "5.0.0", "rules_fingerprint": "ca4ff9bbf7b01c6c", "uptime_s": 7260,
+          "storage": "local"}
+}
+```
+
+Only `instance-type`, `placement/availability-zone` and `placement/region` are ever requested from
+the metadata service (0.4 s per request, 0.9 s in total, `api.runtime`); the instance id, account
+id, addresses and credentials are never read or returned. A positive answer is cached for an hour,
+a negative one for 30 s, so off AWS the endpoint answers "not running on AWS" in well under a
+second. `model_label` comes from `api.runtime.model_labels`. `last_call_utc` is the time of the
+last Bedrock charge recorded by the usage counters (an analysis charges its calls when it
+finishes). The landing page polls it every 60 s.
 
 **Known TeamTrack drone clips** (`D_<date>_<half>_<start>_<end>.mp4` at 3840 × 2160, `known_source`
 `auto`/`true`) skip the pitch step: the saved 31-point calibration (`data/calibration/top.json`) is
