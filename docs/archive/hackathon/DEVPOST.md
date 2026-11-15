@@ -1,6 +1,6 @@
 # Devpost submission text (draft)
 
-Copy each section into the matching Devpost field. Plain English, no hype. Numbers are from the files named in [`TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md) and cross-checked in [`FINAL_AUDIT.md`](FINAL_AUDIT.md). Placeholder: `TBD-VIDEO` (demo video link).
+Copy each section into the matching Devpost field. Plain English, no hype. Numbers are from the files named in [`TECHNICAL_REPORT.md`](../../TECHNICAL_REPORT.md) and cross-checked in [`FINAL_AUDIT.md`](../../FINAL_AUDIT.md). Placeholder: `TBD-VIDEO` (demo video link).
 
 ## Project name
 
@@ -85,7 +85,7 @@ OpenCV 5.0.0 (`cv2.dnn`, `kmeans`, `findHomography`, `findTransformECC`, `phaseC
 - Demo video: TBD-VIDEO
 - Code: https://github.com/haiderchaudarry96-stack/Gaffer
 - Start with: open the app → *Live analysis*; or *Upload your own video* → try the two sample clips. Each sample has a plain Download link if you would rather test with the file.
-- Technical report (PDF, A4): [`docs/Gaffer_Technical_Report.pdf`](Gaffer_Technical_Report.pdf) (Markdown source: [`docs/TECHNICAL_REPORT.md`](TECHNICAL_REPORT.md)); Agentic Vision evidence: [section 6](TECHNICAL_REPORT.md#6-agentic-vision-award-evidence), traces in [Appendix A](TECHNICAL_REPORT.md#appendix-a-agent-trace-examples)
+- Technical report (PDF, A4): [`docs/Gaffer_Technical_Report.pdf`](Gaffer_Technical_Report.pdf) (Markdown source: [`docs/TECHNICAL_REPORT.md`](../../TECHNICAL_REPORT.md)); Agentic Vision evidence: [section 6](TECHNICAL_REPORT.md#6-agentic-vision-award-evidence), traces in [Appendix A](TECHNICAL_REPORT.md#appendix-a-agent-trace-examples)
 
 ## Credits
 

@@ -158,7 +158,7 @@ The footage and model weights are **not in the repo** (gitignored, large, licens
 
 ## Project history
 
-Gaffer began as an OpenCV AI Competition 2026 project. Its original technical report, evaluation evidence and submission notes remain available in [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md), [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md) and [`docs/DEVPOST.md`](docs/DEVPOST.md). The landing page presents the current product direction; these documents preserve the historical competition context.
+Gaffer began as an OpenCV AI Competition 2026 project. Its original technical report, evaluation evidence and submission notes remain available in [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md), [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md) and [`docs/archive/hackathon/DEVPOST.md`](docs/archive/hackathon/DEVPOST.md). The landing page presents the current product direction; these documents preserve the historical competition context.
 
 ## Licence
 
