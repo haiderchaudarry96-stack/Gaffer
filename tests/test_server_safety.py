@@ -144,7 +144,7 @@ def test_a_field_that_fails_or_looks_odd_is_none() -> None:
 
 
 def _runtime_client(tmp_path: Path, cfg: dict[str, Any], imds: Any):
-    return make_client(tmp_path, cfg, imds=imds)
+    return make_client(tmp_path, cfg, imds=imds, client_address=("127.0.0.1", 50000))
 
 
 def test_runtime_endpoint_on_aws(tmp_path, base_cfg) -> None:
@@ -169,8 +169,10 @@ def test_runtime_endpoint_on_aws(tmp_path, base_cfg) -> None:
     text = json.dumps(j)
     for banned in ("i-0", "169.254", "AKIA", "arn:aws", "account", "secret", "token"):
         assert banned not in text
-    # the same facts ride along in /api/health
-    assert c.get("/api/health").json()["runtime"]["aws"]["instance_type"] == "m7i-flex.large"
+    # Full diagnostics are available only to operators; public liveness stays minimal.
+    internal = c.get("/api/internal/health").json()
+    assert internal["runtime"]["aws"]["instance_type"] == "m7i-flex.large"
+    assert c.get("/api/health").json() == {"status": "ok"}
 
 
 def test_runtime_endpoint_off_aws_says_so(tmp_path, base_cfg) -> None:
@@ -184,7 +186,7 @@ def test_runtime_endpoint_off_aws_says_so(tmp_path, base_cfg) -> None:
 
 
 def test_runtime_default_probe_off_aws_is_fast(tmp_path, base_cfg) -> None:
-    c = make_client(tmp_path, base_cfg)  # real probe; the test guard refuses the connection
+    c = make_client(tmp_path, base_cfg, client_address=("127.0.0.1", 50000))
     t0 = time.perf_counter()
     assert c.get("/api/runtime").json()["aws"]["running_on_aws"] is False
     assert time.perf_counter() - t0 < 1.0
@@ -419,7 +421,7 @@ def test_one_analysis_at_a_time_the_rest_wait_with_a_live_position(tmp_path, bas
     sts = [c.get(f"/api/analyses/{i}").json() for i in ids]
     assert [s["status"] for s in sts] == ["queued"] * 3
     assert [s["queue_position"] for s in sts] == [0, 1, 2]       # analyses ahead of each
-    assert c.get("/api/health").json()["analyses"] == {"running": None, "queued": 3}
+    assert c.app.state.jobs.current is None and c.app.state.jobs.queued_count() == 3
     jobs = c.app.state.jobs
     assert jobs._queue.get_nowait() == ids[0]                      # what the worker does
     jobs.run_one(ids[0])

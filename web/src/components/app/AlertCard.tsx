@@ -79,7 +79,7 @@ export default function AlertCard({
   const savedWhere = !connected
     ? 'Saved in this tab only.'
     : scope === 'demo'
-      ? 'Saved for you only: other visitors of this demo still see it waiting.'
+      ? 'Saved for you only: other visitors reviewing this recorded match still see the alert waiting.'
       : 'Saved on the analysis server.'
   const [zoom, setZoom] = useState(false)
   const text = splitAlertExplanation(alert.explanation)

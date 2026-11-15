@@ -3,14 +3,13 @@ import { useScrolled } from '../../lib/hooks'
 import { Menu, X } from 'lucide-react'
 import Logo from '../ui/Logo'
 import { ButtonLink } from '../ui/Button'
-import { GITHUB_URL } from '../../lib/links'
 
 const LINKS = [
-  { href: '#how', label: 'How it works' },
-  { href: '#verified', label: 'Verified' },
-  { href: '#judges', label: 'Judges & tech' },
+  { href: '#product', label: 'Product' },
+  { href: '#how', label: 'How It Works' },
+  { href: '#features', label: 'Features' },
+  { href: '#demo', label: 'Demo' },
   { href: '#faq', label: 'FAQ' },
-  { href: GITHUB_URL, label: 'GitHub' },
 ]
 
 /**
@@ -50,7 +49,7 @@ export default function Nav() {
         </ul>
         <div className="flex items-center gap-2">
           <ButtonLink to="/app" size="sm">
-            Open the demo
+            Explore Gaffer
           </ButtonLink>
           <button
             type="button"

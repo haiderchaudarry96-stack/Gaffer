@@ -112,12 +112,13 @@ def make_client(tmp_path: Path, cfg: dict[str, Any], llm: Any = None, **kw: Any
     usage = Usage(cfg, str(tmp_path / "usage.json"))
     factory = (lambda: llm) if llm is not None else kw.pop("llm_factory", None)
     event_store = kw.pop("event_store", EventStore(tmp_path / "events.sqlite3"))
+    client_address = kw.pop("client_address", ("testclient", 50000))
     app = create_app(cfg, storage=LocalStorage(tmp_path / "api"), llm_factory=factory,
                      usage=usage, alerts_path=tmp_path / "alerts.jsonl",
                      event_store=event_store,
                      start_worker=kw.pop("start_worker", False),
                      chat_trace=tmp_path / "chat_trace.jsonl", **kw)
-    return TestClient(app)
+    return TestClient(app, client=client_address)
 
 
 @pytest.fixture
@@ -136,6 +137,13 @@ def upload(c: TestClient, path: Path, name: str | None = None, **data: Any):
 def test_health(client) -> None:
     r = client.get("/api/health")
     assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_internal_health_preserves_operator_diagnostics(client) -> None:
+    r = TestClient(client.app, client=("127.0.0.1", 50000)).get("/api/internal/health")
+    assert r.status_code == 200
     j = r.json()
     assert j["status"] == "ok" and j["opencv_version"].startswith("5.")
     assert j["rules_fingerprint"] == "ca4ff9bbf7b01c6c"
@@ -144,6 +152,14 @@ def test_health(client) -> None:
     assert j["aws"]["model_id"] and j["aws"]["fallback_model_id"]
     assert j["storage"] == "local" and isinstance(j["sample_clip"], bool)
     assert isinstance(j["replay_clips"], int | str)
+
+
+@pytest.mark.parametrize("path", ["/api/runtime", "/api/internal/health"])
+def test_monitoring_is_not_public_even_with_forwarded_loopback_headers(client, path) -> None:
+    public = TestClient(client.app, client=("203.0.113.8", 50000))
+    for headers in [{}, {"X-Forwarded-For": "127.0.0.1", "X-Real-IP": "::1"}]:
+        assert public.get(path, headers=headers).status_code == 404
+    assert path not in client.get("/openapi.json").json()["paths"]
 
 
 def test_rules_fingerprint_is_frozen(base_cfg) -> None:
@@ -339,6 +355,10 @@ def test_built_site_is_served_without_leaving_its_folder(tmp_path, base_cfg) -> 
     c = make_client(tmp_path, cfg)
     assert "Gaffer" in c.get("/").text and "Gaffer" in c.get("/app").text
     assert c.get("/assets/app.js").text == "console.log(1)"
+    assert c.get("/").headers["cache-control"] == "no-cache"
+    assert c.get("/app").headers["cache-control"] == "no-cache"
+    assert c.get("/assets/app.js").headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert c.get("/assets/missing.js").status_code == 404
     assert c.get("/api/nope").status_code == 404
     for bad in ("/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt"):
         r = c.get(bad)

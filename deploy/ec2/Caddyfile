@@ -23,12 +23,20 @@
 }
 
 (gaffer) {
-	# No request_body limit here: the app enforces api.uploads.max_bytes (500 MB) and answers
-	# with a coach-readable message; a lower limit in the proxy would only produce a bare 413.
-	reverse_proxy gaffer:8000 {
-		transport http {
-			dial_timeout 10s
-			response_header_timeout 15m # the upload request returns after the file is stored and probed
+	# Operational diagnostics are available only inside the container via SSM/Docker exec.
+	# Blocking at the front door also prevents forwarded loopback headers from granting access.
+	@monitoring path /api/runtime /api/runtime/* /api/internal /api/internal/*
+	handle @monitoring {
+		respond "Not found" 404
+	}
+	handle {
+		# No request_body limit here: the app enforces api.uploads.max_bytes (500 MB) and answers
+		# with a coach-readable message; a lower limit in the proxy would only produce a bare 413.
+		reverse_proxy gaffer:8000 {
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 15m # the upload request returns after the file is stored and probed
+			}
 		}
 	}
 }

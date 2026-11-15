@@ -25,9 +25,10 @@ docker run --rm -p 8000:8000 -v "${PWD}/outputs:/app/outputs" `
   -v "${PWD}/data/sample_clips:/app/data/sample_clips:ro" --name gaffer gaffer:latest
 ```
 
-The two read-only mounts give the container the 12 replay clips (Live analysis) and the sample
-clip; without them the app still runs, `/api/health` then shows `replay_clips: "unavailable: …"`
-and `sample_clip: false`. Set `GAFFER_LOG_LEVEL=INFO` (`-e`) to see the `gaffer.*` log lines.
+The two read-only mounts give the container the 12 recorded replay clips and sample clips.
+Without them the app still runs; public `/api/health` is liveness only. Operators can inspect
+full diagnostics inside the container using `/api/internal/health` (see
+`docs/startup/PRODUCT_TECHNICAL_NOTES.md`). Set `GAFFER_LOG_LEVEL=INFO` (`-e`) for server logs.
 
 Then open http://localhost:8000/api/health (and http://localhost:8000/ and /app if the frontend
 was built).
@@ -77,7 +78,7 @@ and how to delete everything. Files:
 - `deploy/aws/make_iam_policies.py`: the IAM policies (laptop deploy user, instance role).
 - `deploy/aws/ssm_run.py`: run a shell script on the instance through SSM Run Command (no SSH).
 - No AWS key is ever on the instance or in the image: boto3 and Docker's awslogs driver use the
-  instance role (`/api/health` shows `"credentials": "iam-role"`). IMDSv2 hop limit 2 lets the
+  instance role (internal diagnostics show `"credentials": "iam-role"`). IMDSv2 hop limit 2 lets the
   container reach it.
 - Limits for a public demo live in `config.yaml` → `api.chat`, `api.bedrock_daily`
   (300 Bedrock calls and $1.00 per UTC day for the whole API by default).

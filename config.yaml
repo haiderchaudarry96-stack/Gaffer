@@ -644,6 +644,8 @@ api:
     seed_analysis_id: teamtrack_demo_w900_1260
   cors_origins: ["http://localhost:5173", "http://127.0.0.1:5173"]
   web_dist: web/dist              # served at / when it exists (npm run build in web/)
+  web_cache:
+    asset_max_age_s: 31536000     # Vite content-hashed assets; HTML/named files revalidate
   demo:
     id: w900_1260
     dir: samples/w900_1260

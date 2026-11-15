@@ -3,7 +3,7 @@ import AmbientPitch from './AmbientPitch'
 
 /**
  * /app before anything is started: no match data, no timeline content, no alert. A decorative
- * pitch and the two ways in (live-style session on recorded footage, or an upload); the
+ * pitch and the two ways in (a replay session on recorded footage, or an upload); the
  * finished analysis is a secondary choice.
  */
 export default function IdleDesk({
@@ -37,7 +37,7 @@ export default function IdleDesk({
               className="group flex min-h-14 items-center gap-3 rounded-2xl bg-accent px-5 py-3 text-left font-semibold text-on-accent transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink motion-reduce:transition-none motion-reduce:hover:translate-y-0"
             >
               <Video className="size-5 shrink-0" aria-hidden="true" />
-              <span>Live analysis — recorded TeamTrack match (simulation)</span>
+              <span>Explore recorded TeamTrack analysis</span>
               <ArrowRight className="ml-auto size-4 shrink-0" aria-hidden="true" />
             </button>
             <button
@@ -51,7 +51,7 @@ export default function IdleDesk({
             </button>
           </div>
           <p className="mt-4 text-sm text-muted">
-            The live analysis replays recorded footage; no camera is connected.
+            This session replays recorded footage. No live camera is connected.
           </p>
           <button
             type="button"

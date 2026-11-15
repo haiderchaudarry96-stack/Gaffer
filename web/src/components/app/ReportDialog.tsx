@@ -1,5 +1,6 @@
 import Dialog from './Dialog'
 import Cited from '../ui/Cited'
+import Disclosure from '../ui/Disclosure'
 import { useResource } from '../../data/useResource'
 import { getReport } from '../../lib/matchData'
 import { ErrorState, Skeleton } from '../ui/States'
@@ -40,20 +41,20 @@ export default function ReportDialog({
         ? ({ status: 'error', error: 'This analysis has no coach report yet.' } as const)
         : ({ status: 'ready', data: override } as const)
   return (
-    <Dialog open={open} onClose={onClose} title="Coach report · 15:00–21:00">
+    <Dialog open={open} onClose={onClose} title={override === undefined ? 'Coach report · recorded example' : 'Coach report'}>
       <div className="space-y-6 p-5">
-        <p className="rounded-xl border border-warn/30 bg-warn/5 px-3 py-2 text-xs text-muted">
+        <div className="rounded-xl border border-line bg-bg px-4 py-3 text-sm text-muted">
           {override === undefined ? (
             <>
-              This is the <span className="text-text">stored</span> report from the Phase 3 run; generating a new one needs
-              the backend. Written by the <span className="text-text">code template</span>: Nova 2 Lite’s version failed
-              the grounding check twice. Every number cites its source: [evt_…] is an agent decision, [seg a-b] the
-              tactics timeline.
+              <p>This saved summary accompanies the recorded example. Review its cited moments alongside the footage before making a decision.</p>
+              <Disclosure summary="About this report" className="mt-2">
+                <p className="pt-2 text-xs">The example uses a structured template because generated wording did not pass the source checks. Event citations refer to checked changes; segment citations refer to the formation timeline. This is a saved report, not a new analysis.</p>
+              </Disclosure>
             </>
           ) : (
-            <>Report of the uploaded analysis, as returned by the backend.</>
+            <>Summary of your completed analysis. Use the source citations to review its evidence.</>
           )}
-        </p>
+        </div>
         {res.status === 'loading' && <Skeleton className="h-64" />}
         {res.status === 'error' && <ErrorState title="Could not load the report" detail={res.error} />}
         {res.status === 'ready' && (

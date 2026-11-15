@@ -1,5 +1,9 @@
 # Gaffer on AWS (N6a deployment, 22 Oct 2026)
 
+**Latest deployment (15 Nov 2026):** approved coach-facing UI and monitoring protections are running as `gaffer:ui-20261115-061935-f6b77a16a149`. See [DEPLOYMENT_LATEST.md](../docs/startup/DEPLOYMENT_LATEST.md) for image identifiers, live validation and rollback. Public health is liveness only; operators query full health through SSM using `docker exec gaffer` and `http://127.0.0.1:8000/api/internal/health`. The dated observations below describe older releases.
+
+**Previous deployment (14 Nov 2026):** startup UI image `gaffer:startup_20261114T151853Z-9262acbc7897` was deployed on the existing EC2 instance and is retained for rollback. This was an explicitly authorized working-tree snapshot, including the uncommitted UI files; no Git commit or push was made. Database, media and Caddy certificates were preserved. See [the deployment record](../docs/startup/DEPLOYMENT_2026-11-14.md) for its checks and hashes. The prices below are the older dated estimates.
+
 Public app: **https://gaffer-tactics.duckdns.org/** (desk: `/app`, health: `/api/health`); the old
 link **http://13.210.196.109/** keeps working over plain http (see "HTTPS" below).
 

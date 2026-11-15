@@ -58,8 +58,8 @@ try {
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true })
 
   await page.goto(`${base}/app`)
-  await page.getByRole('button', { name: 'Live analysis', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Set up Live analysis' }).waitFor()
+  await page.getByRole('button', { name: 'Recorded analysis', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Set up recorded analysis' }).waitFor()
   if (throttle) await cdp.send('Network.emulateNetworkConditions', FAST_4G)
   const t0 = await page.evaluate(() => performance.now())
   await page.getByRole('button', { name: 'Start recorded match analysis' }).click()

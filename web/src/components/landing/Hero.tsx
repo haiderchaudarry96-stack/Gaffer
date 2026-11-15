@@ -12,8 +12,8 @@ import { displayFormation } from '../../data/timeline'
 import { formatClock } from '../../data/time'
 import type { EventStatus, FormationTimeline } from '../../data'
 
-const HEADLINE = 'See the shape change before the scoreline does.'
-const TAGLINE = 'Your tactical analyst. It watches, checks, then tells you.'
+const HEADLINE = 'See the shape of your match.'
+const TAGLINE = 'Follow team shapes, review changes in context and bring clearer evidence to your next coaching decision.'
 const PITCH = { length_m: 105, width_m: 68 }
 const EASE = [0.22, 1, 0.36, 1] as const
 const STATUS_WORD: Record<EventStatus, string> = {
@@ -185,14 +185,14 @@ export default function Hero() {
           transition={{ duration: 0.6, ease: EASE, delay: 0.75 }}
         >
           <ButtonLink to="/app" size="lg">
-            Open the demo <ArrowRight className="size-4" aria-hidden="true" />
+            Explore Gaffer <ArrowRight className="size-4" aria-hidden="true" />
           </ButtonLink>
           <ButtonLink to="#how" variant="ghost" size="lg">
-            How it checks <ArrowDown className="size-4" aria-hidden="true" />
+            How it works <ArrowDown className="size-4" aria-hidden="true" />
           </ButtonLink>
         </m.div>
         <p className="mt-6 text-xs text-muted">
-          Real tracked positions · TeamTrack drone match
+          Example: recorded TeamTrack footage · no live camera connected
           {res.status === 'error' && <span className="block text-warn">Positions could not be loaded: {res.error}</span>}
         </p>
       </div>

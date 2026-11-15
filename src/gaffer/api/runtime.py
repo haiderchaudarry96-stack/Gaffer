@@ -1,5 +1,5 @@
-"""Live runtime facts for the landing page's "Live on AWS" card (`GET /api/runtime`, also in
-`/api/health`). Real values only; a field that cannot be read is `null` (the page says so).
+"""Internal runtime facts (`GET /api/runtime` and `/api/internal/health`, loopback only).
+Real values only; a field that cannot be read is `null`. Never used by the public frontend.
 
 What is read, and what never is:
 
