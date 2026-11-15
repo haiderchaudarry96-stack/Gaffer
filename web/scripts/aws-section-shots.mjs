@@ -1,5 +1,5 @@
 /* global document, window */
-// Screenshots of the landing page's "Live on AWS" card, the AWS cards, the limits and the FAQ at
+// Screenshots of the landing page's service-status card, the AWS cards, the limits and the FAQ at
 // 1440 and 390 px, from the real built site served by a Gaffer server (24 Oct).
 //
 //   py scripts/serve_no_bedrock.py --port 8013 --out outputs/api_no_bedrock_aws
@@ -42,13 +42,12 @@ for (const [w, h] of [[1440, 900], [390, 844]]) {
   await p.screenshot({ path: resolve(out, `landing-${w}-live-on-aws.png`) })
   console.log('landing live-on-aws', w, '->', (await card.innerText()).replace(/\s+/g, ' ').slice(0, 160))
 
-  // the judge details, opened: the AWS cards and their small print
-  await p.getByRole('button', { name: 'Open judge and technical details' }).click()
+  // technical details and their small print
   const awsHeading = p.getByRole('heading', { name: 'Where AWS is used' })
   await awsHeading.scrollIntoViewIfNeeded()
   await p.waitForTimeout(500)
   await p.screenshot({ path: resolve(out, `landing-${w}-aws-cards.png`) })
-  const tech = p.locator('#tech')
+  const tech = p.locator('#technology')
   await tech.getByRole('button', { name: 'Read the small print' }).click()
   await p.waitForTimeout(400)
   await tech.getByText('AWS (ap-southeast-2, Sydney)').scrollIntoViewIfNeeded()
@@ -61,15 +60,15 @@ for (const [w, h] of [[1440, 900], [390, 844]]) {
   await p.waitForTimeout(500)
   await p.screenshot({ path: resolve(out, `landing-${w}-limits.png`) })
 
-  // FAQ: "Is it live?", "What about player privacy?", "What does a match cost?"
-  for (const q of ['Is it live?', 'What about player privacy?', 'What does a match cost?']) {
+  // FAQ: live-camera status, privacy and measured processing time.
+  for (const q of ['Does Gaffer analyse a live camera?', 'How is uploaded footage handled?', 'How long does analysis take?']) {
     await p.locator('#faq').getByRole('button', { name: q }).click()
   }
-  await p.locator('#faq').getByRole('button', { name: 'Is it live?' }).scrollIntoViewIfNeeded()
+  await p.locator('#faq').getByRole('button', { name: 'Does Gaffer analyse a live camera?' }).scrollIntoViewIfNeeded()
   await p.waitForTimeout(500)
   await p.screenshot({ path: resolve(out, `landing-${w}-faq.png`) })
   if (w === 390) {
-    await p.locator('#faq').getByRole('button', { name: 'What about player privacy?' }).scrollIntoViewIfNeeded()
+    await p.locator('#faq').getByRole('button', { name: 'How is uploaded footage handled?' }).scrollIntoViewIfNeeded()
     await p.waitForTimeout(300)
     await p.screenshot({ path: resolve(out, `landing-${w}-faq-privacy.png`) })
   }

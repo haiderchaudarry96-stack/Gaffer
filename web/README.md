@@ -1,4 +1,4 @@
-# Gaffer web app (Phase 4 frontend)
+# Gaffer web app
 
 React + Vite + TypeScript + Tailwind CSS + Motion + Lenis (all MIT). Two routes: `/` (landing page)
 and `/app` (analyst desk). Design brief: `../docs/UI_DESIGN.md`; where this README lists a changed
@@ -71,7 +71,7 @@ All data is real Phase 3 output from `../samples/w900_1260/` (TeamTrack drone ma
 `scripts/copy-samples.mjs` copies the files the app reads into `public/sample/` (gitignored) before
 dev / build / test. Components never fetch files: everything goes through `src/data/` (one loader per
 resource, runtime validation). The static frontend does not ship match video. With the FastAPI
-backend connected, **Live analysis** plays the allowlisted TeamTrack top-view clips for 15:00–21:00
+backend connected, **Recorded analysis** plays the allowlisted TeamTrack top-view clips for 15:00–21:00
 beside the tactical map; both follow the same match clock. The UI labels this as recorded footage,
 not a connected camera feed. Candidate cards come from the N1 event API;
 the persisted verification result stays hidden until the stored match-clock evidence boundary.
@@ -90,7 +90,7 @@ writes verified event rows to `api.event_store.path` and evidence/trace artifact
 directory. Keep the dataset files under `data/teamtrack/`; the replay API serves them from a fixed
 allowlist and supports byte-range seeking.
 
-The Live analysis setup asks which side the coach represents, the objective (chase, protect, or
+The Recorded analysis setup asks which side the coach represents, the objective (chase, protect, or
 balanced), and which substitute roles are actually available. At a confirmed event's stored
 verification boundary, the UI requests a deterministic N4 role suggestion from persisted N3 posture
 evidence and this context. Missing context/evidence, own-team events, and unsupported posture show a
@@ -118,24 +118,23 @@ recommendation, separately from the formation alert decision. No Bedrock call is
    "flip x"; a pure x flip would mirror the pitch, so the display uses the same 180° turn as the
    tactics engine (`normalise` in `src/gaffer/tactics/common.py`): x → L − x and y → W − y. The
    minimap now matches the evidence image. Small arrows show each team's direction.
-5. **`/app` = progressive disclosure.** Default view: the pitch (or the video with the pitch as an
-   inset), the shape timeline and one large alert card. The trace ("How Gaffer checked this") is a
-   right-side drawer opened from the card; chat is a small floating button; "Generate report" stays
+5. **`/app` = progressive disclosure.** After starting: video and pitch in adjacent panels,
+   the shape timeline and one large alert card. The trace ("How Gaffer checked this") is a
+   right-side drawer opened from the card; chat is a small floating button; "View report" stays
    in the header and opens the stored report. The brief's list of alert cards in a drawer is replaced
    by one card for the selected change (click a timeline diamond to switch).
-6. **`/app` starts at 16:17**, 13 s before the confirmed 16:30 change, the latest moment from which
-   White has ≥ 9 and Blue ≥ 8 outfield players in a team in every frame (`pick-windows.mjs`).
+6. **`/app` opens idle.** The coach chooses recorded analysis, upload or completed review. The
+   completed example opens at 16:17; recorded analysis starts at 15:00 and reveals results in match time.
 7. **Match replay timing comes from the trace.** A change appears when its time is reached; checks
    start once the 60 s look-ahead after detection has been played (the card's "required re-analysis
    span", 18:05 for evt_003) and each step lands after its recorded tool + LLM time (the
-   re-analysis was a cache hit in that run; uncached it took 252 s). Live replay plays at 4×.
-8. **Landing copy.** One idea, one statement or number and one short line per section; every caveat
-   moved into a "Read the small print" accordion per section (none removed). Sections: hero, product
-   shot, how it works, a sticky "verified, not guessed" story of the real evt_003 trace, before/after
-   slider (the two evidence panels), results, where OpenCV 5 / AWS are used (EC2, S3, CloudWatch,
-   Bedrock, all in use since the 22 Oct deploy), a live "Live on AWS" card in the judges section
-   (`GET /api/runtime`, refreshed every minute, "unavailable" per field it cannot read), limits, FAQ. The brief's "layer toggles" section is not built.
-9. **Hero second button says "How it checks"** (brief: "How it works").
+   re-analysis was a cache hit in that run; uncached it took 252 s). Replay offers 1×, 2× and 4×.
+8. **Landing copy (14 Nov refinement).** Coach benefits and actual review capabilities: hero,
+   product screenshot, three workflow steps, six feature cards, recorded evidence comparison,
+   footage guide and customer FAQ. Navigation: Product / How It Works / Features / Demo / FAQ;
+   CTA: Explore Gaffer. Raw functions and evaluation scope are in developer documentation. The
+   public runtime card/client is retired; monitoring stays behind container loopback and SSM/IAM.
+9. **Hero second button says "How it works".**
 10. **Timeline labels** are drawn only where they fit completely (measured), never truncated; below
     640 px the bars carry no text and a full-width list of every change is the control.
 11. **Accordions and the drawer animate opacity and transform only**; height changes are instant.
@@ -190,8 +189,8 @@ recommendation, separately from the formation alert decision. No Bedrock call is
 
 | Mode | How you get there | What is shown |
 |---|---|---|
-| **idle** (default) | `/app` | A decorative pitch (11 neutral drifting dots, a scan line; still with reduced motion) labelled "Waiting to start", the start panel ("Live analysis — recorded TeamTrack match (simulation)", "Upload your own video", link "Review a completed analysis") and an empty timeline. No match data, video, chips, alert or chat. |
-| **live** | Live analysis setup → Start | The recorded TeamTrack video plays from 15:00. Dots come from the MatchState frame at the playhead, formation chips and the timeline are cut at the playhead (`data/liveSession.ts revealTimeline`), the 16:30 candidate is "checking" from its onset and verified only from its stored boundary (18:05); seeking back hides it again. A reading strip shows frames read and detections so far. Coach decisions (alert approve / reject, advice accept / reject) are kept for this session only and never read from or written to the shared demo stores; "Start a new session" (setup dialog) starts fresh. No chat (it knows the whole match). |
+| **idle** (default) | `/app` | A decorative pitch (11 neutral drifting dots, a scan line; still with reduced motion) labelled "Waiting to start", the start panel ("Recorded analysis — recorded TeamTrack match (simulation)", "Upload your own video", link "Review a completed analysis") and an empty timeline. No match data, video, chips, alert or chat. |
+| **live** | Recorded analysis setup → Start | The recorded TeamTrack video plays from 15:00. Dots come from the MatchState frame at the playhead, formation chips and the timeline are cut at the playhead (`data/liveSession.ts revealTimeline`), the 16:30 candidate is "checking" from its onset and verified only from its stored boundary (18:05); seeking back hides it again. A reading strip shows frames read and detections so far. Coach decisions (alert approve / reject, advice accept / reject) are kept for this session only and never read from or written to the shared demo stores; "Start a new session" (setup dialog) starts fresh. No chat (it knows the whole match). |
 | **review** | "Review a completed analysis", `?mode=review` (or the old `?t=` / `?live=1` / `?drawer=1` links) | The finished demo analysis in full, labelled "Completed analysis", with Match replay, report and chat. |
 | **upload** | an upload finishes | The finished upload in full ("Completed analysis"), with "Replay in match time" (the same reveal, from the upload's start). |
 
@@ -234,8 +233,9 @@ Tests: `src/data/api.test.ts` (mocked fetch).
 - **AnalysisResult**: `{"id", "label", "match_state": MatchState, "timeline": TacticalTimeline,
   "alerts": [Alert], "trace": [trace step], "report": CoachReport|null}`. Evidence images in alerts
   should be absolute URLs the backend serves.
-- The time estimate in the UI uses the measured 1.2 s of processing per second of drone video
-  (laptop CPU), plus agent checks; the server's `eta_s` is shown when it sends one.
+- The upload UI shows the server-measured `eta_s` after enough frames have been processed and
+  shows the remaining agent-check budget separately. It does not present the configured prior as
+  an ETA. Resolution, server hardware and load affect elapsed time.
 
 ## Licences
 

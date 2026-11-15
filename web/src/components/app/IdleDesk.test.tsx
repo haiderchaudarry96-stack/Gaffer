@@ -10,7 +10,7 @@ const render = (reduced: boolean) => renderToStaticMarkup(
 describe('idle desk (/app before anything is started)', () => {
   it('offers the two ways in and the completed review as a secondary link', () => {
     const html = render(false)
-    expect(html).toContain('Live analysis — recorded TeamTrack match (simulation)')
+    expect(html).toContain('Explore recorded TeamTrack analysis')
     expect(html).toContain('Upload your own video')
     expect(html).toContain('Review a completed analysis')
     expect(html).toContain('Waiting to start')

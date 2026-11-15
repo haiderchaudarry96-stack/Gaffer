@@ -33,10 +33,10 @@ p{font-size:23px;line-height:1.45;color:#a9b9af;margin:0}
 .chip em{font-style:normal;font-size:14px;letter-spacing:.08em;padding:6px 11px;border-radius:999px;background:rgba(200,245,66,.16);border:1px solid rgba(200,245,66,.55);color:#c8f542}
 .chip span{color:#a9b9af;margin-left:auto;font-weight:500}
 </style><div class="wrap"><div><div class="brand">${logo}<b>Gaffer</b></div>
-<h1>The tactical analyst that <span>checks its own eyes</span> before it speaks.</h1>
-<p>Spots the moment a team changes shape, looks again with OpenCV 5, then asks the coach.</p></div>
+<h1>See the shape <span>of your match.</span></h1>
+<p>Follow team shapes. Review changes in context. Keep the final say.</p></div>
 <div class="card"><img src="${url('public/product/evt003-after.jpg')}"><div class="chip"><em>VERIFIED</em>White switched to 3-4-3<span>16:30</span></div></div>
-<div class="tags"><i>OpenCV 5</i><i>Amazon Bedrock</i><i>For grassroots coaches</i></div></div>`
+<div class="tags"><i>Recorded match review</i><i>For coaches and analysts</i></div></div>`
 const dir = mkdtempSync(join(tmpdir(), 'gaffer-og-'))
 const file = join(dir, 'og.html')
 writeFileSync(file, html)

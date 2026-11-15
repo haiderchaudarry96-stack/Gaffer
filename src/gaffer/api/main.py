@@ -11,6 +11,7 @@ One process serves the API, runs the analysis worker (one analysis at a time) an
 from __future__ import annotations
 
 import errno
+import ipaddress
 import json
 import logging
 import threading
@@ -389,8 +390,30 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
         except ReplaySourceError:
             return "unavailable"
 
+    def require_internal(request: Request) -> None:
+        """Limit operational diagnostics to container loopback, reached via SSM/Docker exec.
+
+        The public reverse proxy also blocks these paths. Forwarded headers alone do not
+        authorize access through that proxy; no monitoring UI is shipped to visitors.
+        """
+        try:
+            if request.client and ipaddress.ip_address(request.client.host).is_loopback:
+                return
+        except ValueError:
+            pass
+        raise HTTPException(404, "Not found.")
+
     @app.get("/api/health")
-    def health() -> dict[str, Any]:
+    def health(response: Response) -> dict[str, str]:
+        """Public liveness only; infrastructure and usage stay in internal diagnostics."""
+        response.headers["Cache-Control"] = "no-store"
+        return {"status": "ok"}
+
+    @app.get("/api/internal/health", include_in_schema=False)
+    def internal_health(request: Request, response: Response) -> dict[str, Any]:
+        """Full diagnostics for operators using container loopback, never the public page."""
+        require_internal(request)
+        response.headers["Cache-Control"] = "no-store"
         return {"status": "ok", "opencv_version": cv2.__version__,
                 "rules_fingerprint": rules_fingerprint(cfg),
                 "bedrock": "client available" if factory is not None else "not configured",
@@ -413,11 +436,12 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
                            "retention_hours": api["uploads"]["retention_hours"],
                            "views": ["top-down"]}}
 
-    @app.get("/api/runtime")
-    def get_runtime(response: Response) -> dict[str, Any]:
+    @app.get("/api/runtime", include_in_schema=False)
+    def get_runtime(request: Request, response: Response) -> dict[str, Any]:
         """What this server is running on right now (EC2 instance type, zone, region from the
         metadata service; Bedrock model and the app's own call counters; OpenCV, rules, uptime).
         Never an instance id, account id, address or credential. Off AWS: "not running on AWS"."""
+        require_internal(request)
         response.headers["Cache-Control"] = "no-store"
         return runtime.snapshot()
 
@@ -835,8 +859,13 @@ def create_app(cfg: dict[str, Any] | None = None, *, storage: Storage | None = N
                 raise HTTPException(404, "Not found.")
             p = (dist / path).resolve()
             if path and p.is_file() and dist.resolve() in p.parents:
-                return FileResponse(p)
-            return FileResponse(dist / "index.html")  # client-side routes (/app)
+                policy = (f"public, max-age={int(api['web_cache']['asset_max_age_s'])}, immutable"
+                          if path.startswith("assets/")
+                          else "no-cache")
+                return FileResponse(p, headers={"Cache-Control": policy})
+            if path.startswith(("assets/", "product/")):
+                raise HTTPException(404, "Not found.")
+            return FileResponse(dist / "index.html", headers={"Cache-Control": "no-cache"})
 
     @app.exception_handler(Exception)
     async def unhandled(request: Request, exc: Exception) -> JSONResponse:

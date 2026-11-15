@@ -15,7 +15,7 @@ const ProductShot = forwardRef<HTMLElement>(function ProductShot(_, ref) {
   const y = useTransform(scrollYProgress, [0, 1], reduced ? [0, 0] : [70, -70])
 
   return (
-    <section ref={ref} aria-label="The analyst desk" className="relative pt-16 pb-16 sm:pt-24 sm:pb-24">
+    <section id="product" ref={ref} aria-label="The analyst desk" className="relative scroll-mt-24 pt-16 pb-16 sm:pt-24 sm:pb-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div ref={frameRef}>
           <Link

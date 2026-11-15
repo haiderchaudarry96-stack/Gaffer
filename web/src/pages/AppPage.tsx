@@ -405,7 +405,7 @@ export default function AppPage() {
         </h2>
         <p className="mt-3 text-muted">
           {persistedEvents.length === 0
-            ? 'The video and map are available, but this replay has no persisted OpenCV events to show. No event has been fabricated.'
+            ? 'The video and map are available, but no saved formation-change events are available for this replay.'
             : 'Formation-change candidates will appear when playback reaches their recorded match time.'}
         </p>
       </article>
@@ -500,7 +500,7 @@ export default function AppPage() {
           )}
           <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto sm:flex-nowrap">
             <Link to="/" className="hidden items-center gap-1 rounded-full px-3 py-2 text-sm text-muted hover:text-text lg:inline-flex">
-              <ArrowLeft className="size-4" aria-hidden="true" /> Story
+              <ArrowLeft className="size-4" aria-hidden="true" /> Home
             </Link>
             {view !== 'idle' && (
               <Button variant="ghost" size="sm" onClick={backToStart}>
@@ -508,7 +508,7 @@ export default function AppPage() {
               </Button>
             )}
             <Button variant="ghost" size="sm" onClick={() => { clock.pause(); setLiveAnalysisError(null); setLiveAnalysisOpen(true) }}>
-              <Video className="size-4" aria-hidden="true" /> Live analysis
+              <Video className="size-4" aria-hidden="true" /> Recorded analysis
             </Button>
             {view === 'idle' && (
               <Button variant="ghost" size="sm" onClick={() => setUploadOpen(true)}>
@@ -531,8 +531,8 @@ export default function AppPage() {
               </button>
             )}
             {finished && (
-              <Button variant="ghost" size="sm" onClick={() => setReportOpen(true)}>
-                <FileText className="size-4" aria-hidden="true" /> <span className="hidden sm:inline">Generate</span> report
+              <Button variant="ghost" size="sm" aria-label="View coach report" onClick={() => setReportOpen(true)}>
+                <FileText className="size-4" aria-hidden="true" /> <span className="hidden sm:inline">View</span> report
               </Button>
             )}
           </div>
@@ -543,7 +543,7 @@ export default function AppPage() {
         <h1 className="sr-only">
           {view === 'idle' ? 'Gaffer analyst desk: start an analysis'
             : uploaded ? `Gaffer analyst desk: ${uploaded.result.label}`
-              : view === 'live' ? 'Gaffer analyst desk: Live analysis of a recorded TeamTrack match'
+              : view === 'live' ? 'Gaffer analyst desk: recorded TeamTrack replay'
                 : 'Gaffer analyst desk: completed analysis, TeamTrack drone match, 15:00 to 21:00'}
         </h1>
         {view === 'idle' ? (
@@ -605,13 +605,13 @@ export default function AppPage() {
         )}
       </main>
 
-      <Dialog open={liveAnalysisOpen} onClose={() => setLiveAnalysisOpen(false)} title="Set up Live analysis" wide>
+      <Dialog open={liveAnalysisOpen} onClose={() => setLiveAnalysisOpen(false)} title="Set up recorded analysis" wide>
         <div className="space-y-5 p-5 sm:p-7">
           <div className="rounded-xl border border-line bg-bg px-4 py-3 text-sm text-muted">
-            This demo replays recorded TeamTrack footage. It is not a live camera feed, and no camera is connected. A live-camera setup would need a fixed elevated position, the entire pitch in view, and clearly different jerseys for each team.
+            This recorded-match example uses TeamTrack footage. It is not a live camera feed, and no camera is connected. A live-camera setup would need a fixed elevated position, the entire pitch in view, and clearly different jerseys for each team.
           </div>
           <label className="block space-y-2 text-sm font-medium text-text" htmlFor="coach-side">
-            <span>Which demo side are you coaching?</span>
+            <span>Which team are you coaching in this match?</span>
             <select id="coach-side" value={coachSide} onChange={(event) => setCoachSide(event.target.value as TeamSide)} className="h-11 w-full rounded-xl border border-line bg-surface px-3">
               <option value="">Select a side</option>
               <option value="home">{names.home}</option>

@@ -89,11 +89,13 @@ const CLIP_POINTS = [
 
 const SHOTS = [
   ...LANDING(1440, 900, '1440'),
+  ...LANDING(768, 1024, '768'),
   ...LANDING(375, 812, '375'),
   { name: 'landing-1440-slider', path: '/', width: 1440, height: 900, at: scrollToSel('#compare', 40) },
   { name: 'landing-1440-story', path: '/', width: 1440, height: 900, at: scrollToSel('#verified', 900) },
   { name: 'landing-1440-1-hero-reduced-motion', path: '/', width: 1440, height: 900, reduced: true, at: async (p) => p.evaluate(() => window.scrollTo(0, 0)) },
   { name: 'app-1440-light', path: APP, width: 1440, height: 900 },
+  { name: 'app-768-light', path: APP, width: 768, height: 1024 },
   { name: 'app-375-light', path: APP, width: 375, height: 812, fullPage: true },
   { name: 'app-1440-live-replay', path: '/app?live=1&t=1103&paused=1', width: 1440, height: 900 },
   { name: 'app-1440-drawer-details-closed', path: `${APP}&drawer=1`, width: 1440, height: 900, at: async (p) => p.getByRole('button', { name: 'Technical details' }).scrollIntoViewIfNeeded() },

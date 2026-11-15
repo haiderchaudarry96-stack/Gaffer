@@ -1,69 +1,34 @@
 import { LogoMark } from '../ui/Logo'
-import { AUTHOR_URL, COMPETITION_URL, GITHUB_URL, TEAMTRACK_URL } from '../../lib/links'
+import { AUTHOR_URL, TEAMTRACK_URL } from '../../lib/links'
 
-const ext = { target: '_blank', rel: 'noreferrer' } as const
 const linkCls = 'underline decoration-line underline-offset-4 hover:text-text hover:decoration-muted'
 
 export default function Footer() {
   return (
     <footer className="border-t border-line">
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.2fr_1fr_1fr]">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.2fr_0.7fr_1fr]">
         <div className="space-y-3">
-          <div className="flex items-center gap-2.5">
-            <LogoMark />
-            <span className="font-display text-lg font-bold">Gaffer</span>
-          </div>
-          <p className="max-w-xs text-sm text-muted">Your tactical analyst. It watches, checks, then tells you.</p>
-          <p className="text-sm text-muted">
-            Built for the{' '}
-            <a href={COMPETITION_URL} className={linkCls} {...ext}>
-              OpenCV AI Competition 2026, powered by AWS
-            </a>
-            . Code under the MIT licence on{' '}
-            <a href={GITHUB_URL} className={linkCls} {...ext}>
-              GitHub
-            </a>
-            .
-          </p>
+          <div className="flex items-center gap-2.5"><LogoMark /><span className="font-display text-lg font-bold">Gaffer</span></div>
+          <p className="max-w-sm text-sm text-muted">A clearer view of team shape. Evidence for your next coaching conversation.</p>
+          <p className="max-w-sm text-sm text-muted">An early football video analysis product for recorded match review.</p>
         </div>
-        <div>
-          <h2 className="mb-3 font-sans text-sm font-semibold tracking-normal text-text">Data</h2>
-          <p className="text-sm text-muted">
-            Match footage and positions:{' '}
-            <a href={TEAMTRACK_URL} className={linkCls} {...ext}>
-              TeamTrack
-            </a>{' '}
-            — Scott et al., “TeamTrack: A Dataset for Multi-Sport Multi-Object Tracking in Full-pitch Videos”, 2024. MIT
-            licence.
-          </p>
-          <p className="mt-3 text-sm text-muted">
-            Positions on this site are Gaffer’s own OpenCV 5 pipeline output for that footage; no video is served here.
-          </p>
-        </div>
-        <div>
-          <h2 className="mb-3 font-sans text-sm font-semibold tracking-normal text-text">Built with</h2>
-          <ul className="space-y-1.5 text-sm text-muted">
-            <li>OpenCV 5 — Apache 2.0</li>
-            <li>Amazon Nova 2 Lite on Amazon Bedrock</li>
-            <li>React, Vite, Tailwind CSS, Motion — MIT</li>
-            <li>Lucide icons — ISC</li>
-            <li>Space Grotesk, Inter, JetBrains Mono — SIL OFL 1.1</li>
+        <nav aria-label="Footer">
+          <h2 className="mb-3 font-sans text-sm font-semibold tracking-normal text-text">Explore</h2>
+          <ul className="space-y-2 text-sm text-muted">
+            <li><a href="#product" className={linkCls}>Product</a></li>
+            <li><a href="#features" className={linkCls}>Features</a></li>
+            <li><a href="#demo" className={linkCls}>Recorded demo</a></li>
+            <li><a href="#faq" className={linkCls}>FAQ</a></li>
           </ul>
+        </nav>
+        <div>
+          <h2 className="mb-3 font-sans text-sm font-semibold tracking-normal text-text">Footage credits</h2>
+          <p className="text-sm text-muted">Example footage: <a href={TEAMTRACK_URL} className={linkCls} target="_blank" rel="noreferrer">TeamTrack</a>, Scott et al., 2024. MIT licence.</p>
+          <p className="mt-3 text-sm text-muted">The example uses recorded footage and estimated positions. It is not a live camera feed.</p>
         </div>
       </div>
       <div className="mx-auto max-w-7xl border-t border-line px-4 py-5 sm:px-6">
-        <p className="text-xs text-muted">
-          Designed &amp; built by{' '}
-          <a
-            href={AUTHOR_URL}
-            target="_blank"
-            rel="noopener"
-            className="font-medium text-accent-ink underline-offset-4 hover:underline"
-          >
-            Haider Sultan
-          </a>{' '}
-          · FAST-NUCES, Pakistan
-        </p>
+        <p className="text-xs text-muted">Designed &amp; built by <a href={AUTHOR_URL} target="_blank" rel="noopener" className="font-medium text-accent-ink underline-offset-4 hover:underline">Haider Sultan</a> · FAST-NUCES, Pakistan</p>
       </div>
     </footer>
   )

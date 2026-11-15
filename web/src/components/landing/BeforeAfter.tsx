@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useInView } from 'motion/react'
 import Reveal from '../ui/Reveal'
-import { SmallPrint } from '../ui/Disclosure'
+import { ButtonLink } from '../ui/Button'
 import { usePrefersReducedMotion } from '../../lib/hooks'
 
 const BASE = import.meta.env.BASE_URL
@@ -33,12 +33,12 @@ export default function BeforeAfter() {
   }, [inView, reduced])
 
   return (
-    <section id="compare" aria-labelledby="compare-title" className="scroll-mt-20 py-24 sm:py-32">
+    <section id="demo" aria-labelledby="demo-title" className="scroll-mt-24 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <Reveal>
-          <p className="mb-4 font-mono text-xs tracking-widest text-accent-ink uppercase">What OpenCV sees</p>
-          <h2 id="compare-title" className="max-w-4xl text-4xl leading-[1.05] font-bold text-text sm:text-6xl">
-            A back four became a back three.
+          <p className="mb-4 font-mono text-xs tracking-widest text-accent-ink uppercase">Recorded demo</p>
+          <h2 id="demo-title" className="max-w-4xl text-4xl leading-[1.05] font-bold text-text sm:text-6xl">
+            See a shape change in context.
           </h2>
           <p className="mt-5 max-w-2xl text-lg text-muted sm:text-xl">Drag to compare White before and after 16:30.</p>
         </Reveal>
@@ -83,12 +83,12 @@ export default function BeforeAfter() {
             />
           </div>
         </Reveal>
-        <SmallPrint
-          items={[
-            'Both panels are from the agent’s real evidence image for the 16:30 alert: White’s average shape in its most confident window before (15:05–15:35, 4-4-2, 20 % of positions in its own box) and after (16:35–17:05, 3-4-3, 12 %). Drawn by OpenCV 5 from tracked positions, attacking right; they are not video frames.',
-            'The “before” window was picked to avoid a set piece: an earlier window had 45 % of positions in the own box. That 25 % threshold was set on this one case.',
-          ]}
-        />
+        <p className="mt-5 max-w-3xl text-sm leading-relaxed text-muted">
+          A selected example from one recorded TeamTrack match. These diagrams show estimated
+          average positions, not video frames. Open the recorded analysis to explore the footage,
+          timeline and evidence together; this example is not a general accuracy claim.
+        </p>
+        <ButtonLink to="/app" size="lg" className="mt-7">Explore Gaffer</ButtonLink>
       </div>
     </section>
   )

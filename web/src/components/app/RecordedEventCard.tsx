@@ -20,7 +20,7 @@ function coachReadableWithheldReason(reason?: string | null): string {
     'The posture assessment does not contain enough validated evidence.':
       'The posture evidence did not pass its checks, so a role suggestion would be a guess.',
     "This event is your team's change; this response rule covers opponent changes.":
-      'This is your own team’s change. To see how Gaffer would respond to it as the opponent, choose the other side in Live analysis setup.',
+      'This is your own team’s change. To see how Gaffer would respond to it as the opponent, choose the other side in recorded analysis setup.',
     'No available attacking substitute role was entered.':
       'Add an available attacker role in setup before considering this option.',
     'No available defensive substitute role was entered.':
@@ -124,7 +124,7 @@ export default function RecordedEventCard({
         {event.from_formation ?? 'Shape'} <span aria-label="to">→</span> {event.to_formation ?? 'new shape'}
       </p>
       <p className="mt-2 text-sm text-muted">
-        OpenCV event at {formatClock(event.candidate_time_s)}. This is a formation-change record; it does not by itself describe tactical intent.
+        Shape change detected at {formatClock(event.candidate_time_s)}. A formation change alone does not establish tactical intent.
       </p>
       {state.kind === 'checking' && event.verification_match_time_s === null && (
         <p className="mt-4 rounded-xl border border-line bg-bg px-4 py-3 text-sm text-muted">

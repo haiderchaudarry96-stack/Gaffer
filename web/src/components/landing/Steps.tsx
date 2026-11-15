@@ -2,17 +2,16 @@ import { m } from 'motion/react'
 import { ScanSearch, ShieldCheck, Video } from 'lucide-react'
 import Reveal from '../ui/Reveal'
 import Section from './Section'
-import { SmallPrint } from '../ui/Disclosure'
 
 const STEPS = [
   { n: '01', icon: Video, title: 'Upload a match video', line: 'One wide, fixed camera. A drone works best.' },
-  { n: '02', icon: ScanSearch, title: 'OpenCV maps every player', line: 'Pixels become metres on the pitch.' },
-  { n: '03', icon: ShieldCheck, title: 'It checks, then alerts you', line: 'A second look before it says a word.' },
+  { n: '02', icon: ScanSearch, title: 'Follow the team shape', line: 'Review estimated formations on a map beside your footage.' },
+  { n: '03', icon: ShieldCheck, title: 'Review the moments that matter', line: 'Check the evidence for a shape change, then approve or reject the alert.' },
 ]
 
 export default function Steps() {
   return (
-    <Section id="how" eyebrow="How it works" title="Video in. Verified alert out.">
+    <Section id="how" eyebrow="How it works" title="From match footage to a clearer review." line="Start with a recorded example, or upload a short clip from a fixed camera that sees the whole pitch.">
       <ol className="relative mt-16 grid gap-6 md:grid-cols-3">
         <m.div
           aria-hidden="true"
@@ -39,13 +38,6 @@ export default function Steps() {
           </li>
         ))}
       </ol>
-      <SmallPrint
-        items={[
-          'Tested on one TeamTrack drone match; a fixed side camera is experimental and never alerted. Gaffer samples the video at 2–4 frames per second.',
-          'OpenCV 5 finds and tracks the players, splits the teams by shirt colour (cv2.kmeans) and maps pixels to metres with a homography fitted to the pitch lines. Drone view: 0.17 m position error, team right 98.6 % of the time.',
-          'Each possible shape change gets an OpenCV camera check and a second OpenCV look at a higher frame rate. Fixed rules give the verdict; Nova 2 Lite on Amazon Bedrock runs the checks and words the explanation. Confirmed changes wait for the coach to approve or reject.',
-        ]}
-      />
     </Section>
   )
 }

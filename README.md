@@ -2,12 +2,11 @@
 
 # Gaffer
 
-**Broadcast-level tactical analysis costs clubs thousands. Gaffer gives any coach a tactical analyst that watches the match, spots the moment the opponent changes shape, and checks its own eyes before it speaks.**
+**Gaffer helps football coaches turn match footage into actionable tactical insights.** It maps player positions, estimates team shapes and surfaces evidence-backed changes for a coach to review.
 
-Built for the **OpenCV AI Competition 2026, powered by AWS**. OpenCV 5.0.0 (`opencv-contrib-python==5.0.0.93`) does the vision work, an Amazon Bedrock agent (Nova 2 Lite) decides what to look at next, and the coach approves every alert.
+Gaffer is an early product prototype. OpenCV 5.0.0 (`opencv-contrib-python==5.0.0.93`) performs the video analysis; Amazon Bedrock (Nova 2 Lite) helps orchestrate bounded checks and draft explanations; coaches review every alert. The verdict rules are deterministic, not model-generated.
 
-**Live app: https://gaffer-tactics.duckdns.org/** (fallback, plain http: http://13.210.196.109/). If neither opens, see the demo video (link: TBD-VIDEO).
-**[Technical report (PDF)](docs/Gaffer_Technical_Report.pdf)** · Judges: [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) (Markdown source) · [Agentic Vision Award evidence](docs/TECHNICAL_REPORT.md#6-agentic-vision-award-evidence) · [`docs/DEVPOST.md`](docs/DEVPOST.md) · [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)
+**Hosted app: https://gaffer-tactics.duckdns.org/** · [Technical report (PDF)](docs/Gaffer_Technical_Report.pdf) · [Engineering report](docs/TECHNICAL_REPORT.md) · [Startup UI audit](docs/startup/PHASE_1_UI_AUDIT.md)
 
 ## What Gaffer does in 30 seconds
 
@@ -18,14 +17,14 @@ Built for the **OpenCV AI Competition 2026, powered by AWS**. OpenCV 5.0.0 (`ope
 
 ## Try it
 
-Who uses Gaffer and for what (a judge or visitor can do everything a coach does, including uploading their own drone video):
+Gaffer is designed for coaches, analysts, academies and clubs evaluating team shape from wide-angle match footage:
 
 ![Gaffer use cases](docs/use_cases_light.png)
 
 | What | How |
 |---|---|
-| **Live analysis (recorded TeamTrack match)** | Open `/app`, choose *Live analysis*. It replays 6 minutes of a real amateur match (15:00 to 21:00) with the video beside a 2D pitch; the dots, shapes, the 16:30 change and the agent's check appear as the clock reaches them. It is a recorded replay, not a live camera. |
-| **Upload sample 1: "The demo match" (TeamTrack)** | *Upload your own video → Try this clip.* 30 s, 1080p, 32 MB. "The demo match, where shape changes can be found." (30 s is too short for the shape change itself; the full 6 minutes are in *Live analysis*.) |
+| **Recorded TeamTrack analysis** | Open `/app`, choose *Recorded analysis*. It replays 6 minutes of a real amateur match (15:00 to 21:00) with the video beside a 2D pitch; the dots, shapes, the 16:30 change and the agent's check appear as the clock reaches them. It is a recorded replay, not a live camera. |
+| **Upload sample 1: TeamTrack** | *Upload your own video → Try this clip.* 30 s, 1080p, 32 MB. The short sample demonstrates the upload path; use *Recorded analysis* for the six-minute replay and its shape-change example. |
 | **Upload sample 2: "New ground (Zenodo)"** | 30 s, 1080p (21 MB) copy of a clip from a different pitch (artificial turf, low sun, long shadows). "An unseen ground: shows players and teams on a pitch Gaffer was never tuned on. 30 s is too short for a shape change." |
 | **Your own clip** | Each sample has a plain **Download** link if you want to test with the file. See "What footage works". |
 | **Ask the analyst** | Open the chat on the result page; answers are grounded in the stored results and say "I can't answer that" otherwise. |
@@ -71,7 +70,7 @@ The one rule that shapes the code: **query, never stuff.** The model never recei
 | **IAM** | Instance role `gaffer-ec2-role`, no access keys on the instance or in the image |
 | **Systems Manager** | Session Manager and Run Command for deploys (no SSH port open) |
 
-Details, costs and the delete-everything list: [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md). The landing page's **Live on AWS** card reads the running server (`GET /api/runtime`: EC2 instance type, zone and region from the instance metadata, the Bedrock model and the app's own call counters; never an instance id, address or key).
+Details and costs: [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md). The current source keeps operational monitoring internal through container loopback and IAM-protected SSM/CloudWatch. The public page shows product capabilities; public health is liveness only. Deployment status and verification evidence are in [`POST_DEPLOYMENT_UI_VERIFICATION.md`](docs/startup/POST_DEPLOYMENT_UI_VERIFICATION.md).
 
 **Uploads and privacy.** An uploaded video is analysed on the EC2 server and its **raw file is deleted 24 hours after the analysis finishes** (`api.uploads.retention_hours`); the results stay (tracked positions, events, evidence frames, report, approve / reject decisions). One analysis runs at a time and the rest wait (`queued`, with their place in line); an upload is refused with "The demo server is full right now, please try a sample clip" when free disk space is below 5 GB. Gaffer works with positions, not identities: no face recognition, no names.
 
@@ -156,6 +155,10 @@ The footage and model weights are **not in the repo** (gitignored, large, licens
 ## Docs map
 
 [`docs/Gaffer_Technical_Report.pdf`](docs/Gaffer_Technical_Report.pdf) · [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md) · [`docs/AGENT_DESIGN.md`](docs/AGENT_DESIGN.md) · [`docs/AGENT_TRACE_EXAMPLES.md`](docs/AGENT_TRACE_EXAMPLES.md) · [`docs/FAILURE_LOG.md`](docs/FAILURE_LOG.md) · [`docs/DATA_NOTES.md`](docs/DATA_NOTES.md) · [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) · [`docs/DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) · [`docs/API.md`](docs/API.md) · [`docs/PLAN.md`](docs/PLAN.md) · [`deploy/DEPLOY_AWS.md`](deploy/DEPLOY_AWS.md) · [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md). Build notes (not needed to judge): [`RECORD.md`](RECORD.md).
+
+## Project history
+
+Gaffer began as an OpenCV AI Competition 2026 project. Its original technical report, evaluation evidence and submission notes remain available in [`docs/TECHNICAL_REPORT.md`](docs/TECHNICAL_REPORT.md), [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md) and [`docs/DEVPOST.md`](docs/DEVPOST.md). The landing page presents the current product direction; these documents preserve the historical competition context.
 
 ## Licence
 

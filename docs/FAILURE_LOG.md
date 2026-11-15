@@ -686,3 +686,15 @@ remain OFF, and **Part 2 was not run**; this quick check does not justify enabli
 **Why:** Low-contrast small blobs (distant players, staff) are the first thing a strong compression removes; the detector is tuned on high-bitrate footage. A re-encode that looks the same to a viewer is not the same input to the pipeline.
 
 **Impact / mitigation:** The CRF 23 copy was rejected. CRF 16 (32.3 MB) reproduces the original's result (same formations, 0 candidates, median position difference 0.03 m, partner missing for 3.7 %); CRF 12 (63.2 MB) is no closer. This is also a limit for users: heavily compressed uploads can change a formation read (limitation to mention with the 720p result). Files: `outputs/sample_clip_reencode.json`, `scripts/compare_sample_clips.py`.
+
+
+## 2026-11-14 - Public product UI exposed operational diagnostics (refinement pending deployment)
+
+- The Phase 1 deployment was genuine: all 42 built frontend files matched production. Its public presentation still included raw evaluation/vision cards and an infrastructure runtime card, and `/api/health` plus `/api/runtime` returned operational details without operator-only access. This was a product/monitoring boundary issue, not a stale deployment. Evidence: `docs/startup/screenshots/post-deployment/before-landing-1440.png` and `outputs/postdeploy_ui_20261114T154829Z/deployment-inspection.json`.
+- Local candidate replaces those cards with actual coaching capabilities and a customer FAQ. Public liveness is minimal; operational diagnostics require container loopback and are blocked by the tested Caddy rules. Forged forwarded-loopback headers were also checked. Monitoring remains available through SSM/Docker and IAM-protected CloudWatch. No CV/model/rule changes.
+- These changes are **not deployed** until the user approves. The old public endpoints remain on the running production version in the meantime. Full findings, screenshots and results: `docs/startup/POST_DEPLOYMENT_UI_VERIFICATION.md`.
+
+
+### 2026-11-15 - Public diagnostics issue resolved in the approved production release
+
+The reviewed UI and private-monitoring rules are now deployed. Public health returns liveness only; 16 public monitor-path/header checks returned 404 while container-loopback diagnostics worked. See `docs/startup/DEPLOYMENT_LATEST.md`. During the four-second app replacement, one local Caddy readiness probe returned 502; subsequent app/proxy checks and logs were clean. No model, CV, verification or schema change.

@@ -4,7 +4,7 @@ FastAPI app in `src/gaffer/api/` (`create_app` in `main.py`). One process serves
 analysis worker (one analysis at a time) and, when `web/dist` exists, the built frontend at `/`.
 Settings: `config.yaml` → `api:` (limits, caps, demo, storage) and `calibration.four_corner` /
 `calibration.auto_detect` (pitch step). Nothing in `api:` can change an agent decision: the rules
-fingerprint stays **`ca4ff9bbf7b01c6c`** (reported by `/api/health` and in every finished analysis).
+fingerprint stays **`ca4ff9bbf7b01c6c`** (reported by internal diagnostics and in every finished analysis).
 
 ```powershell
 uvicorn gaffer.api.main:app --reload            # laptop, http://localhost:8000 (docs at /docs)
@@ -31,8 +31,9 @@ Docker: `deploy/README.md`.
 
 | Method and path | Request | Response |
 |---|---|---|
-| `GET /api/health` | — | `{status, opencv_version, rules_fingerprint, bedrock, model_id, region, demo_available, analyses: {running, queued}, usage_today (incl. last_call_utc), runtime, limits (incl. retention_hours)}` |
-| `GET /api/runtime` | — | what this server runs on right now, for the landing page's "Live on AWS" card; see "Live runtime" below. `Cache-Control: no-store` |
+| `GET /api/health` | — | Public liveness only: `{"status":"ok"}`; `Cache-Control: no-store` |
+| `GET /api/runtime` | Container loopback only | Internal runtime diagnostics; public requests return 404. `Cache-Control: no-store` |
+| `GET /api/internal/health` | Container loopback only | Full operational health, replay availability, usage and runtime facts; public requests return 404 |
 | `GET /api/demo` | — | the demo match (`samples/w900_1260`) as an **AnalysisResult** + `report_markdown`, `explanations`, `team_model`, `run_rows`, `files` |
 | `GET /api/demo/files/{name}` | — | the exact sample file the frontend reads today (whitelist: `api.demo.files`) |
 | `GET /api/demo/alerts` | — | the demo alerts as **this visitor** sees them (as shipped, plus their own approve / reject) |
@@ -259,9 +260,10 @@ explanations, evidence images, the first frame, the event DB, `alerts.jsonl`; `s
 that long becomes `failed` ("Upload it again"). Nothing reads the raw file after the analysis: no
 endpoint serves it and the desk plays an upload from the visitor's own browser.
 
-## Live runtime (`GET /api/runtime`, also under `runtime` in `/api/health`)
+## Internal runtime (`GET /api/runtime`, also under `runtime` in `/api/internal/health`)
 
-Real values only; a field the server cannot read is `null` (the page prints "unavailable").
+Real values only; a field the server cannot read is `null`. These diagnostics are for operators,
+not the public frontend. Run them through container loopback using SSM and `docker exec`.
 
 ```jsonc
 {
@@ -287,7 +289,7 @@ id, addresses and credentials are never read or returned. A positive answer is c
 a negative one for 30 s, so off AWS the endpoint answers "not running on AWS" in well under a
 second. `model_label` comes from `api.runtime.model_labels`. `last_call_utc` is the time of the
 last Bedrock charge recorded by the usage counters (an analysis charges its calls when it
-finishes). The landing page polls it every 60 s.
+finishes). The public frontend does not request it. Caddy blocks the monitoring paths on all public listeners; operators use SSM and `docker exec` to query container loopback. These routes are excluded from OpenAPI. See `docs/startup/PRODUCT_TECHNICAL_NOTES.md`.
 
 **Known TeamTrack drone clips** (`D_<date>_<half>_<start>_<end>.mp4` at 3840 × 2160, `known_source`
 `auto`/`true`) skip the pitch step: the saved 31-point calibration (`data/calibration/top.json`) is

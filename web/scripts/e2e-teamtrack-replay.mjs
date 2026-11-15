@@ -22,31 +22,30 @@ try {
   })
 
   await page.goto(base)
-  await page.getByRole('heading', { name: 'Evidence, results, and how the system works' }).waitFor()
-  assert.equal(await page.getByRole('heading', { name: /Far fewer false alarms/ }).count(), 0,
-    'evaluation headline is tucked into the judge brief by default')
-  assert.equal(await page.getByRole('heading', { name: /OpenCV 5 does the seeing/ }).count(), 0,
-    'technical headline is tucked into the judge brief by default')
-  await page.getByRole('link', { name: 'Judges & tech' }).click()
-  await page.getByRole('button', { name: 'Open judge and technical details' }).click()
-  await page.getByRole('heading', { name: /Far fewer false alarms/ }).waitFor()
-  await page.getByRole('heading', { name: /OpenCV 5 does the seeing/ }).waitFor()
+  page.setDefaultTimeout(30_000)
+  await page.getByRole('heading', { name: /See the shape of your match/ }).waitFor()
+  await page.getByRole('heading', { name: /More context for your next decision/ }).waitFor()
+  assert.equal(await page.getByRole('link', { name: 'Judges & tech' }).count(), 0,
+    'the primary navigation is product-facing')
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Features', exact: true }).click()
+  await page.getByRole('heading', { name: 'See the whole team', exact: true }).waitFor()
   await page.goto(`${base}/app?paused=1`)
   assert.equal(await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches), true,
     'the browser run requests reduced motion')
   // /app opens idle (22 Oct UX fix): a decorative pitch, the start panel, nothing real yet
   await page.getByText('Waiting to start').waitFor()
+  await page.getByRole('link', { name: 'Home', exact: true }).waitFor()
   assert.equal(await page.locator('video, canvas').count(), 0, 'idle: no video and no pitch canvas')
   assert.equal(await page.getByRole('heading', { name: /Formation change|Possible formation change/ }).count(), 0,
     'idle: no alert card')
   assert.equal(await page.locator('ol[aria-label$=" shapes"] li').count(), 0, 'idle: empty shape timeline')
-  await page.getByRole('button', { name: 'Live analysis — recorded TeamTrack match (simulation)' }).waitFor()
+  await page.getByRole('button', { name: 'Explore recorded TeamTrack analysis' }).waitFor()
   await page.getByRole('button', { name: 'Upload your own video' }).waitFor()
   await page.getByRole('button', { name: 'Review a completed analysis' }).waitFor()
-  const openLiveSetup = page.getByRole('button', { name: 'Live analysis', exact: true })
+  const openLiveSetup = page.getByRole('button', { name: 'Recorded analysis', exact: true })
   await openLiveSetup.focus()
   await page.keyboard.press('Enter')
-  const setup = page.getByRole('dialog', { name: 'Set up Live analysis' })
+  const setup = page.getByRole('dialog', { name: 'Set up recorded analysis' })
   await setup.waitFor()
   assert.equal(await page.evaluate(() => {
     const dialog = document.querySelector('dialog[open]')
@@ -278,8 +277,8 @@ try {
     'no alert decision after seeking back')
 
   // a new session starts fresh: nothing decided, back at 15:00
-  await page.getByRole('button', { name: 'Live analysis', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Set up Live analysis' }).getByRole('button', { name: 'Start a new session' }).click()
+  await page.getByRole('button', { name: 'Recorded analysis', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Set up recorded analysis' }).getByRole('button', { name: 'Start a new session' }).click()
   await page.getByText('Gaffer is reading the footage').waitFor()
   await page.waitForFunction(() => Math.abs(Number(document.querySelector('input[type="range"]')?.value) - 900) < 2)
   await seek(target.verification_match_time_s)

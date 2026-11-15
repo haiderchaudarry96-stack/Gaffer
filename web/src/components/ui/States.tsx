@@ -26,7 +26,7 @@ export function ErrorState({ title, detail, children }: { title: string; detail?
         <AlertTriangle className="size-4 text-danger" aria-hidden="true" />
         {title}
       </div>
-      {detail && <p className="font-mono text-xs break-all text-muted">{detail}</p>}
+      {detail && <p className="text-sm leading-relaxed break-words text-muted">{detail}</p>}
       {children}
     </div>
   )

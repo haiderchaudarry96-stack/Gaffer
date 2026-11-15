@@ -122,7 +122,9 @@ def test_video_element_gets_the_playback_proxy_and_analysis_keeps_the_original(t
         assert first.headers["cache-control"] == "public, max-age=86400"
         # a missing proxy falls back to the original instead of failing
         assert client.get(body["clips"][-1]["url"]).content == b"0123456789abcdef"
-        assert client.get("/api/health").json()["replay_playback"].startswith("1080p proxies")
+        operator = TestClient(client.app, client=("127.0.0.1", 50000))
+        internal = operator.get("/api/internal/health").json()
+        assert internal["replay_playback"].startswith("1080p proxies")
 
     cfg["api"]["teamtrack_replay"]["playback"]["enabled"] = False
     with TestClient(_app(cfg, tmp_path)) as client:

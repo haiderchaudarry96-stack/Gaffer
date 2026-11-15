@@ -1,55 +1,25 @@
-import type { ReactNode } from 'react'
 import Section from './Section'
 import Disclosure from '../ui/Disclosure'
-import { LIVE_URL } from '../../lib/links'
 
-const FAQ: { q: string; a: ReactNode }[] = [
-  {
-    q: 'What footage works?',
-    a: 'One fixed, wide camera that sees the whole pitch. It is tested on TeamTrack drone footage (one match, filmed from above). A fixed side camera works experimentally and is never alerted. Gaffer samples 2–4 frames per second.',
-  },
-  {
-    q: 'Why only drone or fixed cameras?',
-    a: 'Positions in metres come from a homography fitted to the pitch lines, which needs a camera that does not move. Before every second look, an OpenCV camera check measures pan, zoom and cuts and refuses the window if the camera moved (limits: 25 px/s, 3 % zoom).',
-  },
-  {
-    q: 'What does the AI decide, and what do the rules decide?',
-    a: 'Fixed rules in code give every verdict: does the new shape hold, does it revert, is the camera usable. Nova 2 Lite on Amazon Bedrock chooses the calls (which window, which frame rate) and writes the explanation, which code then checks. On 68 synthetic candidates its decisions matched the rules-only run 68 / 68.',
-  },
-  {
-    q: 'What does a match cost?',
-    a: 'The language model cost $0.021 per synthetic match (195 calls for ten matches, $0.21) and $0.052 for a real 6-minute upload on the demo server (49 calls). The server itself costs about $3.10 a day while it runs, whatever the load. Processing time varies with resolution and server load: a 6-minute 4K clip took 28 minutes, a 30-second sample about 23 seconds. The app reports an estimate from measured frame-processing time after analysis starts.',
-  },
-  {
-    q: 'What about player privacy?',
-    a: 'Gaffer works with positions on a pitch, not identities: no face recognition, no names. A video you upload is sent to the demo server on AWS (Sydney) and analysed there. The raw video is deleted 24 hours after its analysis finishes. The results stay on the server: tracked positions, detected events, evidence frames, the report and your approve or reject decisions on uploads. Chat questions are logged as typed, under a random visitor ID, not a name or address. Upload only footage you have the right to share. Footage is used only where its licence allows; the demo data is TeamTrack (MIT licence).',
-  },
-  {
-    q: 'What happens when it is wrong?',
-    a: 'Every alert waits for the coach to approve or reject it, and uncertain cases are marked, not alerted. On synthetic test matches it still raised 9 false alerts and missed 6 of 38 real changes, and on real footage it missed Blue’s change at 18:50.',
-  },
-  {
-    q: 'Is it live?',
-    a: (
-      <>
-        Yes. <a href={LIVE_URL} className="font-medium text-accent-ink underline underline-offset-4">{LIVE_URL}</a> runs on AWS: the API, OpenCV and the agent on an EC2 instance behind Caddy (HTTPS), Amazon Bedrock for the agent, S3 for the clips and the model, CloudWatch for the logs. You can replay the recorded match (real TeamTrack drone footage with its stored analysis), analyse one of the two 30-second sample clips, or upload your own top-down clip (up to 6 minutes and 500 MB, one analysis at a time).
-      </>
-    ),
-  },
-  {
-    q: 'What data was it tested on?',
-    a: 'Synthetic 90-minute matches with exact ground truth (the official numbers: seeds 110–119) and the TeamTrack soccer dataset (Scott et al., 2024, MIT licence): drone and side cameras of one match.',
-  },
+const FAQ = [
+  { q: 'Can I try Gaffer before uploading?', a: 'Yes. Explore the recorded TeamTrack match from the analyst desk, or choose a short sample in the upload dialog. The recorded example replays an existing analysis; sample uploads are processed when you submit them.' },
+  { q: 'What kind of footage do I need?', a: 'Use an elevated, fixed camera that keeps the whole pitch in view, with clearly different team kits. The current upload flow is for short clips filmed from above. Panning, zooming and broadcast camera cuts are not supported. Check the footage guide in the upload dialog before choosing a file.' },
+  { q: 'Can I connect a live camera?', a: 'The current version works with uploaded recordings and a recorded match replay. It does not connect to a live camera.' },
+  { q: 'How long will my analysis take?', a: 'It depends on resolution, clip length and how busy the server is. Once processing starts, Gaffer shows an estimate based on the frames processed so far. Additional checks and any queue time are shown separately.' },
+  { q: 'Does Gaffer choose my tactics or substitutions?', a: 'You make the decision. Gaffer estimates formations and highlights evidence for review. When supported, optional role advice uses your match objective and available roles; it does not identify a player to replace or make an automatic substitution.' },
+  { q: 'How is my footage handled?', a: 'Uploaded video is processed on the hosted server. Raw uploads are deleted 24 hours after analysis finishes; results, evidence and saved coach responses remain. There is no face recognition or player-name extraction. Analyst questions are logged under a random visitor ID. Use footage you have permission to share; this prototype does not provide private club accounts.' },
+  { q: 'How should I use the results?', a: 'Use them as a starting point for review, alongside the footage and your own match knowledge. This is an early product tested on limited footage: formations can be wrong and changes can be missed. Uncertain results are marked, and you can approve or reject alerts.' },
+  { q: 'Does it measure possession or pressing?', a: 'No. The current analysis uses player positions and team shapes. It does not track the ball or establish possession, pressing or individual player identity.' },
 ]
 
 export default function Faq() {
   return (
-    <Section id="faq" eyebrow="FAQ" title="Questions coaches ask.">
+    <Section id="faq" eyebrow="FAQ" title="A few things before you start.">
       <ul className="mt-12 max-w-4xl divide-y divide-line border-y border-line">
-        {FAQ.map((f) => (
-          <li key={f.q}>
-            <Disclosure summary={<span className="text-xl font-semibold text-text">{f.q}</span>} summaryClassName="py-6 text-text">
-              <p className="pb-6 text-lg leading-relaxed text-muted">{f.a}</p>
+        {FAQ.map(({ q, a }) => (
+          <li key={q}>
+            <Disclosure summary={<span className="text-xl font-semibold text-text">{q}</span>} summaryClassName="py-6 text-text">
+              <p className="pb-6 text-lg leading-relaxed text-muted">{a}</p>
             </Disclosure>
           </li>
         ))}
